@@ -1,0 +1,9 @@
+-- Este archivo queda como entrada rápida.
+-- Para instalar la base de datos completa, ejecuta en orden:
+--
+-- 1. supabase/01_schema.sql
+-- 2. supabase/02_rls_policies.sql
+-- 3. supabase/03_seed_template.sql
+--
+-- Roles usados por mira:
+-- owner, admin, manager

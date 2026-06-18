@@ -1,0 +1,232 @@
+"use client";
+
+import { create } from "zustand";
+import type {
+  Activity,
+  ApplicationRecord,
+  CostRecord,
+  CurrentUser,
+  Greenhouse,
+  HarvestRecord,
+  IrrigationRecord,
+  ModalType,
+  NutritionRecord,
+  Organization,
+  PestAlert,
+  SectionId,
+  Task
+} from "@/types";
+import { makeId } from "@/lib/utils";
+
+type AppState = {
+  activeSection: SectionId;
+  selectedGreenhouseId: string;
+  modal: ModalType;
+  organization: Organization;
+  currentUser: CurrentUser;
+  greenhouses: Greenhouse[];
+  tasks: Task[];
+  irrigationRecords: IrrigationRecord[];
+  nutritionRecords: NutritionRecord[];
+  applicationRecords: ApplicationRecord[];
+  pestAlerts: PestAlert[];
+  harvestRecords: HarvestRecord[];
+  costRecords: CostRecord[];
+  activities: Activity[];
+  setActiveSection: (section: SectionId) => void;
+  setSelectedGreenhouseId: (id: string) => void;
+  updateOrganization: (organization: Organization) => void;
+  openModal: (modal: ModalType) => void;
+  closeModal: () => void;
+  addTask: (task: Omit<Task, "id">) => void;
+  completeTask: (id: string) => void;
+  addIrrigation: (record: Omit<IrrigationRecord, "id">) => void;
+  addGreenhouse: (greenhouse: Greenhouse) => void;
+  updateGreenhouse: (greenhouse: Greenhouse) => void;
+  addNutrition: (record: Omit<NutritionRecord, "id">) => void;
+  addApplication: (record: Omit<ApplicationRecord, "id">) => void;
+  addPest: (record: Omit<PestAlert, "id">) => void;
+  addHarvest: (record: Omit<HarvestRecord, "id">) => void;
+  addCost: (record: Omit<CostRecord, "id">) => void;
+  hydrateWorkspace: (data: {
+    organization: Organization;
+    currentUser: CurrentUser;
+    greenhouses: Greenhouse[];
+    tasks: Task[];
+    irrigationRecords: IrrigationRecord[];
+    nutritionRecords: NutritionRecord[];
+    applicationRecords: ApplicationRecord[];
+    pestAlerts: PestAlert[];
+    harvestRecords: HarvestRecord[];
+    costRecords: CostRecord[];
+    activities: Activity[];
+  }) => void;
+};
+
+export const useGreenhouseStore = create<AppState>((set) => ({
+  activeSection: "overview",
+  selectedGreenhouseId: "",
+  modal: null,
+  organization: {
+    id: "",
+    name: ""
+  },
+  currentUser: {
+    id: "",
+    fullName: "",
+    email: "",
+    role: "manager"
+  },
+  greenhouses: [],
+  tasks: [],
+  irrigationRecords: [],
+  nutritionRecords: [],
+  applicationRecords: [],
+  pestAlerts: [],
+  harvestRecords: [],
+  costRecords: [],
+  activities: [],
+  setActiveSection: (section) => set({ activeSection: section }),
+  setSelectedGreenhouseId: (id) => set({ selectedGreenhouseId: id }),
+  updateOrganization: (organization) => set({ organization }),
+  openModal: (modal) => set({ modal }),
+  closeModal: () => set({ modal: null }),
+  hydrateWorkspace: (data) =>
+    set(() => ({
+      organization: data.organization,
+      currentUser: data.currentUser,
+      greenhouses: data.greenhouses,
+      selectedGreenhouseId: data.greenhouses[0]?.id ?? "",
+      tasks: data.tasks,
+      irrigationRecords: data.irrigationRecords,
+      nutritionRecords: data.nutritionRecords,
+      applicationRecords: data.applicationRecords,
+      pestAlerts: data.pestAlerts,
+      harvestRecords: data.harvestRecords,
+      costRecords: data.costRecords,
+      activities: data.activities
+    })),
+  addTask: (task) =>
+    set((state) => ({
+      tasks: [{ ...task, id: makeId("task") }, ...state.tasks],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: task.greenhouseId,
+          title: "Nueva tarea creada",
+          detail: task.title,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  completeTask: (id) =>
+    set((state) => ({
+      tasks: state.tasks.map((task) =>
+        task.id === id ? { ...task, status: "Completada" } : task
+      )
+    })),
+  addIrrigation: (record) =>
+    set((state) => ({
+      irrigationRecords: [{ ...record, id: makeId("riego") }, ...state.irrigationRecords],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Riego registrado",
+          detail: `${record.liters.toLocaleString("es-MX")} L en ${record.sector}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  addGreenhouse: (greenhouse) =>
+    set((state) => ({
+      greenhouses: [greenhouse, ...state.greenhouses],
+      selectedGreenhouseId: greenhouse.id,
+      modal: null
+    })),
+  updateGreenhouse: (greenhouse) =>
+    set((state) => ({
+      greenhouses: state.greenhouses.map((item) => (item.id === greenhouse.id ? greenhouse : item)),
+      selectedGreenhouseId: greenhouse.id,
+      modal: null
+    })),
+  addNutrition: (record) =>
+    set((state) => ({
+      nutritionRecords: [{ ...record, id: makeId("nut") }, ...state.nutritionRecords],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Nutrición registrada",
+          detail: `${record.product} · ${record.dose}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  addApplication: (record) =>
+    set((state) => ({
+      applicationRecords: [{ ...record, id: makeId("app") }, ...state.applicationRecords],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Aplicación registrada",
+          detail: `${record.product} en ${record.area}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  addPest: (record) =>
+    set((state) => ({
+      pestAlerts: [{ ...record, id: makeId("pest") }, ...state.pestAlerts],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Alerta sanitaria registrada",
+          detail: `${record.problem} · ${record.severity}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  addHarvest: (record) =>
+    set((state) => ({
+      harvestRecords: [{ ...record, id: makeId("harv") }, ...state.harvestRecords],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Cosecha registrada",
+          detail: `${record.kilograms.toLocaleString("es-MX")} kg capturados`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    })),
+  addCost: (record) =>
+    set((state) => ({
+      costRecords: [{ ...record, id: makeId("cost") }, ...state.costRecords],
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Costo registrado",
+          detail: `${record.category} · ${record.amount.toLocaleString("es-MX")}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null
+    }))
+}));
