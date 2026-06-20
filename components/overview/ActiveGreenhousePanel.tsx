@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ApplicationRecord, Greenhouse, IrrigationRecord } from "@/types";
 import { formatNumber } from "@/lib/utils";
-import { fetchWeatherByLocation, type WeatherReading } from "@/lib/weather";
+import { fetchWeatherByCoordinates, fetchWeatherByLocation, type WeatherReading } from "@/lib/weather";
 
 type ActiveGreenhousePanelProps = {
   greenhouse: Greenhouse;
@@ -21,14 +21,21 @@ export function ActiveGreenhousePanel({
     let cancelled = false;
 
     async function loadWeather() {
-      if (!greenhouse.location) {
+      const hasCoordinates = greenhouse.latitude !== null && greenhouse.longitude !== null;
+      if (!hasCoordinates && !greenhouse.location) {
         setWeather(null);
         return;
       }
 
       setIsLoadingWeather(true);
       try {
-        const reading = await fetchWeatherByLocation(greenhouse.location);
+        const reading = hasCoordinates
+          ? await fetchWeatherByCoordinates(
+              greenhouse.latitude!,
+              greenhouse.longitude!,
+              greenhouse.location || "coordenadas del invernadero"
+            )
+          : await fetchWeatherByLocation(greenhouse.location);
         if (!cancelled) {
           setWeather(reading);
         }
@@ -48,7 +55,7 @@ export function ActiveGreenhousePanel({
     return () => {
       cancelled = true;
     };
-  }, [greenhouse.location]);
+  }, [greenhouse.latitude, greenhouse.location, greenhouse.longitude]);
 
   const temperature =
     weather?.temperature ?? (greenhouse.temperature > 0 ? greenhouse.temperature : null);

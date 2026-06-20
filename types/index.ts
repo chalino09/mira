@@ -51,6 +51,9 @@ export type Greenhouse = {
   id: string;
   name: string;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationAccuracyM: number | null;
   surface: string;
   variety: string;
   transplantDate: string;

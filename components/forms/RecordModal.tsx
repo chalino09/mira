@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -228,6 +229,9 @@ export function RecordModal() {
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => ({
     name: String(form.get("name")),
     location: String(form.get("location")),
+    latitude: optionalNumber(form.get("latitude")),
+    longitude: optionalNumber(form.get("longitude")),
+    locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
     surface: `${Number(form.get("surfaceM2") || 0).toLocaleString("es-MX")} m2`,
     variety: String(form.get("variety")),
     transplantDate: String(form.get("transplantDate")),
@@ -245,6 +249,9 @@ export function RecordModal() {
   const greenhousePayload = (form: FormData, greenhouse: Omit<Greenhouse, "id">) => ({
     name: greenhouse.name,
     location: greenhouse.location,
+    latitude: greenhouse.latitude,
+    longitude: greenhouse.longitude,
+    location_accuracy_m: greenhouse.locationAccuracyM,
     surface_m2: Number(form.get("surfaceM2") || 0),
     tomato_variety: greenhouse.variety,
     transplant_date: greenhouse.transplantDate || null,
@@ -549,9 +556,7 @@ export function RecordModal() {
           <Field label="Nombre">
             <TextInput name="name" required placeholder="Casa 2" />
           </Field>
-          <Field label="Ubicación">
-            <TextInput name="location" placeholder="Cuapancingo, Puebla" />
-          </Field>
+          <PreciseLocationField key="new-greenhouse-location" />
           <Field label="Superficie m2">
             <TextInput name="surfaceM2" type="number" defaultValue={0} />
           </Field>
@@ -582,9 +587,13 @@ export function RecordModal() {
           <Field label="Nombre">
             <TextInput name="name" required defaultValue={selectedGreenhouse.name} />
           </Field>
-          <Field label="Ubicación">
-            <TextInput name="location" defaultValue={selectedGreenhouse.location} />
-          </Field>
+          <PreciseLocationField
+            key={`greenhouse-location-${selectedGreenhouse.id}`}
+            accuracyDefaultValue={selectedGreenhouse.locationAccuracyM}
+            latitudeDefaultValue={selectedGreenhouse.latitude}
+            locationDefaultValue={selectedGreenhouse.location}
+            longitudeDefaultValue={selectedGreenhouse.longitude}
+          />
           <Field label="Superficie m2">
             <TextInput
               name="surfaceM2"
