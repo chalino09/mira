@@ -1,6 +1,6 @@
 -- mira - 07 Greenhouse coordinates
 -- Ejecutar después de 06_onboarding_improvements.sql.
--- Guarda ubicación precisa y amplía el onboarding para exigir coordenadas válidas.
+-- Guarda ubicación precisa y agrega un onboarding compatible con previews de rama.
 
 alter table public.greenhouses
 add column if not exists latitude numeric(9,6),
@@ -27,41 +27,7 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
-create or replace function public.enforce_greenhouse_coordinates()
-returns trigger
-language plpgsql
-set search_path = public
-as $$
-begin
-  if nullif(trim(new.location), '') is null
-    or new.latitude is null
-    or new.longitude is null then
-    raise exception 'precise_location_required';
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists require_greenhouse_coordinates on public.greenhouses;
-create trigger require_greenhouse_coordinates
-before insert or update on public.greenhouses
-for each row execute function public.enforce_greenhouse_coordinates();
-
-drop function if exists public.create_initial_workspace(text, text, text, text);
-drop function if exists public.create_initial_workspace(
-  text,
-  text,
-  text,
-  text,
-  text,
-  public.crop_stage,
-  date,
-  numeric,
-  integer,
-  integer
-);
-drop function if exists public.create_initial_workspace(
+drop function if exists public.create_initial_workspace_with_coordinates(
   text,
   text,
   text,
@@ -77,7 +43,7 @@ drop function if exists public.create_initial_workspace(
   numeric
 );
 
-create or replace function public.create_initial_workspace(
+create or replace function public.create_initial_workspace_with_coordinates(
   full_name text,
   company_name text,
   greenhouse_name text,
@@ -249,7 +215,7 @@ begin
 end;
 $$;
 
-revoke all on function public.create_initial_workspace(
+revoke all on function public.create_initial_workspace_with_coordinates(
   text,
   text,
   text,
@@ -265,7 +231,7 @@ revoke all on function public.create_initial_workspace(
   numeric
 ) from public;
 
-grant execute on function public.create_initial_workspace(
+grant execute on function public.create_initial_workspace_with_coordinates(
   text,
   text,
   text,

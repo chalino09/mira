@@ -330,7 +330,7 @@ function OnboardingScreen({
       beds: optionalInteger(form.get("beds"))
     };
 
-    const { error: onboardingError } = await supabase.rpc("create_initial_workspace", {
+    const { error: onboardingError } = await supabase.rpc("create_initial_workspace_with_coordinates", {
       full_name: values.fullName,
       company_name: values.companyName,
       greenhouse_name: values.greenhouseName,
