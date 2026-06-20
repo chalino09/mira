@@ -7,6 +7,7 @@ import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { Button } from "@/components/ui/Button";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
@@ -35,6 +36,9 @@ type OnboardingForm = {
   greenhouseName: string;
   variety: string;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationAccuracyM: number | null;
   stage: CropStage;
   transplantDate: string;
   surfaceM2: number | null;
@@ -316,6 +320,9 @@ function OnboardingScreen({
       greenhouseName: String(form.get("greenhouseName") ?? ""),
       variety: String(form.get("variety") ?? ""),
       location: String(form.get("location") ?? ""),
+      latitude: optionalNumber(form.get("latitude")),
+      longitude: optionalNumber(form.get("longitude")),
+      locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
       stage: String(form.get("stage") ?? "Producción") as CropStage,
       transplantDate: String(form.get("transplantDate") ?? ""),
       surfaceM2: optionalNumber(form.get("surfaceM2")),
@@ -333,7 +340,10 @@ function OnboardingScreen({
       initial_transplant_date: values.transplantDate || null,
       initial_surface_m2: values.surfaceM2,
       initial_plants_count: values.plants,
-      initial_beds_count: values.beds
+      initial_beds_count: values.beds,
+      initial_latitude: values.latitude,
+      initial_longitude: values.longitude,
+      initial_location_accuracy_m: values.locationAccuracyM
     });
 
     setLoading(false);
@@ -394,9 +404,7 @@ function OnboardingScreen({
             <Field label="Variedad">
               <TextInput className="rounded-lg bg-app-background" name="variety" required placeholder="Saladette" />
             </Field>
-            <Field label="Ubicación">
-              <TextInput className="rounded-lg bg-app-background" name="location" placeholder="Acatzingo, Puebla" />
-            </Field>
+            <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
             <Field label="Etapa">
               <SelectInput className="rounded-lg bg-app-background" name="stage" defaultValue="Producción">
                 {["Vegetativo", "Floración", "Cuajado", "Producción"].map((stage) => (
@@ -548,6 +556,9 @@ export function AuthGate() {
       id: greenhouse.id,
       name: greenhouse.name,
       location: greenhouse.location ?? "",
+      latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
+      longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
+      locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
       surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
       variety: greenhouse.tomato_variety ?? "Roma",
       transplantDate: greenhouse.transplant_date ?? "",
