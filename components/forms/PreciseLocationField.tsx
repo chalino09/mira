@@ -1,11 +1,12 @@
 "use client";
 
-import { Crosshair, ExternalLink, LoaderCircle, MapPin } from "lucide-react";
+import { Crosshair, ExternalLink, LoaderCircle, MapPin, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import { Button } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/forms/FormControls";
 import { cn } from "@/lib/utils";
+import { geocodeLocation } from "@/lib/weather";
 
 type PreciseLocationFieldProps = {
   locationDefaultValue?: string;
@@ -62,8 +63,10 @@ export function PreciseLocationField({
   const markerRef = useRef<MapLibreMarker | null>(null);
   const [latitude, setLatitude] = useState(() => coordinateValue(latitudeDefaultValue));
   const [longitude, setLongitude] = useState(() => coordinateValue(longitudeDefaultValue));
+  const [location, setLocation] = useState(locationDefaultValue);
   const [accuracy, setAccuracy] = useState<number | null>(accuracyDefaultValue ?? null);
   const [isLocating, setIsLocating] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
   const [error, setError] = useState("");
 
@@ -176,16 +179,61 @@ export function PreciseLocationField({
     );
   };
 
+  const searchLocation = async () => {
+    const query = location.trim();
+    setError("");
+    if (!query) {
+      setError("Escribe una localidad para buscarla.");
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const result = await geocodeLocation(query);
+      if (!result) {
+        setError("No encontramos esa localidad. Prueba con municipio y estado.");
+        return;
+      }
+
+      setLocation(result.sourceName);
+      setCoordinates(result.latitude, result.longitude, null);
+      markerRef.current?.setLngLat([result.longitude, result.latitude]).addTo(mapRef.current!);
+      mapRef.current?.easeTo({ center: [result.longitude, result.latitude], zoom: 14, duration: 700 });
+    } catch {
+      setError("No se pudo buscar la localidad. Revisa tu conexión e intenta de nuevo.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   return (
     <div className={cn("grid gap-4 sm:col-span-2", className)}>
       <Field label="Ubicación">
-        <TextInput
-          className={inputClassName}
-          defaultValue={locationDefaultValue}
-          name="location"
-          placeholder="Acatzingo, Puebla"
-          required
-        />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <TextInput
+            className={inputClassName}
+            name="location"
+            onChange={(event) => setLocation(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                searchLocation();
+              }
+            }}
+            placeholder="Cuapancingo, Puebla"
+            required
+            value={location}
+          />
+          <Button
+            disabled={isSearching}
+            icon={isSearching ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            onClick={searchLocation}
+            type="button"
+            variant="secondary"
+          >
+            Buscar
+          </Button>
+        </div>
       </Field>
 
       <div className="relative h-64 w-full overflow-hidden rounded-lg border border-app-border bg-app-sidebar">

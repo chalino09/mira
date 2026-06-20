@@ -6,6 +6,12 @@ export type WeatherReading = {
   sourceName: string;
 };
 
+export type LocationMatch = {
+  latitude: number;
+  longitude: number;
+  sourceName: string;
+};
+
 type GeocodingResponse = {
   results?: Array<{
     latitude: number;
@@ -112,14 +118,13 @@ function chooseGeocodingResult(results: GeocodingResult[] | undefined, query: st
   );
 }
 
-export async function fetchWeatherByLocation(location: string): Promise<WeatherReading | null> {
+export async function geocodeLocation(location: string): Promise<LocationMatch | null> {
   const query = location.trim();
 
   if (!query) {
     return null;
   }
 
-  const key = query.toLowerCase();
   let result: GeocodingResult | null = null;
 
   for (const candidate of locationCandidates(query)) {
@@ -146,10 +151,25 @@ export async function fetchWeatherByLocation(location: string): Promise<WeatherR
     return null;
   }
 
+  return {
+    latitude: result.latitude,
+    longitude: result.longitude,
+    sourceName: [result.name, result.admin1, result.country].filter(Boolean).join(", ")
+  };
+}
+
+export async function fetchWeatherByLocation(location: string): Promise<WeatherReading | null> {
+  const query = location.trim();
+  const result = await geocodeLocation(query);
+
+  if (!result) {
+    return null;
+  }
+
   return fetchCurrentWeather(
     result.latitude,
     result.longitude,
-    [result.name, result.admin1, result.country].filter(Boolean).join(", "),
-    key
+    result.sourceName,
+    query.toLowerCase()
   );
 }
