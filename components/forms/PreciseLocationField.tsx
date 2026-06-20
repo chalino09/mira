@@ -1,7 +1,8 @@
 "use client";
 
 import { Crosshair, ExternalLink, LoaderCircle, MapPin } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import { Button } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/forms/FormControls";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,25 @@ type PreciseLocationFieldProps = {
   accuracyDefaultValue?: number | null;
   className?: string;
   inputClassName?: string;
+};
+
+const baseMapStyle: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors"
+    }
+  },
+  layers: [
+    {
+      id: "osm",
+      type: "raster",
+      source: "osm"
+    }
+  ]
 };
 
 function coordinateValue(value?: number | null) {
@@ -37,11 +57,72 @@ export function PreciseLocationField({
   className,
   inputClassName
 }: PreciseLocationFieldProps) {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRef = useRef<MapLibreMarker | null>(null);
   const [latitude, setLatitude] = useState(() => coordinateValue(latitudeDefaultValue));
   const [longitude, setLongitude] = useState(() => coordinateValue(longitudeDefaultValue));
   const [accuracy, setAccuracy] = useState<number | null>(accuracyDefaultValue ?? null);
   const [isLocating, setIsLocating] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
   const [error, setError] = useState("");
+
+  const setCoordinates = useCallback((nextLatitude: number, nextLongitude: number, nextAccuracy: number | null) => {
+    setLatitude(nextLatitude.toFixed(6));
+    setLongitude(nextLongitude.toFixed(6));
+    setAccuracy(nextAccuracy);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function initializeMap() {
+      if (!mapContainerRef.current || mapRef.current) return;
+
+      const maplibre = await import("maplibre-gl");
+      if (disposed || !mapContainerRef.current) return;
+
+      const hasInitialCoordinates =
+        typeof latitudeDefaultValue === "number" && typeof longitudeDefaultValue === "number";
+      const map = new maplibre.Map({
+        container: mapContainerRef.current,
+        style: baseMapStyle,
+        center: hasInitialCoordinates
+          ? [longitudeDefaultValue, latitudeDefaultValue]
+          : [-102.5528, 23.6345],
+        zoom: hasInitialCoordinates ? 16 : 4.2,
+        maxZoom: 19
+      });
+      const marker = new maplibre.Marker({ color: "#183D2A", draggable: true });
+
+      map.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
+      if (hasInitialCoordinates) {
+        marker.setLngLat([longitudeDefaultValue, latitudeDefaultValue]).addTo(map);
+      }
+
+      map.on("click", (event) => {
+        marker.setLngLat(event.lngLat).addTo(map);
+        setCoordinates(event.lngLat.lat, event.lngLat.lng, null);
+      });
+      marker.on("dragend", () => {
+        const position = marker.getLngLat();
+        setCoordinates(position.lat, position.lng, null);
+      });
+      map.once("load", () => setIsMapReady(true));
+
+      mapRef.current = map;
+      markerRef.current = marker;
+    }
+
+    initializeMap();
+
+    return () => {
+      disposed = true;
+      markerRef.current = null;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, [latitudeDefaultValue, longitudeDefaultValue, setCoordinates]);
 
   const latitudeNumber = Number(latitude);
   const longitudeNumber = Number(longitude);
@@ -54,6 +135,12 @@ export function PreciseLocationField({
     latitudeNumber <= 90 &&
     longitudeNumber >= -180 &&
     longitudeNumber <= 180;
+
+  useEffect(() => {
+    if (!hasCoordinates || !mapRef.current || !markerRef.current) return;
+
+    markerRef.current.setLngLat([longitudeNumber, latitudeNumber]).addTo(mapRef.current);
+  }, [hasCoordinates, latitudeNumber, longitudeNumber]);
 
   const mapUrl = useMemo(() => {
     if (!hasCoordinates) return "";
@@ -70,9 +157,11 @@ export function PreciseLocationField({
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setLatitude(position.coords.latitude.toFixed(6));
-        setLongitude(position.coords.longitude.toFixed(6));
-        setAccuracy(Math.round(position.coords.accuracy));
+        const nextLatitude = position.coords.latitude;
+        const nextLongitude = position.coords.longitude;
+        setCoordinates(nextLatitude, nextLongitude, Math.round(position.coords.accuracy));
+        markerRef.current?.setLngLat([nextLongitude, nextLatitude]).addTo(mapRef.current!);
+        mapRef.current?.easeTo({ center: [nextLongitude, nextLatitude], zoom: 17, duration: 700 });
         setIsLocating(false);
       },
       (locationError) => {
@@ -98,6 +187,15 @@ export function PreciseLocationField({
           required
         />
       </Field>
+
+      <div className="relative h-64 w-full overflow-hidden rounded-lg border border-app-border bg-app-sidebar">
+        <div ref={mapContainerRef} className="h-full w-full" />
+        {!isMapReady ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-app-sidebar text-xs text-app-muted">
+            Cargando mapa...
+          </div>
+        ) : null}
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Latitud">
