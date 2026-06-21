@@ -4,6 +4,7 @@ import { EditorialMetrics } from "@/components/overview/EditorialMetrics";
 import { GreenhouseHealthMap } from "@/components/overview/GreenhouseHealthMap";
 import { RecentActivityBlock } from "@/components/overview/RecentActivityBlock";
 import { TodayOperationsBlock } from "@/components/overview/TodayOperationsBlock";
+import { CalendarContributionGrid } from "@/components/dashboard/CalendarContributionGrid";
 import { greetingForNow, overviewDateLabel } from "@/lib/date";
 import type {
   Activity,
@@ -79,6 +80,10 @@ export function OverviewHero({
           plants={greenhouse.plants}
           transplantDays={greenhouse.daysSinceTransplant}
         />
+      </div>
+
+      <div className="mt-16">
+        <CalendarContributionGrid tasks={operationsTasks} />
       </div>
 
       <div className="mt-16 grid gap-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.7fr)] lg:items-stretch">
