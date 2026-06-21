@@ -35,6 +35,8 @@ export type NavigationItem = {
   icon: LucideIcon;
 };
 
+export type UserRole = "owner" | "admin" | "manager";
+
 export type Organization = {
   id: string;
   name: string;
@@ -46,7 +48,7 @@ export type CurrentUser = {
   id: string;
   fullName: string;
   email: string;
-  role: "owner" | "admin" | "manager";
+  role: UserRole;
 };
 
 export type Greenhouse = {

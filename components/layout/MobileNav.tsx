@@ -3,7 +3,7 @@
 import { BarChart3, CalendarDays, Droplets, Home, Menu, Sprout, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BrandMark } from "@/components/layout/Sidebar";
-import { navigationItems } from "@/data/navigation";
+import { navigationItemsForRole } from "@/data/navigation";
 import { cn } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
 import type { SectionId } from "@/types";
@@ -21,9 +21,11 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const navigationItems = useMemo(() => navigationItemsForRole(currentUser.role), [currentUser.role]);
   const primary = useMemo(
     () => primaryIds.map((id) => navigationItems.find((item) => item.id === id)).filter(Boolean),
-    []
+    [navigationItems]
   );
 
   const selectSection = (id: SectionId) => {

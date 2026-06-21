@@ -10,7 +10,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 6. `06_onboarding_improvements.sql`
 7. `07_greenhouse_coordinates.sql`
 8. `08_operational_planning.sql`
-9. `03_seed_template.sql` solo si quieres datos demo manuales.
+9. `09_manager_experience.sql`
+10. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -31,3 +32,5 @@ Para que el primer acceso guarde variedad, etapa, trasplante, superficie, planta
 Para exigir y guardar latitud, longitud y precisión por invernadero, ejecuta también `07_greenhouse_coordinates.sql`.
 
 Para activar planeación semanal, asignaciones, trazabilidad operativa y la cola preparada para Telegram, ejecuta `08_operational_planning.sql`.
+
+Para pedir el nombre real al primer acceso y limitar información administrativa para managers, ejecuta `09_manager_experience.sql`.

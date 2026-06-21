@@ -11,7 +11,7 @@ import {
   Sprout,
   WalletCards
 } from "lucide-react";
-import type { NavigationItem } from "@/types";
+import type { NavigationItem, UserRole } from "@/types";
 
 export const navigationItems: NavigationItem[] = [
   { id: "overview", label: "Overview", icon: Home },
@@ -26,3 +26,19 @@ export const navigationItems: NavigationItem[] = [
   { id: "reports", label: "Reportes", icon: BarChart3 },
   { id: "settings", label: "Ajustes", icon: Settings }
 ];
+
+const managerSections = new Set([
+  "overview",
+  "greenhouses",
+  "calendar",
+  "irrigation",
+  "nutrition",
+  "applications",
+  "pests",
+  "harvest"
+]);
+
+export function navigationItemsForRole(role: UserRole) {
+  if (role !== "manager") return navigationItems;
+  return navigationItems.filter((item) => managerSections.has(item.id));
+}

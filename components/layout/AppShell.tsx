@@ -40,7 +40,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { RiskBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
-import { navigationItems } from "@/data/navigation";
+import { navigationItemsForRole } from "@/data/navigation";
 import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -257,13 +257,14 @@ function OverviewSection() {
 }
 
 function GreenhousesSection() {
-  const { greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
+  const { currentUser, greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
   const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
+  const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
 
   return (
     <section>
       <SectionHeader
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button>}
+        action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button> : undefined}
         title="Invernaderos"
         description="Inventario de casas, variedades, responsables y estado del cultivo."
       />
@@ -294,14 +295,16 @@ function GreenhousesSection() {
               label="Plantas"
               value={formatNumber(active.plants)}
             />
-            <Button
-              className="mt-5 w-full"
-              icon={<Edit3 className="h-4 w-4" />}
-              onClick={() => openModal("editGreenhouse")}
-              variant="secondary"
-            >
-              Editar datos
-            </Button>
+            {canManageGreenhouses ? (
+              <Button
+                className="mt-5 w-full"
+                icon={<Edit3 className="h-4 w-4" />}
+                onClick={() => openModal("editGreenhouse")}
+                variant="secondary"
+              >
+                Editar datos
+              </Button>
+            ) : null}
           </EditorialRail>
         ) : null}
       </div>
@@ -1381,6 +1384,10 @@ function SettingsSection() {
 
 function ActiveSection() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const canOpenSection = navigationItemsForRole(currentUser.role).some((item) => item.id === activeSection);
+
+  if (!canOpenSection) return <OverviewSection />;
 
   if (activeSection === "overview") return <OverviewSection />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
@@ -1397,7 +1404,8 @@ function ActiveSection() {
 
 export function AppShell() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
-  const activeLabel = navigationItems.find((item) => item.id === activeSection)?.label ?? "Overview";
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Overview";
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
