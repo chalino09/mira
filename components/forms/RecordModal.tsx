@@ -236,7 +236,7 @@ export function RecordModal() {
     variety: String(form.get("variety")),
     transplantDate: String(form.get("transplantDate")),
     plants: Number(form.get("plants")),
-    stage: String(form.get("stage")) as CropStage,
+    stage: "produccion" as CropStage,
     manager: currentUser.fullName,
     beds: Number(form.get("beds")),
     daysSinceTransplant: daysSince(String(form.get("transplantDate"))),
@@ -572,13 +572,6 @@ export function RecordModal() {
           <Field label="Camas">
             <TextInput name="beds" type="number" defaultValue={0} />
           </Field>
-          <Field label="Etapa">
-            <SelectInput name="stage" defaultValue="Producción">
-              {["Vegetativo", "Floración", "Cuajado", "Producción"].map((stage) => (
-                <option key={stage}>{stage}</option>
-              ))}
-            </SelectInput>
-          </Field>
         </FormShell>
       ) : null}
 
@@ -612,13 +605,6 @@ export function RecordModal() {
           </Field>
           <Field label="Camas">
             <TextInput name="beds" type="number" defaultValue={selectedGreenhouse.beds} />
-          </Field>
-          <Field label="Etapa">
-            <SelectInput name="stage" defaultValue={selectedGreenhouse.stage}>
-              {["Vegetativo", "Floración", "Cuajado", "Producción"].map((stage) => (
-                <option key={stage}>{stage}</option>
-              ))}
-            </SelectInput>
           </Field>
         </FormShell>
       ) : null}
