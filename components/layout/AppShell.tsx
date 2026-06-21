@@ -31,10 +31,9 @@ import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
-import { CalendarPreview } from "@/components/dashboard/CalendarPreview";
-import { CalendarContributionGrid } from "@/components/dashboard/CalendarContributionGrid";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
 import { OverviewHero } from "@/components/overview/OverviewHero";
+import { OperationsSection } from "@/components/operations/OperationsSection";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -168,10 +167,16 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string) => 
     throw new Error("missing_supabase_client");
   }
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({ status: "completada" })
-    .eq("id", taskId);
+  const { error: rpcError } = await supabase.rpc("update_operational_task_status", {
+    target_task_id: taskId,
+    next_status: "completada",
+    update_note: null
+  });
+
+  const missingOperationsRpc = ["42883", "PGRST202"].includes(rpcError?.code ?? "");
+  const { error } = missingOperationsRpc
+    ? await supabase.from("tasks").update({ status: "completada" }).eq("id", taskId)
+    : { error: rpcError };
 
   if (error) throw error;
   completeTask(taskId);
@@ -203,7 +208,9 @@ function OverviewSection() {
     greenhouseActivities,
     organization,
     currentUser,
-    completeTask
+    completeTask,
+    tasks,
+    setActiveSection
   } = useFilteredData();
   const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
@@ -239,6 +246,8 @@ function OverviewSection() {
             handleCompleteTask(taskId);
           }
         }}
+        onOpenOperations={() => setActiveSection("calendar")}
+        operationsTasks={tasks}
         organization={organization}
         pendingAlerts={pendingAlerts}
         tasks={greenhouseTasks}
@@ -295,74 +304,6 @@ function GreenhousesSection() {
             </Button>
           </EditorialRail>
         ) : null}
-      </div>
-    </section>
-  );
-}
-
-function CalendarSection() {
-  const { greenhouseTasks, openModal, completeTask } = useFilteredData();
-  const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
-  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
-
-  const handleCompleteTask = async (taskId: string) => {
-    setTaskNotice(null);
-    setSavingTaskId(taskId);
-    try {
-      await completeTaskRecord(taskId, completeTask);
-      setTaskNotice({ tone: "green", message: "Tarea marcada como completada." });
-    } catch (caught) {
-      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo completar la tarea.") });
-    } finally {
-      setSavingTaskId(null);
-    }
-  };
-
-  return (
-    <section>
-      <SectionHeader
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("task")} variant="secondary">Nueva tarea</Button>}
-        title="Calendario"
-        description="Riegos, fertilización, sanidad, labores culturales, cosecha y mantenimiento."
-      />
-      {taskNotice ? <InlineNotice tone={taskNotice.tone}>{taskNotice.message}</InlineNotice> : null}
-      <CalendarContributionGrid tasks={greenhouseTasks} />
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
-        <CalendarPreview tasks={greenhouseTasks} />
-        <div className="border-y border-app-border">
-          {greenhouseTasks.length ? (
-            greenhouseTasks.map((task) => (
-              <article key={task.id} className="border-t border-app-border py-4 first:border-t-0">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
-                      {formatDate(task.date)}
-                      {task.time ? ` · ${task.time}` : ""}
-                    </p>
-                    <h3 className="mt-2 text-lg font-medium tracking-normal text-app-text">{task.title}</h3>
-                    <p className="mt-1 text-sm text-app-muted">
-                      {task.type} · {task.responsible}
-                    </p>
-                  </div>
-                  <StatusBadge>{task.status}</StatusBadge>
-                </div>
-                {task.status === "Completada" ? null : (
-                  <Button
-                    className="mt-3 h-8 rounded-lg px-2 text-xs"
-                    disabled={savingTaskId === task.id}
-                    icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                    onClick={() => handleCompleteTask(task.id)}
-                    variant="ghost"
-                  >
-                    {savingTaskId === task.id ? "Guardando..." : "Completar"}
-                  </Button>
-                )}
-              </article>
-            ))
-          ) : (
-            <div className="py-10 text-sm text-app-muted">Sin tareas registradas.</div>
-          )}
-        </div>
       </div>
     </section>
   );
@@ -1443,7 +1384,7 @@ function ActiveSection() {
 
   if (activeSection === "overview") return <OverviewSection />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
-  if (activeSection === "calendar") return <CalendarSection />;
+  if (activeSection === "calendar") return <OperationsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
   if (activeSection === "nutrition") return <NutritionSection />;
   if (activeSection === "applications") return <ApplicationsSection />;

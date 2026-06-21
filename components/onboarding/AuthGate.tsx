@@ -69,6 +69,7 @@ function mapRiskLevel(level?: string | null): RiskLevel {
 function mapTaskType(type?: string | null): TaskType {
   const labels: Record<string, TaskType> = {
     riego: "Riego",
+    fertirriego: "Fertirriego",
     fertilizacion: "Fertilización",
     aplicacion_foliar: "Aplicación foliar",
     revision_plagas: "Revisión de plagas",
@@ -77,7 +78,8 @@ function mapTaskType(type?: string | null): TaskType {
     deshoje: "Deshoje",
     cosecha: "Cosecha",
     limpieza: "Limpieza",
-    mantenimiento: "Mantenimiento"
+    mantenimiento: "Mantenimiento",
+    otro: "Otra"
   };
 
   return labels[type ?? ""] ?? "Riego";
@@ -85,7 +87,9 @@ function mapTaskType(type?: string | null): TaskType {
 
 function mapTaskStatus(status?: string | null): Task["status"] {
   if (status === "en_progreso") return "En progreso";
+  if (status === "bloqueada") return "Bloqueada";
   if (status === "completada") return "Completada";
+  if (status === "cancelada") return "Cancelada";
   return "Pendiente";
 }
 

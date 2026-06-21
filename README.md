@@ -27,6 +27,7 @@ supabase/04_storage_assets.sql
 supabase/05_user_management.sql
 supabase/06_onboarding_improvements.sql
 supabase/07_greenhouse_coordinates.sql
+supabase/08_operational_planning.sql
 ```
 
 4. Levanta la app:

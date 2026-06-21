@@ -9,7 +9,7 @@ export function Topbar() {
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const setSelectedGreenhouseId = useGreenhouseStore((state) => state.setSelectedGreenhouseId);
-  const openModal = useGreenhouseStore((state) => state.openModal);
+  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
 
@@ -37,14 +37,16 @@ export function Topbar() {
 
         <div className="flex items-center justify-between gap-2.5">
           <span className="hidden text-xs capitalize text-app-muted md:inline">{todayLabel()}</span>
-          <Button
-            className="h-9 rounded-lg px-3 text-xs"
-            icon={<Plus className="h-3.5 w-3.5" />}
-            onClick={() => openModal("task")}
-            variant="secondary"
-          >
-            Nueva tarea
-          </Button>
+          {currentUser.role === "owner" || currentUser.role === "admin" ? (
+            <Button
+              className="h-9 rounded-lg px-3 text-xs"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setActiveSection("calendar")}
+              variant="secondary"
+            >
+              Planeación
+            </Button>
+          ) : null}
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-app-border bg-white text-xs font-semibold text-app-green">
             {initials}
           </div>

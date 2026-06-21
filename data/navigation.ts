@@ -16,7 +16,7 @@ import type { NavigationItem } from "@/types";
 export const navigationItems: NavigationItem[] = [
   { id: "overview", label: "Overview", icon: Home },
   { id: "greenhouses", label: "Invernaderos", icon: Sprout },
-  { id: "calendar", label: "Calendario", icon: CalendarDays },
+  { id: "calendar", label: "Operación", icon: CalendarDays },
   { id: "irrigation", label: "Riego", icon: Droplets },
   { id: "nutrition", label: "Nutrición", icon: Flower2 },
   { id: "applications", label: "Aplicaciones", icon: ActivitySquare },

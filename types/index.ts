@@ -17,6 +17,7 @@ export type CropStage = "Floración" | "Cuajado" | "Producción" | "Vegetativo";
 export type RiskLevel = "Baja" | "Media" | "Alta";
 export type TaskType =
   | "Riego"
+  | "Fertirriego"
   | "Fertilización"
   | "Aplicación foliar"
   | "Revisión de plagas"
@@ -25,7 +26,8 @@ export type TaskType =
   | "Deshoje"
   | "Cosecha"
   | "Limpieza"
-  | "Mantenimiento";
+  | "Mantenimiento"
+  | "Otra";
 
 export type NavigationItem = {
   id: SectionId;
@@ -75,7 +77,7 @@ export type Task = {
   title: string;
   date: string;
   time: string;
-  status: "Pendiente" | "En progreso" | "Completada";
+  status: "Pendiente" | "En progreso" | "Bloqueada" | "Completada" | "Cancelada";
   responsible: string;
 };
 
