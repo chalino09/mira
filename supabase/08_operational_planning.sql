@@ -543,19 +543,7 @@ begin
     raise exception 'not_allowed';
   end if;
 
-  if not public.can_manage_company(target_company_id)
-    and public.is_task_assignee(target_task_id)
-    and not exists (
-      select 1
-      from public.task_assignments assignment
-      where assignment.task_id = target_task_id
-        and assignment.user_id = auth.uid()
-        and assignment.acknowledged_at is not null
-    ) then
-    raise exception 'task_not_acknowledged';
-  end if;
-
-  if next_status not in ('en_progreso', 'bloqueada', 'completada', 'cancelada') then
+  if next_status not in ('bloqueada', 'completada', 'cancelada') then
     raise exception 'invalid_task_status';
   end if;
 
@@ -566,12 +554,11 @@ begin
   update public.tasks
   set status = next_status::public.task_status,
       blocked_reason = case when next_status = 'bloqueada' then nullif(trim(update_note), '') else null end,
-      started_at = case when next_status = 'en_progreso' then coalesce(started_at, now()) else started_at end,
+      started_at = null,
       completed_at = case when next_status = 'completada' then now() else null end
   where id = target_task_id;
 
   update_kind := case next_status
-    when 'en_progreso' then 'started'::public.task_update_type
     when 'bloqueada' then 'blocked'::public.task_update_type
     when 'completada' then 'completed'::public.task_update_type
     else 'cancelled'::public.task_update_type

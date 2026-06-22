@@ -18,7 +18,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
                 {task.time} · {task.responsible}
               </p>
             </div>
-            <StatusBadge tone={task.status === "Completada" ? "green" : task.status === "En progreso" ? "amber" : "neutral"}>
+            <StatusBadge tone={task.status === "Completada" ? "green" : task.status === "Bloqueada" ? "red" : "neutral"}>
               {task.status}
             </StatusBadge>
           </div>

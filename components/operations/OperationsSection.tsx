@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Ban,
   CalendarRange,
-  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +11,6 @@ import {
   Edit3,
   MessageCircle,
   Minus,
-  Play,
   Plus,
   Send,
   Users
@@ -61,7 +59,6 @@ type AssignmentRow = {
   id: string;
   task_id: string;
   user_id: string;
-  acknowledged_at: string | null;
 };
 
 type MaterialRow = {
@@ -120,7 +117,7 @@ const activityLabels = Object.fromEntries(activityTypes.map((item) => [item.valu
 
 const statusLabels: Record<OperationStatus, string> = {
   pendiente: "Pendiente",
-  en_progreso: "En progreso",
+  en_progreso: "Pendiente",
   bloqueada: "Bloqueada",
   completada: "Completada",
   cancelada: "Cancelada"
@@ -128,7 +125,7 @@ const statusLabels: Record<OperationStatus, string> = {
 
 const statusTones: Record<OperationStatus, "neutral" | "green" | "amber" | "red"> = {
   pendiente: "neutral",
-  en_progreso: "amber",
+  en_progreso: "neutral",
   bloqueada: "red",
   completada: "green",
   cancelada: "neutral"
@@ -476,7 +473,7 @@ export function OperationsSection() {
 
     const [assignmentsResponse, materialsResponse, profilesResponse] = await Promise.all([
       taskIds.length
-        ? supabase.from("task_assignments").select("id, task_id, user_id, acknowledged_at").in("task_id", taskIds)
+        ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
         ? supabase.from("task_materials").select("id, task_id, product_name, dose, unit, mixing_order, notes").in("task_id", taskIds)
@@ -585,24 +582,22 @@ export function OperationsSection() {
     await loadOperations();
   };
 
-  const runTaskAction = async (task: OperationTaskRow, action: "acknowledge" | "start" | "complete") => {
+  const completeTask = async (task: OperationTaskRow) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
     setNotice(null);
-    const { error } = action === "acknowledge"
-      ? await supabase.rpc("acknowledge_operational_task", { target_task_id: task.id })
-      : await supabase.rpc("update_operational_task_status", {
-          target_task_id: task.id,
-          next_status: action === "start" ? "en_progreso" : "completada",
-          update_note: null
-        });
+    const { error } = await supabase.rpc("update_operational_task_status", {
+      target_task_id: task.id,
+      next_status: "completada",
+      update_note: null
+    });
 
     if (error) {
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: action === "acknowledge" ? "Actividad confirmada." : "Estado actualizado." });
+    setNotice({ tone: "green", message: "Actividad completada." });
     await loadOperations();
   };
 
@@ -757,8 +752,6 @@ export function OperationsSection() {
                       {dayTasks.map((task) => {
                         const taskAssignments = assignmentsForTask(task.id);
                         const taskMaterials = materialsForTask(task.id);
-                        const ownAssignment = taskAssignments.find((item) => item.user_id === currentUser.id);
-                        const managerReady = canPlan || !ownAssignment || Boolean(ownAssignment.acknowledged_at);
                         return (
                           <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
                             <div className="grid min-w-0 gap-2">
@@ -805,16 +798,10 @@ export function OperationsSection() {
                                   variant="ghost"
                                 />
                               ) : null}
-                              {!canPlan && ownAssignment && !ownAssignment.acknowledged_at ? (
-                                <Button aria-label="Confirmar actividad" className="h-8 w-8 px-0" icon={<Check className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "acknowledge")} title="Confirmar actividad" variant="ghost" />
-                              ) : null}
-                              {task.status === "pendiente" || task.status === "bloqueada" ? (
-                                <Button aria-label="Iniciar actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<Play className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "start")} title="Iniciar actividad" variant="ghost" />
-                              ) : null}
                               {task.status !== "completada" && task.status !== "cancelada" ? (
                                 <>
-                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
-                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "complete")} title="Completar actividad" variant="ghost" />
+                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
+                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} title="Completar actividad" variant="ghost" />
                                 </>
                               ) : null}
                             </div>

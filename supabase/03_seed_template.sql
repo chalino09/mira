@@ -84,7 +84,7 @@ begin
   )
   values
     (company_id, greenhouse_id, 'riego', 'Riego sector norte', '2026-06-18', '08:30', 'pendiente', manager_user_id, owner_user_id, null),
-    (company_id, greenhouse_id, 'revision_plagas', 'Monitoreo de mosquita blanca', '2026-06-18', '10:00', 'en_progreso', manager_user_id, owner_user_id, null),
+    (company_id, greenhouse_id, 'revision_plagas', 'Monitoreo de mosquita blanca', '2026-06-18', '10:00', 'pendiente', manager_user_id, owner_user_id, null),
     (company_id, greenhouse_id, 'cosecha', 'Corte primera calidad', '2026-06-18', '12:30', 'pendiente', manager_user_id, owner_user_id, null);
 
   insert into public.irrigation_records (

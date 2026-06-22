@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const weeks = 18;
 const daysPerWeek = 7;
 
-type ActivityTone = 0 | 1 | 2 | 3 | 4 | "progress" | "blocked";
+type ActivityTone = 0 | 1 | 2 | 3 | 4 | "blocked";
 
 const toneClass: Record<ActivityTone, string> = {
   0: "bg-white",
@@ -13,7 +13,6 @@ const toneClass: Record<ActivityTone, string> = {
   2: "bg-[#CFE3D0]",
   3: "bg-[#8FAF93]",
   4: "bg-app-green",
-  progress: "bg-app-amber",
   blocked: "bg-app-red"
 };
 
@@ -21,9 +20,8 @@ function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function activityTone(taskCount: number, hasInProgressTask: boolean, hasBlockedTask: boolean): ActivityTone {
+function activityTone(taskCount: number, hasBlockedTask: boolean): ActivityTone {
   if (hasBlockedTask) return "blocked";
-  if (hasInProgressTask) return "progress";
   if (taskCount >= 4) return 4;
   if (taskCount === 3) return 3;
   if (taskCount === 2) return 2;
@@ -42,9 +40,6 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
     acc[task.date] = (acc[task.date] ?? 0) + 1;
     return acc;
   }, {});
-  const inProgressDates = new Set(
-    visibleTasks.filter((task) => task.status === "En progreso").map((task) => task.date)
-  );
   const blockedDates = new Set(
     visibleTasks.filter((task) => task.status === "Bloqueada").map((task) => task.date)
   );
@@ -61,7 +56,7 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
       iso,
       day: date.getDate(),
       taskCount,
-      tone: activityTone(taskCount, inProgressDates.has(iso), blockedDates.has(iso))
+      tone: activityTone(taskCount, blockedDates.has(iso))
     };
   });
   const monthLabels = Array.from({ length: weeks }, (_, weekIndex) => {
@@ -150,7 +145,6 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
           ))}
           <span>Más</span>
         </div>
-        <span className="flex items-center gap-2"><span className="h-3 w-3 border border-app-border bg-app-amber" /> En curso</span>
         <span className="flex items-center gap-2"><span className="h-3 w-3 border border-app-border bg-app-red" /> Bloqueada</span>
         <span className="flex items-center gap-2"><span className="h-3 w-3 border border-app-text bg-white" /> Hoy</span>
       </div>

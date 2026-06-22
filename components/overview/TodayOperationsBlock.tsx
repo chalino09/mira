@@ -13,7 +13,6 @@ function localDateKey(date = new Date()) {
 function statusTone(status: Task["status"]): "neutral" | "green" | "amber" | "red" {
   if (status === "Completada") return "green";
   if (status === "Bloqueada") return "red";
-  if (status === "En progreso") return "amber";
   return "neutral";
 }
 

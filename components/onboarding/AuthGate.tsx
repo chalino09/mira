@@ -86,7 +86,6 @@ function mapTaskType(type?: string | null): TaskType {
 }
 
 function mapTaskStatus(status?: string | null): Task["status"] {
-  if (status === "en_progreso") return "En progreso";
   if (status === "bloqueada") return "Bloqueada";
   if (status === "completada") return "Completada";
   if (status === "cancelada") return "Cancelada";

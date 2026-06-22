@@ -79,7 +79,7 @@ export type Task = {
   title: string;
   date: string;
   time: string;
-  status: "Pendiente" | "En progreso" | "Bloqueada" | "Completada" | "Cancelada";
+  status: "Pendiente" | "Bloqueada" | "Completada" | "Cancelada";
   responsible: string;
 };
 

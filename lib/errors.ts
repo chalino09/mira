@@ -33,7 +33,6 @@ const knownMessages: Record<string, string> = {
   assignee_required: "Selecciona al menos un encargado.",
   invalid_task_status: "Ese cambio de estado no es válido.",
   blocked_reason_required: "Escribe el motivo del bloqueo.",
-  task_not_acknowledged: "Confirma la actividad antes de cambiar su estado.",
   surface_m2_invalid: "La superficie no puede ser negativa.",
   plants_count_invalid: "El número de plantas no puede ser negativo.",
   beds_count_invalid: "El número de camas no puede ser negativo.",
