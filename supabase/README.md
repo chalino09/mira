@@ -13,7 +13,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 9. `09_manager_experience.sql`
 10. `10_simplified_task_flow.sql`
 11. `11_telegram_connection.sql`
-12. `03_seed_template.sql` solo si quieres datos demo manuales.
+12. `12_operation_technical_records.sql`
+13. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -40,6 +41,8 @@ Para pedir el nombre real al primer acceso y limitar información administrativa
 Para usar el flujo simple pendiente, completada o bloqueada sin registrar inicio manual, ejecuta `10_simplified_task_flow.sql`.
 
 Para permitir que cada manager vincule su chat de Telegram, ejecuta `11_telegram_connection.sql`.
+
+Para guardar la planeación técnica dinámica y registrar automáticamente aplicaciones, riegos, nutriciones y cosechas al completarlas, sin duplicarlas, ejecuta `12_operation_technical_records.sql`.
 
 ## Conectar Telegram
 

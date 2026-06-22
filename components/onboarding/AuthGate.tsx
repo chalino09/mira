@@ -675,7 +675,7 @@ export function AuthGate() {
       date: record.occurred_at,
       durationMin: record.duration_min ?? 0,
       liters: Number(record.estimated_liters ?? 0),
-      sector: "",
+      sector: record.sector ?? "",
       ph: record.ph === null ? null : Number(record.ph),
       ec: record.ec === null ? null : Number(record.ec),
       notes: record.notes ?? "",
@@ -698,6 +698,7 @@ export function AuthGate() {
 
     const applicationRecords: ApplicationRecord[] = (applicationRows ?? []).map((record: any) => ({
       id: record.id,
+      sourceTaskId: record.source_task_id ?? undefined,
       greenhouseId: record.greenhouse_id,
       date: record.occurred_at,
       category: mapApplicationCategory(record.category),

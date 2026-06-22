@@ -4,6 +4,7 @@ export type SectionId =
   | "overview"
   | "greenhouses"
   | "calendar"
+  | "records"
   | "irrigation"
   | "nutrition"
   | "applications"
@@ -112,6 +113,7 @@ export type NutritionRecord = {
 
 export type ApplicationRecord = {
   id: string;
+  sourceTaskId?: string;
   greenhouseId: string;
   date: string;
   category:

@@ -45,6 +45,7 @@ type AppState = {
   updateGreenhouse: (greenhouse: Greenhouse) => void;
   addNutrition: (record: Omit<NutritionRecord, "id">) => void;
   addApplication: (record: Omit<ApplicationRecord, "id">) => void;
+  addApplicationRecords: (records: Omit<ApplicationRecord, "id">[]) => void;
   addPest: (record: Omit<PestAlert, "id">) => void;
   addHarvest: (record: Omit<HarvestRecord, "id">) => void;
   addCost: (record: Omit<CostRecord, "id">) => void;
@@ -183,6 +184,25 @@ export const useGreenhouseStore = create<AppState>((set) => ({
         ...state.activities
       ],
       modal: null
+    })),
+  addApplicationRecords: (records) =>
+    set((state) => ({
+      applicationRecords: [
+        ...records.map((record) => ({ ...record, id: makeId("app") })),
+        ...state.applicationRecords
+      ],
+      activities: records.length
+        ? [
+            {
+              id: makeId("act"),
+              greenhouseId: records[0].greenhouseId,
+              title: "Aplicación completada",
+              detail: records.map((record) => record.product).join(", "),
+              time: "Ahora"
+            },
+            ...state.activities
+          ]
+        : state.activities
     })),
   addPest: (record) =>
     set((state) => ({

@@ -313,7 +313,7 @@ function GreenhousesSection() {
   );
 }
 
-function IrrigationSection() {
+function IrrigationSection({ embedded = false }: { embedded?: boolean }) {
   const { greenhouseIrrigation, openModal } = useFilteredData();
   const totalLiters = greenhouseIrrigation.reduce((sum, record) => sum + record.liters, 0);
   const averageDuration = greenhouseIrrigation.length
@@ -335,11 +335,13 @@ function IrrigationSection() {
 
   return (
     <section>
-      <SectionHeader
-        action={<Button icon={<Droplets className="h-4 w-4" />} onClick={() => openModal("irrigation")} variant="secondary">Nuevo riego</Button>}
-        title="Riego"
-        description="Registro de duración, litros, válvulas y mediciones opcionales de pH y CE."
-      />
+      {!embedded ? (
+        <SectionHeader
+          action={<Button icon={<Droplets className="h-4 w-4" />} onClick={() => openModal("irrigation")} variant="secondary">Nuevo riego</Button>}
+          title="Riego"
+          description="Registro de duración, litros, válvulas y mediciones opcionales de pH y CE."
+        />
+      ) : null}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <MetricCard icon={Droplets} label="Litros registrados" value={`${formatNumber(totalLiters)} L`} detail={`${greenhouseIrrigation.length} registros`} />
         <MetricCard icon={Clock3} label="Duración media" value={`${averageDuration} min`} detail="Según registros guardados" />
@@ -364,7 +366,7 @@ function IrrigationSection() {
   );
 }
 
-function NutritionSection() {
+function NutritionSection({ embedded = false }: { embedded?: boolean }) {
   const { greenhouseNutrition, openModal } = useFilteredData();
   const latestNutrition = greenhouseNutrition[0];
   const averagePh = greenhouseNutrition.length
@@ -373,11 +375,13 @@ function NutritionSection() {
 
   return (
     <section>
-      <SectionHeader
-        action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("nutrition")} variant="secondary">Nueva nutrición</Button>}
-        title="Nutrición"
-        description="Fertirriego, foliares, drench, objetivos nutricionales y condiciones de solución."
-      />
+      {!embedded ? (
+        <SectionHeader
+          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("nutrition")} variant="secondary">Nueva nutrición</Button>}
+          title="Nutrición"
+          description="Fertirriego, foliares, drench, objetivos nutricionales y condiciones de solución."
+        />
+      ) : null}
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
         <div className="grid gap-3">
           <MetricCard icon={Leaf} label="Último producto" value={latestNutrition?.product ?? "Sin registros"} detail={latestNutrition?.dose ?? "Captura una nutrición para ver datos"} />
@@ -400,16 +404,18 @@ function NutritionSection() {
   );
 }
 
-function ApplicationsSection() {
+function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
   const { greenhouseApplications, openModal } = useFilteredData();
 
   return (
     <section>
-      <SectionHeader
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("application")} variant="secondary">Nueva aplicación</Button>}
-        title="Aplicaciones"
-        description="Bioestimulantes, fungicidas, insecticidas, fertilizantes, microorganismos y correctores."
-      />
+      {!embedded ? (
+        <SectionHeader
+          action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("application")} variant="secondary">Nueva aplicación</Button>}
+          title="Aplicaciones"
+          description="Bioestimulantes, fungicidas, insecticidas, fertilizantes, microorganismos y correctores."
+        />
+      ) : null}
       <DataTable<ApplicationRecord>
         columns={[
           { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
@@ -477,7 +483,7 @@ function PestsSection() {
   );
 }
 
-function HarvestSection() {
+function HarvestSection({ embedded = false }: { embedded?: boolean }) {
   const { greenhouseHarvest, openModal } = useFilteredData();
   const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
   const totalFirstQuality = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality, 0);
@@ -495,11 +501,13 @@ function HarvestSection() {
 
   return (
     <section>
-      <SectionHeader
-        action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Nueva cosecha</Button>}
-        title="Cosecha"
-        description="Kilogramos, calidad, precio estimado, destino y rendimiento acumulado."
-      />
+      {!embedded ? (
+        <SectionHeader
+          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar no programada</Button>}
+          title="Cosecha"
+          description="Resultados de cosecha: kilogramos, calidad, precio y destino. Lo programado se confirma desde Operación."
+        />
+      ) : null}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <MetricCard icon={Leaf} label="Kg acumulados" value={`${formatNumber(totalKg)} kg`} detail="Registros cargados" />
         <MetricCard icon={CheckCircle2} label="Primera calidad" value={`${qualityPercent}%`} detail="Según registros guardados" />
@@ -520,6 +528,58 @@ function HarvestSection() {
           data={greenhouseHarvest}
         />
       </div>
+    </section>
+  );
+}
+
+type TechnicalRecordTab = "applications" | "nutrition" | "irrigation";
+
+const technicalRecordTabs: Array<{ id: TechnicalRecordTab; label: string }> = [
+  { id: "applications", label: "Aplicaciones" },
+  { id: "nutrition", label: "Nutrición" },
+  { id: "irrigation", label: "Riegos" }
+];
+
+function TechnicalRecordsSection() {
+  const [activeRecord, setActiveRecord] = useState<TechnicalRecordTab>("applications");
+  const openModal = useGreenhouseStore((state) => state.openModal);
+  const manualRecordCopy: Record<TechnicalRecordTab, { label: string; modal: "application" | "nutrition" | "irrigation" | "harvest" }> = {
+    applications: { label: "Registrar no programada", modal: "application" },
+    nutrition: { label: "Registrar no programada", modal: "nutrition" },
+    irrigation: { label: "Registrar no programado", modal: "irrigation" }
+  };
+  const manualRecord = manualRecordCopy[activeRecord];
+
+  return (
+    <section>
+      <SectionHeader
+        action={(
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal(manualRecord.modal)} variant="secondary">
+            {manualRecord.label}
+          </Button>
+        )}
+        title="Registros técnicos"
+        description="Consulta lo que ya fue realizado. Las nuevas actividades se programan y se completan desde Operación."
+      />
+      <div className="mb-7 border-y border-app-border py-3">
+        <div className="flex flex-wrap gap-2">
+          {technicalRecordTabs.map((tab) => (
+            <Button
+              key={tab.id}
+              onClick={() => setActiveRecord(tab.id)}
+              variant={activeRecord === tab.id ? "primary" : "ghost"}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs leading-5 text-app-muted">
+          Lo programado se guarda aquí al completarse en Operación. Usa la captura manual únicamente para trabajos que no se programaron a tiempo.
+        </p>
+      </div>
+      {activeRecord === "applications" ? <ApplicationsSection embedded /> : null}
+      {activeRecord === "nutrition" ? <NutritionSection embedded /> : null}
+      {activeRecord === "irrigation" ? <IrrigationSection embedded /> : null}
     </section>
   );
 }
@@ -1290,17 +1350,7 @@ function SettingsSection() {
 
       {activeSetting === "catalog" ? (
         <SettingsPanel
-          action={
-            <div className="flex flex-wrap gap-2">
-              <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("application")} variant="ghost">
-                Aplicación
-              </Button>
-              <Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("nutrition")} variant="ghost">
-                Nutrición
-              </Button>
-            </div>
-          }
-          description="Base inicial de insumos reutilizable para aplicaciones, nutrición y trazabilidad."
+          description="Productos observados en aplicaciones y nutrición. La captura operativa comienza desde Operación."
           icon={Package}
           kicker="Catálogo"
           title="Catálogo de productos"
@@ -1393,6 +1443,7 @@ function ActiveSection() {
   if (activeSection === "overview") return <OverviewSection />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
   if (activeSection === "calendar") return <OperationsSection />;
+  if (activeSection === "records") return <TechnicalRecordsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
   if (activeSection === "nutrition") return <NutritionSection />;
   if (activeSection === "applications") return <ApplicationsSection />;
@@ -1407,7 +1458,7 @@ export function AppShell() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const [telegramOpen, setTelegramOpen] = useState(false);
-  const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Overview";
+  const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
