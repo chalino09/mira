@@ -2,7 +2,7 @@
 
 import { ChevronDown, LogOut } from "lucide-react";
 import { MiraWordmark, PortalMark } from "@/components/brand/MiraBrand";
-import { navigationItems } from "@/data/navigation";
+import { navigationItemsForRole } from "@/data/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -46,6 +46,7 @@ export function Sidebar() {
   const organization = useGreenhouseStore((state) => state.organization);
   const initials = getInitials(currentUser.fullName);
   const roleLabel = currentUser.role === "owner" ? "Owner" : currentUser.role === "admin" ? "Admin" : "Manager";
+  const navigationItems = navigationItemsForRole(currentUser.role);
 
   const handleSignOut = async () => {
     await getSupabaseBrowserClient()?.auth.signOut();

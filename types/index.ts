@@ -17,6 +17,7 @@ export type CropStage = "Floración" | "Cuajado" | "Producción" | "Vegetativo";
 export type RiskLevel = "Baja" | "Media" | "Alta";
 export type TaskType =
   | "Riego"
+  | "Fertirriego"
   | "Fertilización"
   | "Aplicación foliar"
   | "Revisión de plagas"
@@ -25,13 +26,16 @@ export type TaskType =
   | "Deshoje"
   | "Cosecha"
   | "Limpieza"
-  | "Mantenimiento";
+  | "Mantenimiento"
+  | "Otra";
 
 export type NavigationItem = {
   id: SectionId;
   label: string;
   icon: LucideIcon;
 };
+
+export type UserRole = "owner" | "admin" | "manager";
 
 export type Organization = {
   id: string;
@@ -44,7 +48,7 @@ export type CurrentUser = {
   id: string;
   fullName: string;
   email: string;
-  role: "owner" | "admin" | "manager";
+  role: UserRole;
 };
 
 export type Greenhouse = {
@@ -75,7 +79,7 @@ export type Task = {
   title: string;
   date: string;
   time: string;
-  status: "Pendiente" | "En progreso" | "Completada";
+  status: "Pendiente" | "Bloqueada" | "Completada" | "Cancelada";
   responsible: string;
 };
 

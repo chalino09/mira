@@ -11,7 +11,7 @@ type AttentionBlockProps = {
 
 export function AttentionBlock({ alerts, tasks, onCompleteTask }: AttentionBlockProps) {
   const alert = alerts.find((item) => item.severity !== "Baja") ?? alerts[0];
-  const task = tasks.find((item) => item.status !== "Completada");
+  const task = tasks.find((item) => item.status !== "Completada" && item.status !== "Cancelada");
 
   return (
     <section className="border-t border-app-border pt-5">

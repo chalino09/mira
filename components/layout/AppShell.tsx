@@ -31,17 +31,16 @@ import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
-import { CalendarPreview } from "@/components/dashboard/CalendarPreview";
-import { CalendarContributionGrid } from "@/components/dashboard/CalendarContributionGrid";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
 import { OverviewHero } from "@/components/overview/OverviewHero";
+import { OperationsSection } from "@/components/operations/OperationsSection";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RiskBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
-import { navigationItems } from "@/data/navigation";
+import { navigationItemsForRole } from "@/data/navigation";
 import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -168,10 +167,16 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string) => 
     throw new Error("missing_supabase_client");
   }
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({ status: "completada" })
-    .eq("id", taskId);
+  const { error: rpcError } = await supabase.rpc("update_operational_task_status", {
+    target_task_id: taskId,
+    next_status: "completada",
+    update_note: null
+  });
+
+  const missingOperationsRpc = ["42883", "PGRST202"].includes(rpcError?.code ?? "");
+  const { error } = missingOperationsRpc
+    ? await supabase.from("tasks").update({ status: "completada" }).eq("id", taskId)
+    : { error: rpcError };
 
   if (error) throw error;
   completeTask(taskId);
@@ -203,7 +208,9 @@ function OverviewSection() {
     greenhouseActivities,
     organization,
     currentUser,
-    completeTask
+    completeTask,
+    tasks,
+    setActiveSection
   } = useFilteredData();
   const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
@@ -239,6 +246,8 @@ function OverviewSection() {
             handleCompleteTask(taskId);
           }
         }}
+        onOpenOperations={() => setActiveSection("calendar")}
+        operationsTasks={tasks}
         organization={organization}
         pendingAlerts={pendingAlerts}
         tasks={greenhouseTasks}
@@ -248,13 +257,14 @@ function OverviewSection() {
 }
 
 function GreenhousesSection() {
-  const { greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
+  const { currentUser, greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
   const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
+  const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
 
   return (
     <section>
       <SectionHeader
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button>}
+        action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button> : undefined}
         title="Invernaderos"
         description="Inventario de casas, variedades, responsables y estado del cultivo."
       />
@@ -285,84 +295,18 @@ function GreenhousesSection() {
               label="Plantas"
               value={formatNumber(active.plants)}
             />
-            <Button
-              className="mt-5 w-full"
-              icon={<Edit3 className="h-4 w-4" />}
-              onClick={() => openModal("editGreenhouse")}
-              variant="secondary"
-            >
-              Editar datos
-            </Button>
+            {canManageGreenhouses ? (
+              <Button
+                className="mt-5 w-full"
+                icon={<Edit3 className="h-4 w-4" />}
+                onClick={() => openModal("editGreenhouse")}
+                variant="secondary"
+              >
+                Editar datos
+              </Button>
+            ) : null}
           </EditorialRail>
         ) : null}
-      </div>
-    </section>
-  );
-}
-
-function CalendarSection() {
-  const { greenhouseTasks, openModal, completeTask } = useFilteredData();
-  const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
-  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
-
-  const handleCompleteTask = async (taskId: string) => {
-    setTaskNotice(null);
-    setSavingTaskId(taskId);
-    try {
-      await completeTaskRecord(taskId, completeTask);
-      setTaskNotice({ tone: "green", message: "Tarea marcada como completada." });
-    } catch (caught) {
-      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo completar la tarea.") });
-    } finally {
-      setSavingTaskId(null);
-    }
-  };
-
-  return (
-    <section>
-      <SectionHeader
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("task")} variant="secondary">Nueva tarea</Button>}
-        title="Calendario"
-        description="Riegos, fertilización, sanidad, labores culturales, cosecha y mantenimiento."
-      />
-      {taskNotice ? <InlineNotice tone={taskNotice.tone}>{taskNotice.message}</InlineNotice> : null}
-      <CalendarContributionGrid tasks={greenhouseTasks} />
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
-        <CalendarPreview tasks={greenhouseTasks} />
-        <div className="border-y border-app-border">
-          {greenhouseTasks.length ? (
-            greenhouseTasks.map((task) => (
-              <article key={task.id} className="border-t border-app-border py-4 first:border-t-0">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
-                      {formatDate(task.date)}
-                      {task.time ? ` · ${task.time}` : ""}
-                    </p>
-                    <h3 className="mt-2 text-lg font-medium tracking-normal text-app-text">{task.title}</h3>
-                    <p className="mt-1 text-sm text-app-muted">
-                      {task.type} · {task.responsible}
-                    </p>
-                  </div>
-                  <StatusBadge>{task.status}</StatusBadge>
-                </div>
-                {task.status === "Completada" ? null : (
-                  <Button
-                    className="mt-3 h-8 rounded-lg px-2 text-xs"
-                    disabled={savingTaskId === task.id}
-                    icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                    onClick={() => handleCompleteTask(task.id)}
-                    variant="ghost"
-                  >
-                    {savingTaskId === task.id ? "Guardando..." : "Completar"}
-                  </Button>
-                )}
-              </article>
-            ))
-          ) : (
-            <div className="py-10 text-sm text-app-muted">Sin tareas registradas.</div>
-          )}
-        </div>
       </div>
     </section>
   );
@@ -1440,10 +1384,14 @@ function SettingsSection() {
 
 function ActiveSection() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const canOpenSection = navigationItemsForRole(currentUser.role).some((item) => item.id === activeSection);
+
+  if (!canOpenSection) return <OverviewSection />;
 
   if (activeSection === "overview") return <OverviewSection />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
-  if (activeSection === "calendar") return <CalendarSection />;
+  if (activeSection === "calendar") return <OperationsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
   if (activeSection === "nutrition") return <NutritionSection />;
   if (activeSection === "applications") return <ApplicationsSection />;
@@ -1456,7 +1404,8 @@ function ActiveSection() {
 
 export function AppShell() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
-  const activeLabel = navigationItems.find((item) => item.id === activeSection)?.label ?? "Overview";
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Overview";
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">

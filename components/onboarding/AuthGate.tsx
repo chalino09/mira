@@ -28,7 +28,7 @@ import type {
   TaskType
 } from "@/types";
 
-type AuthState = "loading" | "missing-env" | "signed-out" | "onboarding" | "ready";
+type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready";
 
 type OnboardingForm = {
   fullName: string;
@@ -69,6 +69,7 @@ function mapRiskLevel(level?: string | null): RiskLevel {
 function mapTaskType(type?: string | null): TaskType {
   const labels: Record<string, TaskType> = {
     riego: "Riego",
+    fertirriego: "Fertirriego",
     fertilizacion: "Fertilización",
     aplicacion_foliar: "Aplicación foliar",
     revision_plagas: "Revisión de plagas",
@@ -77,15 +78,17 @@ function mapTaskType(type?: string | null): TaskType {
     deshoje: "Deshoje",
     cosecha: "Cosecha",
     limpieza: "Limpieza",
-    mantenimiento: "Mantenimiento"
+    mantenimiento: "Mantenimiento",
+    otro: "Otra"
   };
 
   return labels[type ?? ""] ?? "Riego";
 }
 
 function mapTaskStatus(status?: string | null): Task["status"] {
-  if (status === "en_progreso") return "En progreso";
+  if (status === "bloqueada") return "Bloqueada";
   if (status === "completada") return "Completada";
+  if (status === "cancelada") return "Cancelada";
   return "Pendiente";
 }
 
@@ -291,6 +294,81 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
         <Button className="mt-2 h-11 rounded-lg" disabled={loading} type="submit" variant="primary">
           {loading ? "Entrando..." : "Entrar"}
         </Button>
+        </div>
+      </form>
+    </AuthCard>
+  );
+}
+
+function CompleteProfileScreen({
+  session,
+  onDone
+}: {
+  session: Session;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const fullName = String(new FormData(event.currentTarget).get("fullName") ?? "").trim();
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase) {
+      setLoading(false);
+      setError("No se pudo conectar con Supabase.");
+      return;
+    }
+
+    if (fullName.length < 2) {
+      setLoading(false);
+      setError("Escribe tu nombre completo.");
+      return;
+    }
+
+    const { error: profileError } = await supabase.from("profiles").upsert({
+      id: session.user.id,
+      full_name: fullName,
+      email: session.user.email ?? null
+    });
+
+    setLoading(false);
+    if (profileError) {
+      setError(appErrorMessage(profileError, "No se pudo guardar tu nombre."));
+      return;
+    }
+
+    onDone();
+  };
+
+  return (
+    <AuthCard kicker="Perfil" title="Antes de comenzar, dinos cómo te llamas.">
+      <form className="px-4" onSubmit={handleSubmit}>
+        <div className="mb-8 border-b border-app-border pb-6">
+          <h2 className="text-3xl font-light tracking-normal text-app-text">Completa tu perfil</h2>
+          <p className="mt-3 text-sm leading-6 text-app-muted">
+            Este nombre aparecerá en actividades, responsables y reportes de operación.
+          </p>
+        </div>
+        <div className="grid gap-5">
+          <Field label="Nombre completo">
+            <TextInput
+              autoComplete="name"
+              className="rounded-lg bg-app-background"
+              maxLength={120}
+              name="fullName"
+              placeholder="Nombre y apellidos"
+              required
+            />
+          </Field>
+          {error ? <p className="text-sm text-[#8A2E2E]">{error}</p> : null}
+          <Button className="mt-2 h-11 rounded-lg" disabled={loading} type="submit" variant="primary">
+            {loading ? "Guardando..." : "Continuar"}
+          </Button>
         </div>
       </form>
     </AuthCard>
@@ -545,9 +623,16 @@ export function AuthGate() {
       logoUrl: company?.logo_url ?? undefined
     };
 
+    const profileName = String(profile?.full_name ?? "").trim();
+    const accountEmail = String(nextSession.user.email ?? "").trim();
+    if (!profileName || profileName.toLowerCase() === accountEmail.toLowerCase()) {
+      setState("profile");
+      return;
+    }
+
     const currentUser: CurrentUser = {
       id: nextSession.user.id,
-      fullName: profile?.full_name ?? nextSession.user.email?.split("@")[0] ?? "Usuario",
+      fullName: profileName,
       email: profile?.email ?? nextSession.user.email ?? "",
       role: membership.role
     };
@@ -718,6 +803,10 @@ export function AuthGate() {
 
   if (state === "signed-out") {
     return <SignInScreen onSignedIn={refresh} />;
+  }
+
+  if (state === "profile" && session) {
+    return <CompleteProfileScreen session={session} onDone={refresh} />;
   }
 
   if (state === "onboarding" && session) {

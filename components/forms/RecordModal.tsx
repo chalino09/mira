@@ -38,6 +38,7 @@ function optionalNumber(value: FormDataEntryValue | null) {
 
 const taskTypeToDb: Record<TaskType, string> = {
   Riego: "riego",
+  Fertirriego: "fertirriego",
   Fertilización: "fertilizacion",
   "Aplicación foliar": "aplicacion_foliar",
   "Revisión de plagas": "revision_plagas",
@@ -46,7 +47,8 @@ const taskTypeToDb: Record<TaskType, string> = {
   Deshoje: "deshoje",
   Cosecha: "cosecha",
   Limpieza: "limpieza",
-  Mantenimiento: "mantenimiento"
+  Mantenimiento: "mantenimiento",
+  Otra: "otro"
 };
 
 const cropStageToDb: Record<CropStage, string> = {
@@ -236,7 +238,7 @@ export function RecordModal() {
     variety: String(form.get("variety")),
     transplantDate: String(form.get("transplantDate")),
     plants: Number(form.get("plants")),
-    stage: "produccion" as CropStage,
+    stage: String(form.get("stage")) as CropStage,
     manager: currentUser.fullName,
     beds: Number(form.get("beds")),
     daysSinceTransplant: daysSince(String(form.get("transplantDate"))),

@@ -11,12 +11,12 @@ import {
   Sprout,
   WalletCards
 } from "lucide-react";
-import type { NavigationItem } from "@/types";
+import type { NavigationItem, UserRole } from "@/types";
 
 export const navigationItems: NavigationItem[] = [
   { id: "overview", label: "Overview", icon: Home },
   { id: "greenhouses", label: "Invernaderos", icon: Sprout },
-  { id: "calendar", label: "Calendario", icon: CalendarDays },
+  { id: "calendar", label: "Operación", icon: CalendarDays },
   { id: "irrigation", label: "Riego", icon: Droplets },
   { id: "nutrition", label: "Nutrición", icon: Flower2 },
   { id: "applications", label: "Aplicaciones", icon: ActivitySquare },
@@ -26,3 +26,19 @@ export const navigationItems: NavigationItem[] = [
   { id: "reports", label: "Reportes", icon: BarChart3 },
   { id: "settings", label: "Ajustes", icon: Settings }
 ];
+
+const managerSections = new Set([
+  "overview",
+  "greenhouses",
+  "calendar",
+  "irrigation",
+  "nutrition",
+  "applications",
+  "pests",
+  "harvest"
+]);
+
+export function navigationItemsForRole(role: UserRole) {
+  if (role !== "manager") return navigationItems;
+  return navigationItems.filter((item) => managerSections.has(item.id));
+}
