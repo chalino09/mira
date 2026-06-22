@@ -26,6 +26,7 @@ import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
+import type { ApplicationRecord, CropStage, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
 type PlanStatus = "draft" | "published" | "closed";
 type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -53,6 +54,7 @@ type OperationTaskRow = {
   execution_mode: ExecutionMode;
   crew_size: number | null;
   blocked_reason: string | null;
+  technical_plan: TechnicalPlan;
 };
 
 type AssignmentRow = {
@@ -84,6 +86,56 @@ type MaterialDraft = {
   notes: string;
 };
 
+type TechnicalPlan = {
+  plannedDurationMin?: string;
+  plannedLiters?: string;
+  sector?: string;
+  targetPh?: string;
+  targetEc?: string;
+  method?: NutritionRecord["method"];
+  objective?: NutritionRecord["objective"];
+  appliedArea?: string;
+  harvestZone?: string;
+};
+
+type ApplicationExecutionDraft = {
+  materialId: string;
+  productName: string;
+  dose: string;
+  category: ApplicationRecord["category"] | "";
+  composition: string;
+  safetyInterval: string;
+  reentryInterval: string;
+  notes: string;
+};
+
+type ApplicationExecutionPayload = {
+  occurredAt: string;
+  appliedArea: string;
+  applications: ApplicationExecutionDraft[];
+};
+
+type IrrigationExecutionPayload = Omit<IrrigationRecord, "id" | "greenhouseId" | "responsible">;
+
+type NutritionExecutionDraft = {
+  materialId: string;
+  productName: string;
+  dose: string;
+};
+
+type NutritionExecutionPayload = {
+  date: string;
+  method: NutritionRecord["method"];
+  stage: CropStage;
+  objective: NutritionRecord["objective"];
+  ph: number | null;
+  ec: number | null;
+  notes: string;
+  products: NutritionExecutionDraft[];
+};
+
+type HarvestExecutionPayload = Omit<HarvestRecord, "id" | "greenhouseId">;
+
 type ActivityPayload = {
   greenhouseId: string;
   type: string;
@@ -96,6 +148,7 @@ type ActivityPayload = {
   crewSize: number | null;
   assigneeIds: string[];
   materials: MaterialDraft[];
+  technicalPlan: TechnicalPlan;
 };
 
 const activityTypes = [
@@ -144,6 +197,45 @@ const executionLabels: Record<ExecutionMode, string> = {
   both: "Encargado y cuadrilla"
 };
 
+const applicationCategories: ApplicationRecord["category"][] = [
+  "Bioestimulante",
+  "Fungicida",
+  "Insecticida",
+  "Fertilizante",
+  "Microorganismos",
+  "Corrector"
+];
+
+const applicationCategoryToDb: Record<ApplicationRecord["category"], string> = {
+  Bioestimulante: "bioestimulante",
+  Fungicida: "fungicida",
+  Insecticida: "insecticida",
+  Fertilizante: "fertilizante",
+  Microorganismos: "microorganismos",
+  Corrector: "corrector"
+};
+
+const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
+  Fertirriego: "fertirriego",
+  Foliar: "foliar",
+  Drench: "drench"
+};
+
+const cropStageToDb: Record<CropStage, string> = {
+  Vegetativo: "vegetativo",
+  Floración: "floracion",
+  Cuajado: "cuajado",
+  Producción: "produccion"
+};
+
+const nutritionObjectiveToDb: Record<NutritionRecord["objective"], string> = {
+  Raíz: "raiz",
+  Floración: "floracion",
+  Cuajado: "cuajado",
+  Engorde: "engorde",
+  Calidad: "calidad"
+};
+
 function dateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -169,12 +261,60 @@ function dayLabel(date: Date) {
     .toUpperCase();
 }
 
+function technicalPlanSummary(task: OperationTaskRow) {
+  const plan = task.technical_plan ?? {};
+  if (task.type === "riego") {
+    return [
+      plan.plannedDurationMin ? `${plan.plannedDurationMin} min` : "",
+      plan.plannedLiters ? `${plan.plannedLiters} L` : "",
+      plan.sector,
+      plan.targetPh ? `pH ${plan.targetPh}` : "",
+      plan.targetEc ? `CE ${plan.targetEc}` : ""
+    ].filter(Boolean).join(" · ");
+  }
+  if (task.type === "fertirriego" || task.type === "fertilizacion") {
+    return [plan.method, plan.objective, plan.targetPh ? `pH ${plan.targetPh}` : "", plan.targetEc ? `CE ${plan.targetEc}` : ""]
+      .filter(Boolean).join(" · ");
+  }
+  if (task.type === "aplicacion_foliar") return plan.appliedArea ?? "";
+  if (task.type === "cosecha") return plan.harvestZone ?? "";
+  return "";
+}
+
 function isOperationsSetupError(error: any) {
   return ["42P01", "42703", "PGRST204", "PGRST205"].includes(error?.code);
 }
 
 function emptyMaterial(): MaterialDraft {
   return { productName: "", dose: "", unit: "", notes: "" };
+}
+
+function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan {
+  if (type === "riego") {
+    return {
+      plannedDurationMin: plan.plannedDurationMin ?? "",
+      plannedLiters: plan.plannedLiters ?? "",
+      sector: plan.sector ?? "",
+      targetPh: plan.targetPh ?? "",
+      targetEc: plan.targetEc ?? ""
+    };
+  }
+  if (type === "fertirriego" || type === "fertilizacion") {
+    return {
+      method: plan.method ?? (type === "fertirriego" ? "Fertirriego" : "Foliar"),
+      objective: plan.objective ?? "Calidad",
+      targetPh: plan.targetPh ?? "",
+      targetEc: plan.targetEc ?? ""
+    };
+  }
+  if (type === "aplicacion_foliar") return { appliedArea: plan.appliedArea ?? "" };
+  if (type === "cosecha") return { harvestZone: plan.harvestZone ?? "" };
+  return {};
+}
+
+function optionalFormNumber(value: FormDataEntryValue | null) {
+  const textValue = String(value ?? "").trim();
+  return textValue ? Number(textValue) : null;
 }
 
 function ActivityFormModal({
@@ -202,6 +342,8 @@ function ActivityFormModal({
 }) {
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [materialRows, setMaterialRows] = useState<MaterialDraft[]>([emptyMaterial()]);
+  const [activityType, setActivityType] = useState("fertirriego");
+  const [technicalPlan, setTechnicalPlan] = useState<TechnicalPlan>({});
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
@@ -219,6 +361,8 @@ function ActivityFormModal({
           }))
       : [];
     setMaterialRows(taskMaterials.length ? taskMaterials : [emptyMaterial()]);
+    setActivityType(task?.type ?? "fertirriego");
+    setTechnicalPlan(task?.technical_plan ?? {});
     setFormError("");
   }, [assignments, materials, open, task]);
 
@@ -233,7 +377,7 @@ function ActivityFormModal({
     const form = new FormData(event.currentTarget);
     await onSave({
       greenhouseId: String(form.get("greenhouseId")),
-      type: String(form.get("type")),
+      type: activityType,
       title: String(form.get("title")),
       scheduledDate: String(form.get("scheduledDate")),
       scheduledTime: String(form.get("scheduledTime") ?? ""),
@@ -242,8 +386,15 @@ function ActivityFormModal({
       executionMode: String(form.get("executionMode")) as ExecutionMode,
       crewSize: String(form.get("crewSize") ?? "").trim() ? Number(form.get("crewSize")) : null,
       assigneeIds,
-      materials: materialRows.filter((item) => item.productName.trim())
+      materials: ["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType)
+        ? materialRows.filter((item) => item.productName.trim())
+        : [],
+      technicalPlan: technicalPlanForType(activityType, technicalPlan)
     });
+  };
+
+  const updateTechnicalPlan = (patch: Partial<TechnicalPlan>) => {
+    setTechnicalPlan((current) => ({ ...current, ...patch }));
   };
 
   return (
@@ -258,7 +409,7 @@ function ActivityFormModal({
             </SelectInput>
           </Field>
           <Field label="Actividad">
-            <SelectInput name="type" defaultValue={task?.type ?? "fertirriego"}>
+            <SelectInput name="type" onChange={(event) => setActivityType(event.target.value)} value={activityType}>
               {activityTypes.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
@@ -301,6 +452,61 @@ function ActivityFormModal({
               placeholder="Preparación, orden, zona y criterios para terminar."
             />
           </Field>
+          {activityType === "riego" ? (
+            <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+              <Field label="Duración planeada (min)">
+                <TextInput min={1} onChange={(event) => updateTechnicalPlan({ plannedDurationMin: event.target.value })} type="number" value={technicalPlan.plannedDurationMin ?? ""} />
+              </Field>
+              <Field label="Litros planeados">
+                <TextInput min={0} onChange={(event) => updateTechnicalPlan({ plannedLiters: event.target.value })} step="0.01" type="number" value={technicalPlan.plannedLiters ?? ""} />
+              </Field>
+              <Field label="Sector o válvula">
+                <TextInput onChange={(event) => updateTechnicalPlan({ sector: event.target.value })} value={technicalPlan.sector ?? ""} />
+              </Field>
+              <Field label="pH objetivo">
+                <TextInput onChange={(event) => updateTechnicalPlan({ targetPh: event.target.value })} step="0.1" type="number" value={technicalPlan.targetPh ?? ""} />
+              </Field>
+              <Field label="CE objetivo">
+                <TextInput onChange={(event) => updateTechnicalPlan({ targetEc: event.target.value })} step="0.1" type="number" value={technicalPlan.targetEc ?? ""} />
+              </Field>
+            </div>
+          ) : null}
+          {activityType === "fertirriego" || activityType === "fertilizacion" ? (
+            <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+              <Field label="Método">
+                <SelectInput
+                  onChange={(event) => updateTechnicalPlan({ method: event.target.value as NutritionRecord["method"] })}
+                  value={technicalPlan.method ?? (activityType === "fertirriego" ? "Fertirriego" : "Foliar")}
+                >
+                  {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Objetivo">
+                <SelectInput
+                  onChange={(event) => updateTechnicalPlan({ objective: event.target.value as NutritionRecord["objective"] })}
+                  value={technicalPlan.objective ?? "Calidad"}
+                >
+                  {Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="pH objetivo">
+                <TextInput onChange={(event) => updateTechnicalPlan({ targetPh: event.target.value })} step="0.1" type="number" value={technicalPlan.targetPh ?? ""} />
+              </Field>
+              <Field label="CE objetivo">
+                <TextInput onChange={(event) => updateTechnicalPlan({ targetEc: event.target.value })} step="0.1" type="number" value={technicalPlan.targetEc ?? ""} />
+              </Field>
+            </div>
+          ) : null}
+          {activityType === "aplicacion_foliar" ? (
+            <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Área planeada">
+              <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Casa completa, sección 1..." value={technicalPlan.appliedArea ?? ""} />
+            </Field>
+          ) : null}
+          {activityType === "cosecha" ? (
+            <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Zona de cosecha">
+              <TextInput onChange={(event) => updateTechnicalPlan({ harvestZone: event.target.value })} placeholder="Casa completa, camas 1-10..." value={technicalPlan.harvestZone ?? ""} />
+            </Field>
+          ) : null}
         </div>
 
         <section className="border-t border-app-border pt-5">
@@ -332,6 +538,7 @@ function ActivityFormModal({
           </div>
         </section>
 
+        {["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType) ? (
         <section className="border-t border-app-border pt-5">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -389,6 +596,7 @@ function ActivityFormModal({
             ))}
           </div>
         </section>
+        ) : null}
 
         {formError ? <p className="text-sm text-[#8A2E2E]" role="alert">{formError}</p> : null}
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
@@ -402,10 +610,342 @@ function ActivityFormModal({
   );
 }
 
+function CompleteApplicationModal({
+  task,
+  materials,
+  greenhouseName,
+  saving,
+  onClose,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  materials: MaterialRow[];
+  greenhouseName: string;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (payload: ApplicationExecutionPayload) => Promise<void>;
+}) {
+  const [occurredAt, setOccurredAt] = useState(() => dateKey(new Date()));
+  const [appliedArea, setAppliedArea] = useState("");
+  const [applications, setApplications] = useState<ApplicationExecutionDraft[]>([]);
+
+  useEffect(() => {
+    if (!task) return;
+    setOccurredAt(dateKey(new Date()));
+    setAppliedArea(task.technical_plan?.appliedArea ?? "");
+    setApplications(
+      materials
+        .slice()
+        .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
+        .map((material) => ({
+          materialId: material.id,
+          productName: material.product_name,
+          dose: [material.dose, material.unit].filter(Boolean).join(" "),
+          category: "",
+          composition: "",
+          safetyInterval: "",
+          reentryInterval: "",
+          notes: material.notes ?? ""
+        }))
+    );
+  }, [materials, task]);
+
+  const updateApplication = (index: number, patch: Partial<ApplicationExecutionDraft>) => {
+    setApplications((current) => current.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, ...patch } : item
+    ));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onSave({ occurredAt, appliedArea, applications });
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar aplicación realizada">
+      <form className="grid gap-6" onSubmit={handleSubmit}>
+        <div className="border-l-2 border-app-green pl-3">
+          <p className="text-sm font-medium text-app-text">{task?.title}</p>
+          <p className="mt-1 text-xs leading-5 text-app-muted">
+            {greenhouseName}. La receta planeada se conserva y estos datos quedarán en Registros técnicos.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Fecha real de aplicación">
+            <TextInput onChange={(event) => setOccurredAt(event.target.value)} required type="date" value={occurredAt} />
+          </Field>
+          <Field label="Área aplicada">
+            <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Casa completa, sección 1..." value={appliedArea} />
+          </Field>
+        </div>
+
+        <div className="grid gap-5 border-t border-app-border pt-5">
+          {applications.map((application, index) => (
+            <section key={application.materialId} className="grid gap-3 border-b border-app-border pb-5 last:border-b-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label={`Producto ${index + 1}`}>
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { productName: event.target.value })}
+                    required
+                    value={application.productName}
+                  />
+                </Field>
+                <Field label="Dosis real">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { dose: event.target.value })}
+                    required
+                    value={application.dose}
+                  />
+                </Field>
+                <Field label="Categoría">
+                  <SelectInput
+                    onChange={(event) => updateApplication(index, {
+                      category: event.target.value as ApplicationExecutionDraft["category"]
+                    })}
+                    required
+                    value={application.category}
+                  >
+                    <option value="">Selecciona el tipo</option>
+                    {applicationCategories.map((category) => <option key={category}>{category}</option>)}
+                  </SelectInput>
+                </Field>
+                <Field label="Ingrediente activo o composición">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { composition: event.target.value })}
+                    placeholder="Se llenará desde catálogo cuando esté disponible"
+                    value={application.composition}
+                  />
+                </Field>
+                <Field label="Intervalo de seguridad">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { safetyInterval: event.target.value })}
+                    value={application.safetyInterval}
+                  />
+                </Field>
+                <Field label="Reentrada">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { reentryInterval: event.target.value })}
+                    value={application.reentryInterval}
+                  />
+                </Field>
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving || !applications.length} type="submit" variant="primary">
+            {saving ? "Guardando..." : "Completar y guardar registro"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CompleteIrrigationModal({
+  task,
+  greenhouseName,
+  saving,
+  onClose,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  greenhouseName: string;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (payload: IrrigationExecutionPayload) => Promise<void>;
+}) {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await onSave({
+      date: String(form.get("date")),
+      durationMin: Number(form.get("durationMin")),
+      liters: Number(form.get("liters")),
+      sector: String(form.get("sector") ?? ""),
+      ph: optionalFormNumber(form.get("ph")),
+      ec: optionalFormNumber(form.get("ec")),
+      notes: String(form.get("notes") ?? "")
+    });
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar riego realizado">
+      <form className="grid gap-5" key={task?.id ?? "irrigation-completion"} onSubmit={handleSubmit}>
+        <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Duración min"><TextInput min={1} name="durationMin" required type="number" defaultValue={task?.technical_plan?.plannedDurationMin ?? ""} /></Field>
+          <Field label="Litros estimados"><TextInput min={0.01} name="liters" required step="0.01" type="number" defaultValue={task?.technical_plan?.plannedLiters ?? ""} /></Field>
+          <Field label="Sector o válvula"><TextInput name="sector" defaultValue={task?.technical_plan?.sector ?? ""} /></Field>
+          <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
+          <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
+          <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CompleteNutritionModal({
+  task,
+  materials,
+  greenhouseName,
+  defaultStage,
+  saving,
+  onClose,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  materials: MaterialRow[];
+  greenhouseName: string;
+  defaultStage: CropStage;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (payload: NutritionExecutionPayload) => Promise<void>;
+}) {
+  const [products, setProducts] = useState<NutritionExecutionDraft[]>([]);
+
+  useEffect(() => {
+    if (!task) return;
+    setProducts(materials.slice().sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0)).map((material) => ({
+      materialId: material.id,
+      productName: material.product_name,
+      dose: [material.dose, material.unit].filter(Boolean).join(" ")
+    })));
+  }, [materials, task]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await onSave({
+      date: String(form.get("date")),
+      method: String(form.get("method")) as NutritionRecord["method"],
+      stage: String(form.get("stage")) as CropStage,
+      objective: String(form.get("objective")) as NutritionRecord["objective"],
+      ph: optionalFormNumber(form.get("ph")),
+      ec: optionalFormNumber(form.get("ec")),
+      notes: String(form.get("notes") ?? ""),
+      products
+    });
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar nutrición realizada">
+      <form className="grid gap-5" key={task?.id ?? "nutrition-completion"} onSubmit={handleSubmit}>
+        <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Método">
+            <SelectInput name="method" defaultValue={task?.technical_plan?.method ?? (task?.type === "fertirriego" ? "Fertirriego" : "Foliar")}>
+              {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
+            </SelectInput>
+          </Field>
+          <Field label="Etapa">
+            <SelectInput name="stage" defaultValue={defaultStage}>{Object.keys(cropStageToDb).map((stage) => <option key={stage}>{stage}</option>)}</SelectInput>
+          </Field>
+          <Field label="Objetivo">
+            <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Calidad"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
+          </Field>
+          <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
+          <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
+        </div>
+        <div className="grid gap-3 border-t border-app-border pt-4">
+          {products.map((product, index) => (
+            <div key={product.materialId} className="grid gap-2 sm:grid-cols-2">
+              <TextInput
+                aria-label={`Producto ${index + 1}`}
+                onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, productName: event.target.value } : item))}
+                required
+                value={product.productName}
+              />
+              <TextInput
+                aria-label={`Dosis real ${index + 1}`}
+                onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
+                required
+                value={product.dose}
+              />
+            </div>
+          ))}
+        </div>
+        <Field label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+        <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving || !products.length} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CompleteHarvestModal({
+  task,
+  greenhouseName,
+  saving,
+  onClose,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  greenhouseName: string;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (payload: HarvestExecutionPayload) => Promise<void>;
+}) {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await onSave({
+      date: String(form.get("date")),
+      kilograms: Number(form.get("kilograms")),
+      firstQuality: Number(form.get("firstQuality") || 0),
+      secondQuality: Number(form.get("secondQuality") || 0),
+      discard: Number(form.get("discard") || 0),
+      estimatedPrice: Number(form.get("estimatedPrice") || 0),
+      destination: String(form.get("destination") ?? ""),
+      notes: String(form.get("notes") ?? "")
+    });
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar cosecha realizada">
+      <form className="grid gap-5" key={task?.id ?? "harvest-completion"} onSubmit={handleSubmit}>
+        <p className="text-sm text-app-muted">
+          {task?.title} · {greenhouseName}{task?.technical_plan?.harvestZone ? ` · ${task.technical_plan.harvestZone}` : ""}
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Kilogramos totales"><TextInput min={0.01} name="kilograms" required step="0.01" type="number" /></Field>
+          <Field label="Primera calidad"><TextInput min={0} name="firstQuality" step="0.01" type="number" defaultValue={0} /></Field>
+          <Field label="Segunda calidad"><TextInput min={0} name="secondQuality" step="0.01" type="number" defaultValue={0} /></Field>
+          <Field label="Descarte"><TextInput min={0} name="discard" step="0.01" type="number" defaultValue={0} /></Field>
+          <Field label="Precio estimado"><TextInput min={0} name="estimatedPrice" step="0.01" type="number" defaultValue={0} /></Field>
+          <Field className="sm:col-span-2" label="Cliente o destino"><TextInput name="destination" /></Field>
+          <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function OperationsSection() {
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const addApplicationRecords = useGreenhouseStore((state) => state.addApplicationRecords);
+  const addIrrigation = useGreenhouseStore((state) => state.addIrrigation);
+  const addNutrition = useGreenhouseStore((state) => state.addNutrition);
+  const addHarvest = useGreenhouseStore((state) => state.addHarvest);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
   const [plan, setPlan] = useState<WeeklyPlanRow | null>(null);
   const [tasks, setTasks] = useState<OperationTaskRow[]>([]);
@@ -414,10 +954,15 @@ export function OperationsSection() {
   const [managers, setManagers] = useState<ManagerOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [applicationTask, setApplicationTask] = useState<OperationTaskRow | null>(null);
+  const [irrigationTask, setIrrigationTask] = useState<OperationTaskRow | null>(null);
+  const [nutritionTask, setNutritionTask] = useState<OperationTaskRow | null>(null);
+  const [harvestTask, setHarvestTask] = useState<OperationTaskRow | null>(null);
   const [editingTask, setEditingTask] = useState<OperationTaskRow | null>(null);
   const [blockedTask, setBlockedTask] = useState<OperationTaskRow | null>(null);
   const [blockedReason, setBlockedReason] = useState("");
@@ -443,7 +988,7 @@ export function OperationsSection() {
         .maybeSingle(),
       supabase
         .from("tasks")
-        .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason")
+        .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, technical_plan")
         .eq("company_id", organization.id)
         .gte("scheduled_date", weekStartKey)
         .lte("scheduled_date", weekEndKey)
@@ -520,7 +1065,7 @@ export function OperationsSection() {
     setSaving(true);
     setNotice(null);
     try {
-      const rpcName = editingTask ? "update_operational_task" : "create_operational_task";
+      const rpcName = editingTask ? "update_operational_task_with_plan" : "create_operational_task_with_plan";
       const rpcPayload = editingTask
         ? {
             target_task_id: editingTask.id,
@@ -534,7 +1079,8 @@ export function OperationsSection() {
             target_execution_mode: payload.executionMode,
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
-            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 }))
+            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
+            target_technical_plan: payload.technicalPlan
           }
         : {
             target_company_id: organization.id,
@@ -549,7 +1095,8 @@ export function OperationsSection() {
             target_execution_mode: payload.executionMode,
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
-            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 }))
+            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
+            target_technical_plan: payload.technicalPlan
           };
       const { error } = await supabase.rpc(rpcName, rpcPayload);
       if (error) throw error;
@@ -583,21 +1130,206 @@ export function OperationsSection() {
   };
 
   const completeTask = async (task: OperationTaskRow) => {
+    if (task.type === "aplicacion_foliar") {
+      if (!materialsForTask(task.id).length) {
+        setNotice({
+          tone: "red",
+          message: "Agrega al menos un producto y su dosis antes de completar la aplicación."
+        });
+        return;
+      }
+      setApplicationTask(task);
+      return;
+    }
+    if (task.type === "riego") {
+      setIrrigationTask(task);
+      return;
+    }
+    if (task.type === "fertirriego" || task.type === "fertilizacion") {
+      if (!materialsForTask(task.id).length) {
+        setNotice({
+          tone: "red",
+          message: "Agrega al menos un producto y su dosis antes de completar la nutrición."
+        });
+        return;
+      }
+      setNutritionTask(task);
+      return;
+    }
+    if (task.type === "cosecha") {
+      setHarvestTask(task);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
+    setCompleting(true);
     setNotice(null);
     const { error } = await supabase.rpc("update_operational_task_status", {
       target_task_id: task.id,
       next_status: "completada",
       update_note: null
     });
+    setCompleting(false);
 
     if (error) {
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
       return;
     }
     setNotice({ tone: "green", message: "Actividad completada." });
+    await loadOperations();
+  };
+
+  const completeApplication = async (payload: ApplicationExecutionPayload) => {
+    if (!applicationTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("complete_application_task", {
+      target_task_id: applicationTask.id,
+      target_occurred_at: payload.occurredAt,
+      target_applied_area: payload.appliedArea || null,
+      target_applications: payload.applications.map((application) => ({
+        materialId: application.materialId,
+        productName: application.productName,
+        dose: application.dose,
+        category: applicationCategoryToDb[application.category as ApplicationRecord["category"]],
+        composition: application.composition,
+        safetyInterval: application.safetyInterval,
+        reentryInterval: application.reentryInterval,
+        notes: application.notes
+      }))
+    });
+    setCompleting(false);
+
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar el registro técnico.") });
+      return;
+    }
+
+    addApplicationRecords(payload.applications.map((application) => ({
+      sourceTaskId: applicationTask.id,
+      greenhouseId: applicationTask.greenhouse_id,
+      date: payload.occurredAt,
+      category: application.category as ApplicationRecord["category"],
+      product: application.productName,
+      composition: application.composition,
+      dose: application.dose,
+      area: payload.appliedArea,
+      responsible: currentUser.fullName,
+      safetyInterval: application.safetyInterval,
+      reentry: application.reentryInterval,
+      notes: application.notes
+    })));
+    setApplicationTask(null);
+    setNotice({ tone: "green", message: "Aplicación completada y guardada en Registros técnicos." });
+    await loadOperations();
+  };
+
+  const completeIrrigation = async (payload: IrrigationExecutionPayload) => {
+    if (!irrigationTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("complete_irrigation_task", {
+      target_task_id: irrigationTask.id,
+      target_occurred_at: payload.date,
+      target_duration_min: payload.durationMin,
+      target_estimated_liters: payload.liters,
+      target_sector: payload.sector || null,
+      target_ph: payload.ph,
+      target_ec: payload.ec,
+      target_notes: payload.notes || null
+    });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar el riego técnico.") });
+      return;
+    }
+
+    addIrrigation({
+      ...payload,
+      greenhouseId: irrigationTask.greenhouse_id,
+      responsible: currentUser.fullName
+    });
+    setIrrigationTask(null);
+    setNotice({ tone: "green", message: "Riego completado y guardado en Registros técnicos." });
+    await loadOperations();
+  };
+
+  const completeNutrition = async (payload: NutritionExecutionPayload) => {
+    if (!nutritionTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("complete_nutrition_task", {
+      target_task_id: nutritionTask.id,
+      target_occurred_at: payload.date,
+      target_method: nutritionMethodToDb[payload.method],
+      target_crop_stage: cropStageToDb[payload.stage],
+      target_objective: nutritionObjectiveToDb[payload.objective],
+      target_ph: payload.ph,
+      target_ec: payload.ec,
+      target_notes: payload.notes || null,
+      target_products: payload.products
+    });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar la nutrición técnica.") });
+      return;
+    }
+
+    payload.products.forEach((product) => addNutrition({
+      greenhouseId: nutritionTask.greenhouse_id,
+      date: payload.date,
+      product: product.productName,
+      dose: product.dose,
+      method: payload.method,
+      ph: payload.ph ?? 0,
+      ec: payload.ec ?? 0,
+      stage: payload.stage,
+      objective: payload.objective,
+      notes: payload.notes
+    }));
+    setNutritionTask(null);
+    setNotice({ tone: "green", message: "Nutrición completada y guardada en Registros técnicos." });
+    await loadOperations();
+  };
+
+  const completeHarvest = async (payload: HarvestExecutionPayload) => {
+    if (!harvestTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("complete_harvest_task", {
+      target_task_id: harvestTask.id,
+      target_occurred_at: payload.date,
+      target_kilograms: payload.kilograms,
+      target_first_quality_kg: payload.firstQuality,
+      target_second_quality_kg: payload.secondQuality,
+      target_discard_kg: payload.discard,
+      target_estimated_price: payload.estimatedPrice,
+      target_destination: payload.destination || null,
+      target_notes: payload.notes || null
+    });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar la cosecha técnica.") });
+      return;
+    }
+
+    addHarvest({ ...payload, greenhouseId: harvestTask.greenhouse_id });
+    setHarvestTask(null);
+    setNotice({ tone: "green", message: "Cosecha completada y guardada en Registros técnicos." });
     await loadOperations();
   };
 
@@ -752,6 +1484,7 @@ export function OperationsSection() {
                       {dayTasks.map((task) => {
                         const taskAssignments = assignmentsForTask(task.id);
                         const taskMaterials = materialsForTask(task.id);
+                        const planSummary = technicalPlanSummary(task);
                         return (
                           <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
                             <div className="grid min-w-0 gap-2">
@@ -772,6 +1505,7 @@ export function OperationsSection() {
                               </p>
                             ) : <p className="mt-2 text-xs text-[#8A2E2E]">Sin encargado</p>}
                             {task.instructions ? <p className="mt-3 break-words text-xs leading-5 text-app-text">{task.instructions}</p> : null}
+                            {planSummary ? <p className="mt-2 break-words text-xs leading-5 text-app-muted">{planSummary}</p> : null}
                             {taskMaterials.length ? (
                               <div className="mt-3 break-words border-l-2 border-app-green pl-2 text-xs leading-5 text-app-muted">
                                 {taskMaterials
@@ -800,8 +1534,8 @@ export function OperationsSection() {
                               ) : null}
                               {task.status !== "completada" && task.status !== "cancelada" ? (
                                 <>
-                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
-                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} title="Completar actividad" variant="ghost" />
+                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
+                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} title="Completar actividad" variant="ghost" />
                                 </>
                               ) : null}
                             </div>
@@ -854,6 +1588,41 @@ export function OperationsSection() {
         saving={saving}
         task={editingTask}
         weekDays={weekDays}
+      />
+
+      <CompleteApplicationModal
+        greenhouseName={applicationTask ? greenhouseName(applicationTask.greenhouse_id) : ""}
+        materials={applicationTask ? materialsForTask(applicationTask.id) : []}
+        onClose={() => setApplicationTask(null)}
+        onSave={completeApplication}
+        saving={completing}
+        task={applicationTask}
+      />
+
+      <CompleteIrrigationModal
+        greenhouseName={irrigationTask ? greenhouseName(irrigationTask.greenhouse_id) : ""}
+        onClose={() => setIrrigationTask(null)}
+        onSave={completeIrrigation}
+        saving={completing}
+        task={irrigationTask}
+      />
+
+      <CompleteNutritionModal
+        defaultStage={greenhouses.find((greenhouse) => greenhouse.id === nutritionTask?.greenhouse_id)?.stage ?? "Producción"}
+        greenhouseName={nutritionTask ? greenhouseName(nutritionTask.greenhouse_id) : ""}
+        materials={nutritionTask ? materialsForTask(nutritionTask.id) : []}
+        onClose={() => setNutritionTask(null)}
+        onSave={completeNutrition}
+        saving={completing}
+        task={nutritionTask}
+      />
+
+      <CompleteHarvestModal
+        greenhouseName={harvestTask ? greenhouseName(harvestTask.greenhouse_id) : ""}
+        onClose={() => setHarvestTask(null)}
+        onSave={completeHarvest}
+        saving={completing}
+        task={harvestTask}
       />
 
       <Modal open={Boolean(blockedTask)} onClose={() => { setBlockedTask(null); setBlockedReason(""); }} title="Reportar bloqueo">

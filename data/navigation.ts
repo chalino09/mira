@@ -2,8 +2,6 @@ import {
   ActivitySquare,
   BarChart3,
   CalendarDays,
-  Droplets,
-  Flower2,
   Home,
   Leaf,
   Settings,
@@ -14,12 +12,10 @@ import {
 import type { NavigationItem, UserRole } from "@/types";
 
 export const navigationItems: NavigationItem[] = [
-  { id: "overview", label: "Overview", icon: Home },
-  { id: "greenhouses", label: "Invernaderos", icon: Sprout },
+  { id: "overview", label: "Inicio", icon: Home },
   { id: "calendar", label: "Operación", icon: CalendarDays },
-  { id: "irrigation", label: "Riego", icon: Droplets },
-  { id: "nutrition", label: "Nutrición", icon: Flower2 },
-  { id: "applications", label: "Aplicaciones", icon: ActivitySquare },
+  { id: "greenhouses", label: "Invernaderos", icon: Sprout },
+  { id: "records", label: "Registros técnicos", icon: ActivitySquare },
   { id: "pests", label: "Plagas", icon: ShieldAlert },
   { id: "harvest", label: "Cosecha", icon: Leaf },
   { id: "costs", label: "Costos", icon: WalletCards },
@@ -31,9 +27,7 @@ const managerSections = new Set([
   "overview",
   "greenhouses",
   "calendar",
-  "irrigation",
-  "nutrition",
-  "applications",
+  "records",
   "pests",
   "harvest"
 ]);

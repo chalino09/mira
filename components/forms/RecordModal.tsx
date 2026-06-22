@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { Minus, Plus } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
@@ -34,6 +35,16 @@ function optionalNumber(value: FormDataEntryValue | null) {
   }
 
   return Number(value);
+}
+
+type CostDraft = {
+  category: CostRecord["category"];
+  amount: string;
+  notes: string;
+};
+
+function emptyCost(): CostDraft {
+  return { category: "Agroinsumos", amount: "", notes: "" };
 }
 
 const taskTypeToDb: Record<TaskType, string> = {
@@ -140,9 +151,9 @@ const modalCopy = {
     note: "Guarda kilos, calidad, precio estimado y destino."
   },
   cost: {
-    title: "Nuevo costo",
+    title: "Nuevos costos",
     kicker: "Finanzas",
-    note: "Registra gasto por categoría y fecha."
+    note: "Registra varios gastos para el mismo invernadero y fecha."
   }
 };
 
@@ -207,6 +218,11 @@ export function RecordModal() {
   const addCost = useGreenhouseStore((state) => state.addCost);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
+
+  useEffect(() => {
+    if (modal === "cost") setCostRows([emptyCost()]);
+  }, [modal]);
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
@@ -357,6 +373,7 @@ export function RecordModal() {
         occurred_at: record.date,
         duration_min: record.durationMin,
         estimated_liters: record.liters,
+        sector: record.sector || null,
         ph: record.ph,
         ec: record.ec,
         notes: record.notes,
@@ -523,14 +540,14 @@ export function RecordModal() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     save(async () => {
-      const record = {
+      const records = costRows.map((cost) => ({
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        category: String(form.get("category")) as CostRecord["category"],
-        amount: Number(form.get("amount")),
-        notes: String(form.get("notes"))
-      };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("cost_records").insert({
+        category: cost.category,
+        amount: Number(cost.amount),
+        notes: cost.notes
+      }));
+      const { error: insertError } = await getSupabaseBrowserClient()!.from("cost_records").insert(records.map((record) => ({
         company_id: organization.id,
         greenhouse_id: record.greenhouseId || null,
         category: costCategoryToDb[record.category],
@@ -538,9 +555,9 @@ export function RecordModal() {
         occurred_at: record.date,
         notes: record.notes,
         created_by: currentUser.id
-      });
+      })));
       if (insertError) throw insertError;
-      addCost(record);
+      records.forEach(addCost);
     });
   };
 
@@ -707,9 +724,63 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
           <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
-          <Field label="Categoría"><SelectInput name="category" defaultValue="Agroinsumos">{Object.keys(costCategoryToDb).map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
-          <Field label="Monto"><TextInput name="amount" type="number" required defaultValue={0} /></Field>
-          <Field label="Notas"><TextArea name="notes" /></Field>
+          <section className="grid gap-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Gastos</p>
+              <Button
+                className="h-8"
+                icon={<Plus className="h-3.5 w-3.5" />}
+                onClick={() => setCostRows((current) => [...current, emptyCost()])}
+                type="button"
+                variant="ghost"
+              >
+                Agregar costo
+              </Button>
+            </div>
+            {costRows.map((cost, index) => (
+              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1fr_0.65fr_1fr_auto]">
+                <SelectInput
+                  aria-label={`Categoría ${index + 1}`}
+                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, category: event.target.value as CostRecord["category"] } : item
+                  ))}
+                  value={cost.category}
+                >
+                  {Object.keys(costCategoryToDb).map((item) => <option key={item}>{item}</option>)}
+                </SelectInput>
+                <TextInput
+                  aria-label={`Monto ${index + 1}`}
+                  min="0.01"
+                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, amount: event.target.value } : item
+                  ))}
+                  placeholder="Monto"
+                  required
+                  step="0.01"
+                  type="number"
+                  value={cost.amount}
+                />
+                <TextInput
+                  aria-label={`Notas ${index + 1}`}
+                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, notes: event.target.value } : item
+                  ))}
+                  placeholder="Nota opcional"
+                  value={cost.notes}
+                />
+                <Button
+                  aria-label={`Quitar costo ${index + 1}`}
+                  className="h-11 w-11 px-0"
+                  icon={<Minus className="h-4 w-4" />}
+                  onClick={() => setCostRows((current) =>
+                    current.length === 1 ? [emptyCost()] : current.filter((_, itemIndex) => itemIndex !== index)
+                  )}
+                  type="button"
+                  variant="ghost"
+                />
+              </div>
+            ))}
+          </section>
         </FormShell>
       ) : null}
     </Modal>
