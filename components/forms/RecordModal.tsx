@@ -47,6 +47,22 @@ function emptyCost(): CostDraft {
   return { category: "Agroinsumos", amount: "", notes: "" };
 }
 
+type NutritionProductDraft = { product: string; dose: string };
+type ApplicationProductDraft = {
+  category: ApplicationRecord["category"];
+  product: string;
+  composition: string;
+  dose: string;
+};
+
+function emptyNutritionProduct(): NutritionProductDraft {
+  return { product: "", dose: "" };
+}
+
+function emptyApplicationProduct(): ApplicationProductDraft {
+  return { category: "Bioestimulante", product: "", composition: "", dose: "" };
+}
+
 const taskTypeToDb: Record<TaskType, string> = {
   Riego: "riego",
   Fertirriego: "fertirriego",
@@ -219,9 +235,13 @@ export function RecordModal() {
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
+  const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
+  const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
 
   useEffect(() => {
     if (modal === "cost") setCostRows([emptyCost()]);
+    if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
+    if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
   }, [modal]);
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
@@ -389,19 +409,19 @@ export function RecordModal() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     save(async () => {
-      const record = {
+      const records = nutritionProducts.map((product) => ({
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        product: String(form.get("product")),
-        dose: String(form.get("dose")),
+        product: product.product,
+        dose: product.dose,
         method: String(form.get("method")) as NutritionRecord["method"],
         ph: Number(form.get("ph")),
         ec: Number(form.get("ec")),
         stage: String(form.get("stage")) as CropStage,
         objective: String(form.get("objective")) as NutritionRecord["objective"],
         notes: String(form.get("notes"))
-      };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("nutrition_records").insert({
+      }));
+      const { error: insertError } = await getSupabaseBrowserClient()!.from("nutrition_records").insert(records.map((record) => ({
         company_id: organization.id,
         greenhouse_id: record.greenhouseId,
         product_name: record.product,
@@ -415,9 +435,9 @@ export function RecordModal() {
         notes: record.notes,
         responsible_user_id: currentUser.id,
         created_by: currentUser.id
-      });
+      })));
       if (insertError) throw insertError;
-      addNutrition(record);
+      records.forEach(addNutrition);
     });
   };
 
@@ -425,20 +445,20 @@ export function RecordModal() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     save(async () => {
-      const record = {
+      const records = applicationProducts.map((product) => ({
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        category: String(form.get("category")) as ApplicationRecord["category"],
-        product: String(form.get("product")),
-        composition: String(form.get("composition")),
-        dose: String(form.get("dose")),
+        category: product.category,
+        product: product.product,
+        composition: product.composition,
+        dose: product.dose,
         area: String(form.get("area")),
         responsible: currentUser.fullName,
         safetyInterval: String(form.get("safetyInterval")),
         reentry: String(form.get("reentry")),
         notes: String(form.get("notes"))
-      };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("application_records").insert({
+      }));
+      const { error: insertError } = await getSupabaseBrowserClient()!.from("application_records").insert(records.map((record) => ({
         company_id: organization.id,
         greenhouse_id: record.greenhouseId,
         category: applicationCategoryToDb[record.category],
@@ -452,9 +472,9 @@ export function RecordModal() {
         notes: record.notes,
         responsible_user_id: currentUser.id,
         created_by: currentUser.id
-      });
+      })));
       if (insertError) throw insertError;
-      addApplication(record);
+      records.forEach(addApplication);
     });
   };
 
@@ -667,8 +687,33 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition}>
           <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
-          <Field label="Producto"><TextInput name="product" required placeholder="Nitrato de potasio" /></Field>
-          <Field label="Dosis"><TextInput name="dose" required placeholder="2 kg / 1000 L" /></Field>
+          <section className="grid gap-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
+              <Button className="h-8" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setNutritionProducts((current) => [...current, emptyNutritionProduct()])} type="button" variant="ghost">
+                Agregar producto
+              </Button>
+            </div>
+            {nutritionProducts.map((product, index) => (
+              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.2fr_1fr_auto]">
+                <TextInput
+                  aria-label={`Producto ${index + 1}`}
+                  onChange={(event) => setNutritionProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, product: event.target.value } : item))}
+                  placeholder="Producto"
+                  required
+                  value={product.product}
+                />
+                <TextInput
+                  aria-label={`Dosis ${index + 1}`}
+                  onChange={(event) => setNutritionProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
+                  placeholder="Dosis"
+                  required
+                  value={product.dose}
+                />
+                <Button aria-label={`Quitar producto ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus className="h-4 w-4" />} onClick={() => setNutritionProducts((current) => current.length === 1 ? [emptyNutritionProduct()] : current.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="ghost" />
+              </div>
+            ))}
+          </section>
           <Field label="Método"><SelectInput name="method" defaultValue="Fertirriego">{["Fertirriego", "Foliar", "Drench"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Objetivo"><SelectInput name="objective" defaultValue="Engorde">{["Raíz", "Floración", "Cuajado", "Engorde", "Calidad"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Etapa"><SelectInput name="stage" defaultValue="Producción">{["Vegetativo", "Floración", "Cuajado", "Producción"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
@@ -681,12 +726,31 @@ export function RecordModal() {
       {modal === "application" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication}>
           <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Categoría"><SelectInput name="category" defaultValue="Bioestimulante">{Object.keys(applicationCategoryToDb).map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
-          <Field label="Producto"><TextInput name="product" required placeholder="Extracto de algas" /></Field>
-          <Field label="Composición"><TextInput name="composition" placeholder="Ingrediente activo" /></Field>
-          <Field label="Dosis"><TextInput name="dose" required placeholder="1 L / ha" /></Field>
-          <Field label="Área aplicada"><TextInput name="area" placeholder="Casa completa" /></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <section className="grid gap-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
+              <Button className="h-8" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setApplicationProducts((current) => [...current, emptyApplicationProduct()])} type="button" variant="ghost">
+                Agregar producto
+              </Button>
+            </div>
+            {applicationProducts.map((product, index) => (
+              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[0.9fr_1fr_1fr_0.8fr_auto]">
+                <SelectInput
+                  aria-label={`Categoría ${index + 1}`}
+                  onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value as ApplicationRecord["category"] } : item))}
+                  value={product.category}
+                >
+                  {Object.keys(applicationCategoryToDb).map((item) => <option key={item}>{item}</option>)}
+                </SelectInput>
+                <TextInput aria-label={`Producto ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, product: event.target.value } : item))} placeholder="Producto" required value={product.product} />
+                <TextInput aria-label={`Composición ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, composition: event.target.value } : item))} placeholder="Ingrediente activo" value={product.composition} />
+                <TextInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
+                <Button aria-label={`Quitar producto ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus className="h-4 w-4" />} onClick={() => setApplicationProducts((current) => current.length === 1 ? [emptyApplicationProduct()] : current.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="ghost" />
+              </div>
+            ))}
+          </section>
+          <Field label="Área aplicada"><TextInput name="area" placeholder="Casa completa" /></Field>
           <Field label="Intervalo seguridad"><TextInput name="safetyInterval" /></Field>
           <Field label="Reentrada"><TextInput name="reentry" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
