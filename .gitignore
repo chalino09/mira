@@ -26,6 +26,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Supabase local state
+supabase/.temp/
+
 # OS / editor
 .DS_Store
 .idea/

@@ -33,6 +33,7 @@ import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
 import { OverviewHero } from "@/components/overview/OverviewHero";
+import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -1405,12 +1406,13 @@ function ActiveSection() {
 export function AppShell() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const [telegramOpen, setTelegramOpen] = useState(false);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Overview";
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
       <div className="flex min-h-screen">
-        <Sidebar />
+        <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
         <div className="min-w-0 flex-1 pl-14 lg:pl-0">
           <Topbar />
           <main className="mx-auto w-full max-w-[1500px] px-4 py-5 lg:px-6">
@@ -1422,8 +1424,11 @@ export function AppShell() {
           </main>
         </div>
       </div>
-      <MobileNav />
+      <MobileNav onOpenTelegram={() => setTelegramOpen(true)} />
       <RecordModal />
+      {currentUser.role === "manager" ? (
+        <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
+      ) : null}
     </div>
   );
 }

@@ -12,7 +12,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 8. `08_operational_planning.sql`
 9. `09_manager_experience.sql`
 10. `10_simplified_task_flow.sql`
-11. `03_seed_template.sql` solo si quieres datos demo manuales.
+11. `11_telegram_connection.sql`
+12. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -37,3 +38,48 @@ Para activar planeación semanal, asignaciones, trazabilidad operativa y la cola
 Para pedir el nombre real al primer acceso y limitar información administrativa para managers, ejecuta `09_manager_experience.sql`.
 
 Para usar el flujo simple pendiente, completada o bloqueada sin registrar inicio manual, ejecuta `10_simplified_task_flow.sql`.
+
+Para permitir que cada manager vincule su chat de Telegram, ejecuta `11_telegram_connection.sql`.
+
+## Conectar Telegram
+
+1. En Telegram abre `@BotFather`, ejecuta `/newbot` y guarda el token y username entregados.
+2. Genera un secreto para validar el webhook:
+
+```bash
+openssl rand -hex 32
+```
+
+3. Vincula Supabase CLI con el proyecto usando el identificador que aparece en la URL del proyecto:
+
+```bash
+supabase login
+supabase link --project-ref <PROJECT_REF>
+```
+
+4. Guarda los tres valores como secretos de Edge Functions. El username va sin `@`:
+
+```bash
+supabase secrets set \
+  TELEGRAM_BOT_TOKEN="token_de_botfather" \
+  TELEGRAM_BOT_USERNAME="username_del_bot" \
+  TELEGRAM_WEBHOOK_SECRET="secreto_generado"
+```
+
+5. Despliega las funciones:
+
+```bash
+supabase functions deploy telegram-link
+supabase functions deploy telegram-webhook --no-verify-jwt
+```
+
+6. Registra el webhook reemplazando los valores entre `< >`:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -d "url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
+  -d 'allowed_updates=["message"]'
+```
+
+Después, el manager entra a Mira, pulsa `Telegram`, abre el enlace y presiona `Iniciar` dentro del bot. Los tokens y secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.

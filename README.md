@@ -30,6 +30,7 @@ supabase/07_greenhouse_coordinates.sql
 supabase/08_operational_planning.sql
 supabase/09_manager_experience.sql
 supabase/10_simplified_task_flow.sql
+supabase/11_telegram_connection.sql
 ```
 
 4. Levanta la app:

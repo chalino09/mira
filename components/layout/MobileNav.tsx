@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarDays, Droplets, Home, Menu, Sprout, X } from "lucide-react";
+import { BarChart3, CalendarDays, Droplets, Home, Menu, Send, Sprout, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BrandMark } from "@/components/layout/Sidebar";
 import { navigationItemsForRole } from "@/data/navigation";
@@ -17,7 +17,7 @@ const iconFallback = {
   reports: BarChart3
 };
 
-export function MobileNav() {
+export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
   const [open, setOpen] = useState(false);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
@@ -68,6 +68,19 @@ export function MobileNav() {
                 </button>
               );
             })}
+            {currentUser.role === "manager" ? (
+              <button
+                className="mt-3 flex h-10 w-full items-center gap-3 border-t border-app-border px-3 pt-3 text-sm font-medium text-app-green"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenTelegram?.();
+                }}
+                type="button"
+              >
+                <Send className="h-4 w-4" />
+                Conectar Telegram
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
