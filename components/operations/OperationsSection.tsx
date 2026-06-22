@@ -742,12 +742,13 @@ export function OperationsSection() {
           {loading ? (
             <div className="py-16 text-center text-sm text-app-muted">Cargando operación...</div>
           ) : tasks.length ? (
-            <div className="mt-8 grid gap-0 xl:grid-cols-7">
-              {weekDays.map((date, dayIndex) => {
-                const key = dateKey(date);
-                const dayTasks = tasks.filter((task) => task.scheduled_date === key);
-                return (
-                  <section key={key} className={`min-w-0 border-t border-app-border py-4 xl:px-3 ${dayIndex ? "xl:border-l" : ""}`}>
+            <div className="mt-8 max-w-full overflow-x-auto overscroll-x-contain pb-2">
+              <div className="grid xl:min-w-full xl:grid-flow-col xl:grid-rows-1 xl:auto-cols-[minmax(260px,1fr)]">
+                {weekDays.map((date, dayIndex) => {
+                  const key = dateKey(date);
+                  const dayTasks = tasks.filter((task) => task.scheduled_date === key);
+                  return (
+                    <section key={key} className={`min-w-0 border-t border-app-border py-4 xl:px-4 ${dayIndex ? "xl:border-l" : ""}`}>
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-app-muted">{dayLabel(date)}</p>
                       {key === todayKey ? <StatusBadge tone="green">Hoy</StatusBadge> : null}
@@ -759,25 +760,27 @@ export function OperationsSection() {
                         const ownAssignment = taskAssignments.find((item) => item.user_id === currentUser.id);
                         const managerReady = canPlan || !ownAssignment || Boolean(ownAssignment.acknowledged_at);
                         return (
-                          <article key={task.id} className="border-t border-app-border pt-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">
+                          <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
+                            <div className="grid min-w-0 gap-2">
+                              <p className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">
                                 {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabels[task.type] ?? task.type}
                               </p>
-                              <StatusBadge tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
+                              <div className="justify-self-start">
+                                <StatusBadge tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
+                              </div>
                             </div>
-                            <h3 className="mt-2 text-sm font-medium leading-5 text-app-text">{task.title}</h3>
-                            <p className="mt-1 text-xs leading-5 text-app-muted">
+                            <h3 className="mt-3 break-words text-sm font-medium leading-5 text-app-text">{task.title}</h3>
+                            <p className="mt-1 break-words text-xs leading-5 text-app-muted">
                               {greenhouseName(task.greenhouse_id)} · {executionLabels[task.execution_mode]}
                             </p>
                             {taskAssignments.length ? (
-                              <p className="mt-2 text-xs leading-5 text-app-muted">
+                              <p className="mt-2 break-words text-xs leading-5 text-app-muted">
                                 {taskAssignments.map((assignment) => managerName(assignment.user_id)).join(", ")}
                               </p>
                             ) : <p className="mt-2 text-xs text-[#8A2E2E]">Sin encargado</p>}
-                            {task.instructions ? <p className="mt-3 text-xs leading-5 text-app-text">{task.instructions}</p> : null}
+                            {task.instructions ? <p className="mt-3 break-words text-xs leading-5 text-app-text">{task.instructions}</p> : null}
                             {taskMaterials.length ? (
-                              <div className="mt-3 border-l-2 border-app-green pl-2 text-xs leading-5 text-app-muted">
+                              <div className="mt-3 break-words border-l-2 border-app-green pl-2 text-xs leading-5 text-app-muted">
                                 {taskMaterials
                                   .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
                                   .map((material) => (
@@ -798,19 +801,20 @@ export function OperationsSection() {
                                   className="h-8 w-8 px-0"
                                   icon={<Edit3 className="h-3.5 w-3.5" />}
                                   onClick={() => openEditActivity(task)}
+                                  title="Editar actividad"
                                   variant="ghost"
                                 />
                               ) : null}
                               {!canPlan && ownAssignment && !ownAssignment.acknowledged_at ? (
-                                <Button className="h-8 px-2 text-xs" icon={<Check className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "acknowledge")} variant="ghost">Confirmar</Button>
+                                <Button aria-label="Confirmar actividad" className="h-8 w-8 px-0" icon={<Check className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "acknowledge")} title="Confirmar actividad" variant="ghost" />
                               ) : null}
                               {task.status === "pendiente" || task.status === "bloqueada" ? (
-                                <Button className="h-8 px-2 text-xs" disabled={!managerReady} icon={<Play className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "start")} variant="ghost">Iniciar</Button>
+                                <Button aria-label="Iniciar actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<Play className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "start")} title="Iniciar actividad" variant="ghost" />
                               ) : null}
                               {task.status !== "completada" && task.status !== "cancelada" ? (
                                 <>
-                                  <Button className="h-8 px-2 text-xs" disabled={!managerReady} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} variant="ghost">Bloquear</Button>
-                                  <Button className="h-8 px-2 text-xs" disabled={!managerReady} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "complete")} variant="ghost">Completar</Button>
+                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
+                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" disabled={!managerReady} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => runTaskAction(task, "complete")} title="Completar actividad" variant="ghost" />
                                 </>
                               ) : null}
                             </div>
@@ -820,8 +824,9 @@ export function OperationsSection() {
                       {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin actividades</p> : null}
                     </div>
                   </section>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <div className="mt-8">
