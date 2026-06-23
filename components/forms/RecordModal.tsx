@@ -10,6 +10,7 @@ import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
+import { cn } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
@@ -140,6 +141,15 @@ const pestFollowUpStatuses = [
   "Reaplicación programada"
 ];
 
+const tomatoVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
+
+function formatVarietyName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function pestFollowUpText(form: FormData) {
   const status = String(form.get("followUpStatus") ?? "").trim();
   const reviewDate = String(form.get("reviewDate") ?? "").trim();
@@ -153,6 +163,30 @@ function pestFollowUpText(form: FormData) {
   ].filter(Boolean);
 
   return followUp.join("\n");
+}
+
+function BudgetInput({
+  className,
+  defaultValue
+}: {
+  className?: string;
+  defaultValue?: number | string;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-app-muted">$</span>
+      <TextInput
+        className={cn("pl-7 pr-14", className)}
+        min={0}
+        name="budgetAmount"
+        placeholder="Opcional"
+        step="0.01"
+        type="number"
+        defaultValue={defaultValue}
+      />
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-app-muted">MXN</span>
+    </div>
+  );
 }
 
 const modalCopy = {
@@ -319,6 +353,14 @@ export function RecordModal() {
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
+  const selectedVariety = selectedGreenhouse?.variety ? formatVarietyName(selectedGreenhouse.variety) : "";
+  const canonicalSelectedVariety = tomatoVarieties.find(
+    (variety) => variety.toLowerCase() === selectedVariety.toLowerCase()
+  ) ?? selectedVariety;
+  const selectedVarietyOptions =
+    selectedGreenhouse && selectedVariety && !tomatoVarieties.some((variety) => variety.toLowerCase() === selectedVariety.toLowerCase())
+      ? [...tomatoVarieties.slice(0, -1), selectedVariety, "Otra"]
+      : tomatoVarieties;
   const greenhouseOptions = greenhouses.map((greenhouse) => (
     <option key={greenhouse.id} value={greenhouse.id}>
       {greenhouse.name}
@@ -684,10 +726,12 @@ export function RecordModal() {
             <TextInput name="surfaceM2" type="number" defaultValue={0} />
           </Field>
           <Field label="Presupuesto del ciclo">
-            <TextInput min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+            <BudgetInput />
           </Field>
           <Field label="Variedad">
-            <TextInput name="variety" required placeholder="Variedad del tomate" />
+            <SelectInput name="variety" defaultValue="Saladette" required>
+              {tomatoVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+            </SelectInput>
           </Field>
           <Field label="Fecha de trasplante">
             <TextInput name="transplantDate" type="date" />
@@ -736,17 +780,12 @@ export function RecordModal() {
             />
           </Field>
           <Field label="Variedad">
-            <TextInput name="variety" required defaultValue={selectedGreenhouse.variety} />
+            <SelectInput name="variety" defaultValue={canonicalSelectedVariety} required>
+              {selectedVarietyOptions.map((variety) => <option key={variety}>{variety}</option>)}
+            </SelectInput>
           </Field>
           <Field label="Presupuesto del ciclo">
-            <TextInput
-              min={0}
-              name="budgetAmount"
-              placeholder="Opcional"
-              step="0.01"
-              type="number"
-              defaultValue={selectedGreenhouse.budgetAmount ?? ""}
-            />
+            <BudgetInput defaultValue={selectedGreenhouse.budgetAmount ?? ""} />
           </Field>
           <Field label="Fecha de trasplante">
             <TextInput name="transplantDate" type="date" defaultValue={selectedGreenhouse.transplantDate} />

@@ -54,6 +54,8 @@ const onboardingStageToDb: Record<CropStage, string> = {
   Producción: "produccion"
 };
 
+const tomatoVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
+
 function mapCropStage(stage?: string | null): CropStage {
   if (stage === "floracion") return "Floración";
   if (stage === "cuajado") return "Cuajado";
@@ -483,7 +485,9 @@ function OnboardingScreen({
               <TextInput className="rounded-lg bg-app-background" name="greenhouseName" required placeholder="Invernadero 1" />
             </Field>
             <Field label="Variedad">
-              <TextInput className="rounded-lg bg-app-background" name="variety" required placeholder="Saladette" />
+              <SelectInput className="rounded-lg bg-app-background" name="variety" defaultValue="Saladette" required>
+                {tomatoVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+              </SelectInput>
             </Field>
             <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
             <Field label="Etapa">
@@ -500,7 +504,11 @@ function OnboardingScreen({
               <TextInput className="rounded-lg bg-app-background" min={0} name="surfaceM2" placeholder="1000" type="number" />
             </Field>
             <Field label="Presupuesto del ciclo">
-              <TextInput className="rounded-lg bg-app-background" min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-app-muted">$</span>
+                <TextInput className="rounded-lg bg-app-background pl-7 pr-14" min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-app-muted">MXN</span>
+              </div>
             </Field>
             <Field label="Plantas">
               <TextInput className="rounded-lg bg-app-background" min={0} name="plants" defaultValue={0} type="number" />
