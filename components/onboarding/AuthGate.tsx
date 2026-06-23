@@ -6,7 +6,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { Button } from "@/components/ui/Button";
-import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -44,6 +44,8 @@ type OnboardingForm = {
   surfaceM2: number | null;
   budgetAmount: number | null;
   plants: number;
+  stemCount: 1 | 2 | null;
+  isGrafted: boolean | null;
   beds: number;
 };
 
@@ -145,7 +147,7 @@ function daysSince(date?: string | null) {
 }
 
 function optionalNumber(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
+  const text = String(value ?? "").replace(/,/g, "").trim();
   return text ? Number(text) : null;
 }
 
@@ -409,6 +411,10 @@ function OnboardingScreen({
       surfaceM2: optionalNumber(form.get("surfaceM2")),
       budgetAmount: optionalNumber(form.get("budgetAmount")),
       plants: optionalInteger(form.get("plants")),
+      stemCount: Number(form.get("stemCount")) === 1 || Number(form.get("stemCount")) === 2
+        ? Number(form.get("stemCount")) as 1 | 2
+        : null,
+      isGrafted: String(form.get("isGrafted") ?? "") === "" ? null : String(form.get("isGrafted")) === "true",
       beds: optionalInteger(form.get("beds"))
     };
 
@@ -423,6 +429,8 @@ function OnboardingScreen({
       initial_surface_m2: values.surfaceM2,
       initial_budget_amount: values.budgetAmount,
       initial_plants_count: values.plants,
+      initial_stem_count: values.stemCount,
+      initial_is_grafted: values.isGrafted,
       initial_beds_count: values.beds,
       initial_latitude: values.latitude,
       initial_longitude: values.longitude,
@@ -501,20 +509,34 @@ function OnboardingScreen({
               <TextInput className="rounded-lg bg-app-background" max={today} name="transplantDate" type="date" />
             </Field>
             <Field label="Superficie m2">
-              <TextInput className="rounded-lg bg-app-background" min={0} name="surfaceM2" placeholder="1000" type="number" />
+              <FormattedNumberInput className="rounded-lg bg-app-background" name="surfaceM2" placeholder="1,000" />
             </Field>
             <Field label="Presupuesto del ciclo">
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-app-muted">$</span>
-                <TextInput className="rounded-lg bg-app-background pl-7 pr-14" min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+                <FormattedNumberInput className="rounded-lg bg-app-background pl-7 pr-14" name="budgetAmount" placeholder="Opcional" />
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-app-muted">MXN</span>
               </div>
             </Field>
             <Field label="Plantas">
-              <TextInput className="rounded-lg bg-app-background" min={0} name="plants" defaultValue={0} type="number" />
+              <FormattedNumberInput className="rounded-lg bg-app-background" name="plants" defaultValue={0} />
+            </Field>
+            <Field label="Manejo de tallos">
+              <SelectInput className="rounded-lg bg-app-background" name="stemCount" defaultValue="">
+                <option value="">Sin configurar</option>
+                <option value="1">Un tallo</option>
+                <option value="2">Doble tallo</option>
+              </SelectInput>
+            </Field>
+            <Field label="Injerto">
+              <SelectInput className="rounded-lg bg-app-background" name="isGrafted" defaultValue="">
+                <option value="">Sin configurar</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </SelectInput>
             </Field>
             <Field label="Camas">
-              <TextInput className="rounded-lg bg-app-background" min={0} name="beds" defaultValue={0} type="number" />
+              <FormattedNumberInput className="rounded-lg bg-app-background" name="beds" defaultValue={0} />
             </Field>
           </div>
         </section>
@@ -689,6 +711,8 @@ export function AuthGate() {
         variety: greenhouse.tomato_variety ?? "Roma",
         transplantDate: greenhouse.transplant_date ?? "",
         plants: greenhouse.plants_count ?? 0,
+        stemCount: greenhouse.stem_count === 1 || greenhouse.stem_count === 2 ? greenhouse.stem_count : null,
+        isGrafted: greenhouse.is_grafted == null ? null : Boolean(greenhouse.is_grafted),
         stage: mapCropStage(greenhouse.crop_stage),
         managerUserId: greenhouse.manager_user_id ?? null,
         manager: managerProfile?.full_name ?? managerProfile?.email ?? "Sin encargado",

@@ -34,6 +34,7 @@ supabase/11_telegram_connection.sql
 supabase/12_operation_technical_records.sql
 supabase/13_greenhouse_manager_scope.sql
 supabase/14_greenhouse_budget.sql
+supabase/15_greenhouse_crop_details.sql
 ```
 
 4. Levanta la app:

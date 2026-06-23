@@ -65,6 +65,8 @@ export type Greenhouse = {
   variety: string;
   transplantDate: string;
   plants: number;
+  stemCount: 1 | 2 | null;
+  isGrafted: boolean | null;
   stage: CropStage;
   managerUserId: string | null;
   manager: string;

@@ -128,6 +128,13 @@ function EditorialRail({
   );
 }
 
+function cropPlantDetail(greenhouse: Greenhouse) {
+  return [
+    greenhouse.stemCount === 1 ? "Un tallo" : greenhouse.stemCount === 2 ? "Doble tallo" : "Tallos sin configurar",
+    greenhouse.isGrafted === null ? "Injerto sin configurar" : greenhouse.isGrafted ? "Con injerto" : "Sin injerto"
+  ].join(" · ");
+}
+
 function useFilteredData() {
   const state = useGreenhouseStore();
   const greenhouse = state.greenhouses.find((item) => item.id === state.selectedGreenhouseId) ?? state.greenhouses[0];
@@ -299,7 +306,7 @@ function GreenhousesSection() {
               value={active.name}
             />
             <EditorialObject
-              detail={`${active.beds} camas · ${active.surface}`}
+              detail={`${active.beds} camas · ${active.surface} · ${cropPlantDetail(active)}`}
               icon={Leaf}
               index="02"
               label="Plantas"

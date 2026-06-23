@@ -4,7 +4,7 @@ import { Minus, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
@@ -31,11 +31,16 @@ function daysSince(date: string) {
 }
 
 function optionalNumber(value: FormDataEntryValue | null) {
-  if (value === null || String(value).trim() === "") {
+  const text = String(value ?? "").replace(/,/g, "").trim();
+  if (!text) {
     return null;
   }
 
-  return Number(value);
+  return Number(text);
+}
+
+function requiredNumber(value: FormDataEntryValue | null) {
+  return optionalNumber(value) ?? 0;
 }
 
 type CostDraft = {
@@ -175,13 +180,10 @@ function BudgetInput({
   return (
     <div className="relative">
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-app-muted">$</span>
-      <TextInput
+      <FormattedNumberInput
         className={cn("pl-7 pr-14", className)}
-        min={0}
         name="budgetAmount"
         placeholder="Opcional"
-        step="0.01"
-        type="number"
         defaultValue={defaultValue}
       />
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-app-muted">MXN</span>
@@ -392,15 +394,19 @@ export function RecordModal() {
       latitude: optionalNumber(form.get("latitude")),
       longitude: optionalNumber(form.get("longitude")),
       locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
-      surface: `${Number(form.get("surfaceM2") || 0).toLocaleString("es-MX")} m2`,
+      surface: `${requiredNumber(form.get("surfaceM2")).toLocaleString("es-MX")} m2`,
       budgetAmount: optionalNumber(form.get("budgetAmount")),
       variety: String(form.get("variety")),
       transplantDate: String(form.get("transplantDate")),
-      plants: Number(form.get("plants")),
+      plants: requiredNumber(form.get("plants")),
+      stemCount: Number(form.get("stemCount")) === 1 || Number(form.get("stemCount")) === 2
+        ? Number(form.get("stemCount")) as 1 | 2
+        : null,
+      isGrafted: String(form.get("isGrafted") ?? "") === "" ? null : String(form.get("isGrafted")) === "true",
       stage: String(form.get("stage")) as CropStage,
       managerUserId,
       manager: managerNameFor(managerUserId),
-      beds: Number(form.get("beds")),
+      beds: requiredNumber(form.get("beds")),
       daysSinceTransplant: daysSince(String(form.get("transplantDate"))),
       healthStatus: "Baja",
       temperature: 0,
@@ -415,11 +421,13 @@ export function RecordModal() {
     latitude: greenhouse.latitude,
     longitude: greenhouse.longitude,
     location_accuracy_m: greenhouse.locationAccuracyM,
-    surface_m2: Number(form.get("surfaceM2") || 0),
+    surface_m2: requiredNumber(form.get("surfaceM2")),
     budget_amount: greenhouse.budgetAmount,
     tomato_variety: greenhouse.variety,
     transplant_date: greenhouse.transplantDate || null,
     plants_count: greenhouse.plants,
+    stem_count: greenhouse.stemCount,
+    is_grafted: greenhouse.isGrafted,
     beds_count: greenhouse.beds,
     crop_stage: cropStageToDb[greenhouse.stage],
     manager_user_id: greenhouse.managerUserId,
@@ -723,7 +731,7 @@ export function RecordModal() {
           </Field>
           <PreciseLocationField key="new-greenhouse-location" />
           <Field label="Superficie m2">
-            <TextInput name="surfaceM2" type="number" defaultValue={0} />
+            <FormattedNumberInput name="surfaceM2" defaultValue={0} />
           </Field>
           <Field label="Presupuesto del ciclo">
             <BudgetInput />
@@ -737,10 +745,24 @@ export function RecordModal() {
             <TextInput name="transplantDate" type="date" />
           </Field>
           <Field label="Plantas">
-            <TextInput name="plants" type="number" defaultValue={0} />
+            <FormattedNumberInput name="plants" defaultValue={0} />
+          </Field>
+          <Field label="Manejo de tallos">
+            <SelectInput name="stemCount" defaultValue="">
+              <option value="">Sin configurar</option>
+              <option value="1">Un tallo</option>
+              <option value="2">Doble tallo</option>
+            </SelectInput>
+          </Field>
+          <Field label="Injerto">
+            <SelectInput name="isGrafted" defaultValue="">
+              <option value="">Sin configurar</option>
+              <option value="true">Sí</option>
+              <option value="false">No</option>
+            </SelectInput>
           </Field>
           <Field label="Camas">
-            <TextInput name="beds" type="number" defaultValue={0} />
+            <FormattedNumberInput name="beds" defaultValue={0} />
           </Field>
           {canAssignGreenhouseManager ? (
             <Field label="Encargado">
@@ -773,9 +795,8 @@ export function RecordModal() {
             longitudeDefaultValue={selectedGreenhouse.longitude}
           />
           <Field label="Superficie m2">
-            <TextInput
+            <FormattedNumberInput
               name="surfaceM2"
-              type="number"
               defaultValue={Number(selectedGreenhouse.surface.replace(/[^\d.]/g, "")) || 0}
             />
           </Field>
@@ -791,10 +812,24 @@ export function RecordModal() {
             <TextInput name="transplantDate" type="date" defaultValue={selectedGreenhouse.transplantDate} />
           </Field>
           <Field label="Plantas">
-            <TextInput name="plants" type="number" defaultValue={selectedGreenhouse.plants} />
+            <FormattedNumberInput name="plants" defaultValue={selectedGreenhouse.plants} />
+          </Field>
+          <Field label="Manejo de tallos">
+            <SelectInput name="stemCount" defaultValue={selectedGreenhouse.stemCount?.toString() ?? ""}>
+              <option value="">Sin configurar</option>
+              <option value="1">Un tallo</option>
+              <option value="2">Doble tallo</option>
+            </SelectInput>
+          </Field>
+          <Field label="Injerto">
+            <SelectInput name="isGrafted" defaultValue={selectedGreenhouse.isGrafted === null ? "" : String(selectedGreenhouse.isGrafted)}>
+              <option value="">Sin configurar</option>
+              <option value="true">Sí</option>
+              <option value="false">No</option>
+            </SelectInput>
           </Field>
           <Field label="Camas">
-            <TextInput name="beds" type="number" defaultValue={selectedGreenhouse.beds} />
+            <FormattedNumberInput name="beds" defaultValue={selectedGreenhouse.beds} />
           </Field>
           {canAssignGreenhouseManager ? (
             <Field label="Encargado">
