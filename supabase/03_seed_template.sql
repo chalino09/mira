@@ -50,7 +50,7 @@ begin
   )
   values (
     company_id,
-    'Casa 1',
+    'Invernadero 1',
     'Acatzingo, Puebla',
     18.981900,
     -97.783800,
@@ -119,7 +119,7 @@ begin
     created_by
   )
   values
-    (company_id, greenhouse_id, 'fungicida', 'Azoxistrobin', 'Azoxistrobin 250 g/L', '0.6 L / ha', 'Casa 1 completa', '3 días', '12 horas', '2026-06-14', 'Preventivo contra cenicilla', manager_user_id, owner_user_id);
+    (company_id, greenhouse_id, 'fungicida', 'Azoxistrobin', 'Azoxistrobin 250 g/L', '0.6 L / ha', 'Invernadero completo', '3 días', '12 horas', '2026-06-14', 'Preventivo contra cenicilla', manager_user_id, owner_user_id);
 
   insert into public.pest_alerts (
     company_id,

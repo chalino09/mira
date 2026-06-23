@@ -129,7 +129,7 @@ const modalCopy = {
   greenhouse: {
     title: "Nuevo invernadero",
     kicker: "Infraestructura",
-    note: "Crea una nueva casa, hectárea o módulo productivo."
+    note: "Crea un nuevo invernadero con sus datos productivos."
   },
   editGreenhouse: {
     title: "Editar invernadero",
@@ -154,7 +154,7 @@ const modalCopy = {
   application: {
     title: "Nueva aplicación",
     kicker: "Sanidad e insumos",
-    note: "Registra producto, dosis, área e intervalos de seguridad."
+    note: "Registra productos, dosis, sección, intervalo antes de cosecha y tiempo de reentrada."
   },
   pest: {
     title: "Nueva alerta sanitaria",
@@ -593,7 +593,7 @@ export function RecordModal() {
       {modal === "greenhouse" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleGreenhouse}>
           <Field label="Nombre">
-            <TextInput name="name" required placeholder="Casa 2" />
+            <TextInput name="name" required placeholder="Invernadero 2" />
           </Field>
           <PreciseLocationField key="new-greenhouse-location" />
           <Field label="Superficie m2">
@@ -750,9 +750,9 @@ export function RecordModal() {
               </div>
             ))}
           </section>
-          <Field label="Área aplicada"><TextInput name="area" placeholder="Casa completa" /></Field>
-          <Field label="Intervalo seguridad"><TextInput name="safetyInterval" /></Field>
-          <Field label="Reentrada"><TextInput name="reentry" /></Field>
+          <Field label="Área aplicada"><TextInput name="area" placeholder="Invernadero completo o sección 1" /></Field>
+          <Field label="Intervalo de seguridad (antes de cosecha)"><TextInput name="safetyInterval" placeholder="Ej. 3 días" /></Field>
+          <Field label="Tiempo de reentrada"><TextInput name="reentry" placeholder="Ej. 12 horas" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
         </FormShell>
       ) : null}

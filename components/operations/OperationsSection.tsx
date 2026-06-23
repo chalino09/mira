@@ -416,7 +416,7 @@ function ActivityFormModal({
             </SelectInput>
           </Field>
           <Field className="sm:col-span-2" label="Título">
-            <TextInput name="title" defaultValue={task?.title ?? ""} placeholder="Fertirriego matutino Casa 1" required />
+            <TextInput name="title" defaultValue={task?.title ?? ""} placeholder="Fertirriego matutino Invernadero 1" required />
           </Field>
           <Field label="Día">
             <SelectInput name="scheduledDate" defaultValue={task?.scheduled_date ?? dateKey(weekDays[0])}>
@@ -499,12 +499,12 @@ function ActivityFormModal({
           ) : null}
           {activityType === "aplicacion_foliar" ? (
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Área planeada">
-              <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Casa completa, sección 1..." value={technicalPlan.appliedArea ?? ""} />
+              <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Invernadero completo o sección 1" value={technicalPlan.appliedArea ?? ""} />
             </Field>
           ) : null}
           {activityType === "cosecha" ? (
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Zona de cosecha">
-              <TextInput onChange={(event) => updateTechnicalPlan({ harvestZone: event.target.value })} placeholder="Casa completa, camas 1-10..." value={technicalPlan.harvestZone ?? ""} />
+              <TextInput onChange={(event) => updateTechnicalPlan({ harvestZone: event.target.value })} placeholder="Invernadero completo o sección 1" value={technicalPlan.harvestZone ?? ""} />
             </Field>
           ) : null}
         </div>
@@ -676,7 +676,7 @@ function CompleteApplicationModal({
             <TextInput onChange={(event) => setOccurredAt(event.target.value)} required type="date" value={occurredAt} />
           </Field>
           <Field label="Área aplicada">
-            <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Casa completa, sección 1..." value={appliedArea} />
+            <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Invernadero completo o sección 1" value={appliedArea} />
           </Field>
         </div>
 
@@ -717,15 +717,17 @@ function CompleteApplicationModal({
                     value={application.composition}
                   />
                 </Field>
-                <Field label="Intervalo de seguridad">
+                <Field label="Intervalo de seguridad (antes de cosecha)">
                   <TextInput
                     onChange={(event) => updateApplication(index, { safetyInterval: event.target.value })}
+                    placeholder="Ej. 3 días"
                     value={application.safetyInterval}
                   />
                 </Field>
-                <Field label="Reentrada">
+                <Field label="Tiempo de reentrada">
                   <TextInput
                     onChange={(event) => updateApplication(index, { reentryInterval: event.target.value })}
+                    placeholder="Ej. 12 horas"
                     value={application.reentryInterval}
                   />
                 </Field>

@@ -477,7 +477,7 @@ function OnboardingScreen({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Nombre">
-              <TextInput className="rounded-lg bg-app-background" name="greenhouseName" required placeholder="Casa 1" />
+              <TextInput className="rounded-lg bg-app-background" name="greenhouseName" required placeholder="Invernadero 1" />
             </Field>
             <Field label="Variedad">
               <TextInput className="rounded-lg bg-app-background" name="variety" required placeholder="Saladette" />

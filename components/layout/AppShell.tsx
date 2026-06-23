@@ -267,7 +267,7 @@ function GreenhousesSection() {
       <SectionHeader
         action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button> : undefined}
         title="Invernaderos"
-        description="Inventario de casas, variedades, responsables y estado del cultivo."
+        description="Inventario de invernaderos, variedades, responsables y estado del cultivo."
       />
       <div className="grid gap-10 xl:grid-cols-[minmax(0,1.35fr)_320px]">
         <div className="grid gap-3">
@@ -286,7 +286,7 @@ function GreenhousesSection() {
               detail={`${active.variety} · ${active.stage}`}
               icon={Sprout}
               index="01"
-              label="Casa seleccionada"
+              label="Invernadero seleccionado"
               value={active.name}
             />
             <EditorialObject
@@ -424,7 +424,7 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
           { key: "composition", label: "Composición", render: (item) => item.composition },
           { key: "dose", label: "Dosis", render: (item) => item.dose },
           { key: "area", label: "Área", render: (item) => item.area },
-          { key: "safety", label: "Seguridad", render: (item) => `${item.safetyInterval} · ${item.reentry}` }
+          { key: "safety", label: "Cosecha / reentrada", render: (item) => `${item.safetyInterval || "--"} · ${item.reentry || "--"}` }
         ]}
         data={greenhouseApplications}
       />
@@ -1076,7 +1076,7 @@ function SettingsSection() {
     {
       key: "greenhouses",
       title: "Invernaderos",
-      description: "Casas, hectáreas, ubicación, superficie, variedad y responsable.",
+      description: "Invernaderos, ubicación, superficie, variedad y responsable.",
       kicker: "Producción",
       value: `${greenhouses.length} activos`,
       icon: Sprout
@@ -1375,7 +1375,7 @@ function SettingsSection() {
       {activeSetting === "greenhouses" ? (
         <SettingsPanel
           action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="ghost">Nuevo</Button>}
-          description={`Administración rápida de casas, ubicación, superficie y responsables. Superficie total: ${formatNumber(totalSurface)} m2.`}
+          description={`Administración rápida de invernaderos, ubicación, superficie y responsables. Superficie total: ${formatNumber(totalSurface)} m2.`}
           icon={Sprout}
           kicker="Producción"
           title="Invernaderos"
