@@ -1,4 +1,4 @@
-import { CalendarDays, MapPin, Sprout } from "lucide-react";
+import { CalendarDays, MapPin, Sprout, UserRound } from "lucide-react";
 import { RiskBadge } from "@/components/ui/StatusBadge";
 import { formatDate, formatNumber } from "@/lib/utils";
 import type { Greenhouse } from "@/types";
@@ -29,7 +29,7 @@ export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCar
         </div>
         <RiskBadge level={greenhouse.healthStatus} />
       </div>
-      <div className="mt-5 grid gap-3 text-sm text-app-muted sm:grid-cols-3">
+      <div className="mt-5 grid gap-3 text-sm text-app-muted sm:grid-cols-4">
         <span className="flex items-center gap-2">
           <MapPin className="h-4 w-4" />
           {greenhouse.location}
@@ -37,6 +37,10 @@ export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCar
         <span className="flex items-center gap-2">
           <Sprout className="h-4 w-4" />
           {formatNumber(greenhouse.plants)} plantas
+        </span>
+        <span className="flex items-center gap-2">
+          <UserRound className="h-4 w-4" />
+          Encargado: {greenhouse.manager}
         </span>
         <span className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4" />

@@ -219,6 +219,15 @@ function OverviewSection() {
   const lastApplication = greenhouseApplications[0];
   const pendingAlerts = greenhousePests.filter((alert) => alert.severity !== "Baja").length;
 
+  if (!greenhouse) {
+    return (
+      <EmptyState
+        icon={Sprout}
+        title="No tienes un invernadero asignado. Pide a un owner o admin que te asigne como encargado."
+      />
+    );
+  }
+
   const handleCompleteTask = async (taskId: string) => {
     setTaskNotice(null);
     setSavingTaskId(taskId);
@@ -440,7 +449,7 @@ function PestsSection() {
       <SectionHeader
         action={<Button icon={<AlertTriangle className="h-4 w-4" />} onClick={() => openModal("pest")} variant="secondary">Nueva alerta</Button>}
         title="Plagas y enfermedades"
-        description="Monitoreo sanitario, severidad, zonas afectadas, acciones tomadas y seguimiento."
+        description="Monitoreo sanitario, incidencia, zonas afectadas, acciones tomadas, seguimiento y reaplicación."
       />
       {greenhousePests.length ? (
         <div className="grid gap-0 border-b border-app-border">
@@ -461,7 +470,7 @@ function PestsSection() {
                   <p className="mt-1 text-app-muted">{alert.action}</p>
                 </div>
                 <div className="border-l border-app-border pl-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Seguimiento</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Seguimiento / reaplicación</p>
                   <p className="mt-1 text-app-muted">{alert.followUp}</p>
                 </div>
               </div>
@@ -585,11 +594,14 @@ function TechnicalRecordsSection() {
 }
 
 function CostsSection() {
-  const { greenhouseCosts, greenhouseHarvest, openModal } = useFilteredData();
+  const { greenhouse, greenhouseCosts, greenhouseHarvest, openModal } = useFilteredData();
   const totalCost = greenhouseCosts.reduce((sum, item) => sum + item.amount, 0);
   const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
   const costPerKg = totalKg ? totalCost / totalKg : 0;
   const costChartData = costByCategory(greenhouseCosts);
+  const budgetAmount = greenhouse?.budgetAmount ?? null;
+  const remainingBudget = budgetAmount === null ? null : budgetAmount - totalCost;
+  const budgetUsed = budgetAmount && budgetAmount > 0 ? Math.min(100, Math.round((totalCost / budgetAmount) * 100)) : null;
 
   return (
     <section>
@@ -598,10 +610,16 @@ function CostsSection() {
         title="Costos"
         description="Mano de obra, insumos, agua, energía, mantenimiento, transporte y margen estimado."
       />
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      {budgetAmount === null ? (
+        <div className="mb-5 border border-[#E3D7B6] bg-[#FFF8E6] px-4 py-3 text-sm leading-6 text-[#725A1A]">
+          Presupuesto del ciclo pendiente de configurar. Puedes seguir operando y capturando costos; cuando lo agregues al invernadero se activará el comparativo.
+        </div>
+      ) : null}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
+        <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en invernadero" : `${budgetUsed}% usado`} tone="soft" />
+        <MetricCard icon={WalletCards} label="Disponible" value={remainingBudget === null ? "--" : formatCurrency(remainingBudget)} detail={remainingBudget !== null && remainingBudget < 0 ? "Presupuesto rebasado" : "Contra costos reales"} />
         <MetricCard icon={Leaf} label="Costo por kg" value={formatCurrency(costPerKg)} detail="Contra kg cosechados" />
-        <MetricCard icon={ActivitySquare} label="Categorías" value={`${costChartData.length}`} detail="Con registros guardados" tone="soft" />
       </div>
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
         <CostChart data={costChartData} />
@@ -1388,6 +1406,9 @@ function SettingsSection() {
                     <p className="text-sm font-medium text-app-text">{greenhouse.name}</p>
                     <p className="mt-1 text-xs leading-5 text-app-muted">
                       {greenhouse.location || "Sin ubicación"} · {greenhouse.surface} · {greenhouse.variety}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-app-muted">
+                      Encargado: {greenhouse.manager}
                     </p>
                   </div>
                   <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => editGreenhouse(greenhouse.id)} variant="ghost">

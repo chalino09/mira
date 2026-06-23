@@ -42,6 +42,7 @@ type OnboardingForm = {
   stage: CropStage;
   transplantDate: string;
   surfaceM2: number | null;
+  budgetAmount: number | null;
   plants: number;
   beds: number;
 };
@@ -66,20 +67,20 @@ function mapRiskLevel(level?: string | null): RiskLevel {
   return "Baja";
 }
 
-function mapTaskType(type?: string | null): TaskType {
+function mapTaskType(type?: string | null, technicalPlan?: Record<string, any> | null): TaskType {
   const labels: Record<string, TaskType> = {
     riego: "Riego",
     fertirriego: "Fertirriego",
     fertilizacion: "Fertilización",
     aplicacion_foliar: "Aplicación foliar",
-    revision_plagas: "Revisión de plagas",
-    poda: "Poda",
-    tutoreo: "Tutoreo",
+    revision_plagas: "Revisión de plagas y enfermedades",
+    poda: "Deschuponado",
+    tutoreo: "Manejo de rafia",
     deshoje: "Deshoje",
     cosecha: "Cosecha",
     limpieza: "Limpieza",
     mantenimiento: "Mantenimiento",
-    otro: "Otra"
+    otro: technicalPlan?.cycleWorkType ? "Preparación de ciclo" : "Otra"
   };
 
   return labels[type ?? ""] ?? "Riego";
@@ -404,6 +405,7 @@ function OnboardingScreen({
       stage: String(form.get("stage") ?? "Producción") as CropStage,
       transplantDate: String(form.get("transplantDate") ?? ""),
       surfaceM2: optionalNumber(form.get("surfaceM2")),
+      budgetAmount: optionalNumber(form.get("budgetAmount")),
       plants: optionalInteger(form.get("plants")),
       beds: optionalInteger(form.get("beds"))
     };
@@ -417,6 +419,7 @@ function OnboardingScreen({
       initial_crop_stage: onboardingStageToDb[values.stage],
       initial_transplant_date: values.transplantDate || null,
       initial_surface_m2: values.surfaceM2,
+      initial_budget_amount: values.budgetAmount,
       initial_plants_count: values.plants,
       initial_beds_count: values.beds,
       initial_latitude: values.latitude,
@@ -496,6 +499,9 @@ function OnboardingScreen({
             <Field label="Superficie m2">
               <TextInput className="rounded-lg bg-app-background" min={0} name="surfaceM2" placeholder="1000" type="number" />
             </Field>
+            <Field label="Presupuesto del ciclo">
+              <TextInput className="rounded-lg bg-app-background" min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+            </Field>
             <Field label="Plantas">
               <TextInput className="rounded-lg bg-app-background" min={0} name="plants" defaultValue={0} type="number" />
             </Field>
@@ -560,14 +566,7 @@ export function AuthGate() {
 
     const [
       { data: profile },
-      { data: greenhouseRows },
-      { data: taskRows },
-      { data: irrigationRows },
-      { data: nutritionRows },
-      { data: applicationRows },
-      { data: pestRows },
-      { data: harvestRows },
-      { data: costRows }
+      { data: greenhouseRows }
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -578,42 +577,7 @@ export function AuthGate() {
         .from("greenhouses")
         .select("*")
         .eq("company_id", membership.company_id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("tasks")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("scheduled_date", { ascending: true }),
-      supabase
-        .from("irrigation_records")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("occurred_at", { ascending: false }),
-      supabase
-        .from("nutrition_records")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("occurred_at", { ascending: false }),
-      supabase
-        .from("application_records")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("occurred_at", { ascending: false }),
-      supabase
-        .from("pest_alerts")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("detected_at", { ascending: false }),
-      supabase
-        .from("harvest_records")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("occurred_at", { ascending: false }),
-      supabase
-        .from("cost_records")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("occurred_at", { ascending: false })
+        .order("created_at", { ascending: true })
     ]);
 
     const organization: Organization = {
@@ -637,31 +601,102 @@ export function AuthGate() {
       role: membership.role
     };
 
-    const mappedGreenhouses: Greenhouse[] = (greenhouseRows ?? []).map((greenhouse: any) => ({
-      id: greenhouse.id,
-      name: greenhouse.name,
-      location: greenhouse.location ?? "",
-      latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
-      longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
-      locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
-      surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
-      variety: greenhouse.tomato_variety ?? "Roma",
-      transplantDate: greenhouse.transplant_date ?? "",
-      plants: greenhouse.plants_count ?? 0,
-      stage: mapCropStage(greenhouse.crop_stage),
-      manager: currentUser.fullName,
-      beds: greenhouse.beds_count ?? 0,
-      daysSinceTransplant: daysSince(greenhouse.transplant_date),
-      healthStatus: mapRiskLevel(greenhouse.health_status),
-      temperature: 0,
-      humidity: 0,
-      estimatedProductionKg: 0
-    }));
+    const canSeeAllGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
+    const visibleGreenhouseRows = canSeeAllGreenhouses
+      ? (greenhouseRows ?? [])
+      : (greenhouseRows ?? []).filter((greenhouse: any) => greenhouse.manager_user_id === currentUser.id);
+    const visibleGreenhouseIds = visibleGreenhouseRows.map((greenhouse: any) => greenhouse.id);
+    const emptyGreenhouseId = "00000000-0000-0000-0000-000000000000";
+    const greenhouseScope = visibleGreenhouseIds.length ? visibleGreenhouseIds : [emptyGreenhouseId];
+
+    const managerUserIds = Array.from(
+      new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_user_id).filter(Boolean))
+    );
+    const { data: managerMemberRows } = managerUserIds.length
+      ? await supabase
+        .from("company_members")
+        .select("user_id")
+        .eq("company_id", membership.company_id)
+        .eq("role", "manager")
+        .eq("status", "active")
+        .in("user_id", managerUserIds)
+      : { data: [] };
+    const activeManagerUserIds = (managerMemberRows ?? []).map((member: any) => member.user_id);
+    const { data: managerProfiles } = activeManagerUserIds.length
+      ? await supabase.from("profiles").select("id, full_name, email").in("id", activeManagerUserIds)
+      : { data: [] };
+    const managerProfileMap = new Map((managerProfiles ?? []).map((manager: any) => [manager.id, manager]));
+
+    const [
+      { data: taskRows },
+      { data: irrigationRows },
+      { data: nutritionRows },
+      { data: applicationRows },
+      { data: pestRows },
+      { data: harvestRows },
+      { data: costRows }
+    ] = await Promise.all([
+      (canSeeAllGreenhouses
+        ? supabase.from("tasks").select("*").eq("company_id", membership.company_id)
+        : supabase.from("tasks").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("scheduled_date", { ascending: true }),
+      (canSeeAllGreenhouses
+        ? supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id)
+        : supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("occurred_at", { ascending: false }),
+      (canSeeAllGreenhouses
+        ? supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id)
+        : supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("occurred_at", { ascending: false }),
+      (canSeeAllGreenhouses
+        ? supabase.from("application_records").select("*").eq("company_id", membership.company_id)
+        : supabase.from("application_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("occurred_at", { ascending: false }),
+      (canSeeAllGreenhouses
+        ? supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id)
+        : supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("detected_at", { ascending: false }),
+      (canSeeAllGreenhouses
+        ? supabase.from("harvest_records").select("*").eq("company_id", membership.company_id)
+        : supabase.from("harvest_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("occurred_at", { ascending: false }),
+      (canSeeAllGreenhouses
+        ? supabase.from("cost_records").select("*").eq("company_id", membership.company_id)
+        : supabase.from("cost_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+      ).order("occurred_at", { ascending: false })
+    ]);
+
+    const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
+      const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
+
+      return {
+        id: greenhouse.id,
+        name: greenhouse.name,
+        location: greenhouse.location ?? "",
+        latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
+        longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
+        locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
+        surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
+        budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
+        variety: greenhouse.tomato_variety ?? "Roma",
+        transplantDate: greenhouse.transplant_date ?? "",
+        plants: greenhouse.plants_count ?? 0,
+        stage: mapCropStage(greenhouse.crop_stage),
+        managerUserId: greenhouse.manager_user_id ?? null,
+        manager: managerProfile?.full_name ?? managerProfile?.email ?? "Sin encargado",
+        beds: greenhouse.beds_count ?? 0,
+        daysSinceTransplant: daysSince(greenhouse.transplant_date),
+        healthStatus: mapRiskLevel(greenhouse.health_status),
+        temperature: 0,
+        humidity: 0,
+        estimatedProductionKg: 0
+      };
+    });
 
     const tasks: Task[] = (taskRows ?? []).map((task: any) => ({
       id: task.id,
       greenhouseId: task.greenhouse_id,
-      type: mapTaskType(task.type),
+      type: mapTaskType(task.type, task.technical_plan),
       title: task.title,
       date: task.scheduled_date,
       time: task.scheduled_time?.slice(0, 5) ?? "",

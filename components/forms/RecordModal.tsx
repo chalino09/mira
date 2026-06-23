@@ -43,6 +43,12 @@ type CostDraft = {
   notes: string;
 };
 
+type ManagerOption = {
+  id: string;
+  name: string;
+  email: string;
+};
+
 function emptyCost(): CostDraft {
   return { category: "Agroinsumos", amount: "", notes: "" };
 }
@@ -68,13 +74,14 @@ const taskTypeToDb: Record<TaskType, string> = {
   Fertirriego: "fertirriego",
   Fertilización: "fertilizacion",
   "Aplicación foliar": "aplicacion_foliar",
-  "Revisión de plagas": "revision_plagas",
-  Poda: "poda",
-  Tutoreo: "tutoreo",
+  "Revisión de plagas y enfermedades": "revision_plagas",
+  Deschuponado: "poda",
+  "Manejo de rafia": "tutoreo",
   Deshoje: "deshoje",
   Cosecha: "cosecha",
   Limpieza: "limpieza",
   Mantenimiento: "mantenimiento",
+  "Preparación de ciclo": "otro",
   Otra: "otro"
 };
 
@@ -124,6 +131,29 @@ const costCategoryToDb: Record<CostRecord["category"], string> = {
   Mantenimiento: "mantenimiento",
   Transporte: "transporte"
 };
+
+const pestFollowUpStatuses = [
+  "Pendiente de revisión",
+  "Controlado",
+  "En seguimiento",
+  "No controló, requiere reaplicación",
+  "Reaplicación programada"
+];
+
+function pestFollowUpText(form: FormData) {
+  const status = String(form.get("followUpStatus") ?? "").trim();
+  const reviewDate = String(form.get("reviewDate") ?? "").trim();
+  const reapplicationDate = String(form.get("reapplicationDate") ?? "").trim();
+  const notes = String(form.get("followUp") ?? "").trim();
+  const followUp = [
+    status ? `Estado: ${status}` : "",
+    reviewDate ? `Revisar: ${reviewDate}` : "",
+    reapplicationDate ? `Reaplicar: ${reapplicationDate}` : "",
+    notes
+  ].filter(Boolean);
+
+  return followUp.join("\n");
+}
 
 const modalCopy = {
   greenhouse: {
@@ -237,12 +267,55 @@ export function RecordModal() {
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
   const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
   const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
+  const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
+  const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
 
   useEffect(() => {
     if (modal === "cost") setCostRows([emptyCost()]);
     if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
     if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
   }, [modal]);
+
+  useEffect(() => {
+    const loadManagers = async () => {
+      if (!canAssignGreenhouseManager || !organization.id || (modal !== "greenhouse" && modal !== "editGreenhouse")) return;
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) return;
+
+      const { data: members } = await supabase
+        .from("company_members")
+        .select("user_id")
+        .eq("company_id", organization.id)
+        .eq("role", "manager")
+        .eq("status", "active");
+      const managerIds = (members ?? [])
+        .map((member: any) => member.user_id)
+        .filter((id: string | null): id is string => Boolean(id));
+
+      if (!managerIds.length) {
+        setManagerOptions([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", managerIds);
+      const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
+
+      setManagerOptions(managerIds.map((id) => {
+        const profile = profileMap.get(id);
+        return {
+          id,
+          name: profile?.full_name ?? profile?.email?.split("@")[0] ?? "Encargado",
+          email: profile?.email ?? ""
+        };
+      }));
+    };
+
+    loadManagers();
+  }, [canAssignGreenhouseManager, modal, organization.id]);
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
@@ -264,25 +337,35 @@ export function RecordModal() {
     }
   };
 
-  const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => ({
-    name: String(form.get("name")),
-    location: String(form.get("location")),
-    latitude: optionalNumber(form.get("latitude")),
-    longitude: optionalNumber(form.get("longitude")),
-    locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
-    surface: `${Number(form.get("surfaceM2") || 0).toLocaleString("es-MX")} m2`,
-    variety: String(form.get("variety")),
-    transplantDate: String(form.get("transplantDate")),
-    plants: Number(form.get("plants")),
-    stage: String(form.get("stage")) as CropStage,
-    manager: currentUser.fullName,
-    beds: Number(form.get("beds")),
-    daysSinceTransplant: daysSince(String(form.get("transplantDate"))),
-    healthStatus: "Baja",
-    temperature: 0,
-    humidity: 0,
-    estimatedProductionKg: 0
-  });
+  const managerNameFor = (managerUserId: string | null) =>
+    managerOptions.find((manager) => manager.id === managerUserId)?.name
+    ?? (managerUserId === currentUser.id ? currentUser.fullName : "Sin encargado");
+
+  const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
+    const managerUserId = String(form.get("managerUserId") ?? "").trim() || null;
+
+    return {
+      name: String(form.get("name")),
+      location: String(form.get("location")),
+      latitude: optionalNumber(form.get("latitude")),
+      longitude: optionalNumber(form.get("longitude")),
+      locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
+      surface: `${Number(form.get("surfaceM2") || 0).toLocaleString("es-MX")} m2`,
+      budgetAmount: optionalNumber(form.get("budgetAmount")),
+      variety: String(form.get("variety")),
+      transplantDate: String(form.get("transplantDate")),
+      plants: Number(form.get("plants")),
+      stage: String(form.get("stage")) as CropStage,
+      managerUserId,
+      manager: managerNameFor(managerUserId),
+      beds: Number(form.get("beds")),
+      daysSinceTransplant: daysSince(String(form.get("transplantDate"))),
+      healthStatus: "Baja",
+      temperature: 0,
+      humidity: 0,
+      estimatedProductionKg: 0
+    };
+  };
 
   const greenhousePayload = (form: FormData, greenhouse: Omit<Greenhouse, "id">) => ({
     name: greenhouse.name,
@@ -291,12 +374,13 @@ export function RecordModal() {
     longitude: greenhouse.longitude,
     location_accuracy_m: greenhouse.locationAccuracyM,
     surface_m2: Number(form.get("surfaceM2") || 0),
+    budget_amount: greenhouse.budgetAmount,
     tomato_variety: greenhouse.variety,
     transplant_date: greenhouse.transplantDate || null,
     plants_count: greenhouse.plants,
     beds_count: greenhouse.beds,
     crop_stage: cropStageToDb[greenhouse.stage],
-    manager_user_id: currentUser.id,
+    manager_user_id: greenhouse.managerUserId,
     health_status: riskLevelToDb[greenhouse.healthStatus]
   });
 
@@ -501,7 +585,7 @@ export function RecordModal() {
         zone: String(form.get("zone")),
         detectedAt: String(form.get("detectedAt")),
         action: String(form.get("action")),
-        followUp: String(form.get("followUp")),
+        followUp: pestFollowUpText(form),
         photoUrl
       };
       const { error: insertError } = await supabase.from("pest_alerts").insert({
@@ -599,6 +683,9 @@ export function RecordModal() {
           <Field label="Superficie m2">
             <TextInput name="surfaceM2" type="number" defaultValue={0} />
           </Field>
+          <Field label="Presupuesto del ciclo">
+            <TextInput min={0} name="budgetAmount" placeholder="Opcional" step="0.01" type="number" />
+          </Field>
           <Field label="Variedad">
             <TextInput name="variety" required placeholder="Variedad del tomate" />
           </Field>
@@ -611,6 +698,21 @@ export function RecordModal() {
           <Field label="Camas">
             <TextInput name="beds" type="number" defaultValue={0} />
           </Field>
+          {canAssignGreenhouseManager ? (
+            <Field label="Encargado">
+              <SelectInput name="managerUserId" defaultValue={managerOptions[0]?.id ?? ""} required>
+                {managerOptions.length ? (
+                  managerOptions.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No hay managers activos</option>
+                )}
+              </SelectInput>
+            </Field>
+          ) : null}
         </FormShell>
       ) : null}
 
@@ -636,6 +738,16 @@ export function RecordModal() {
           <Field label="Variedad">
             <TextInput name="variety" required defaultValue={selectedGreenhouse.variety} />
           </Field>
+          <Field label="Presupuesto del ciclo">
+            <TextInput
+              min={0}
+              name="budgetAmount"
+              placeholder="Opcional"
+              step="0.01"
+              type="number"
+              defaultValue={selectedGreenhouse.budgetAmount ?? ""}
+            />
+          </Field>
           <Field label="Fecha de trasplante">
             <TextInput name="transplantDate" type="date" defaultValue={selectedGreenhouse.transplantDate} />
           </Field>
@@ -645,6 +757,21 @@ export function RecordModal() {
           <Field label="Camas">
             <TextInput name="beds" type="number" defaultValue={selectedGreenhouse.beds} />
           </Field>
+          {canAssignGreenhouseManager ? (
+            <Field label="Encargado">
+              <SelectInput name="managerUserId" defaultValue={selectedGreenhouse.managerUserId ?? ""} required>
+                {managerOptions.length ? (
+                  managerOptions.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No hay managers activos</option>
+                )}
+              </SelectInput>
+            </Field>
+          ) : null}
         </FormShell>
       ) : null}
 
@@ -762,11 +889,18 @@ export function RecordModal() {
           <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="detectedAt" type="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Problema"><TextInput name="problem" required placeholder="Mosquita blanca" /></Field>
-          <Field label="Severidad"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
+          <Field label="Incidencia"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Zona afectada"><TextInput name="zone" placeholder="Camas 10-12" /></Field>
           <Field label="Foto o evidencia"><TextInput accept="image/*" name="photo" type="file" /></Field>
           <Field label="Acción tomada"><TextArea name="action" /></Field>
-          <Field label="Seguimiento"><TextArea name="followUp" /></Field>
+          <Field label="Estado de seguimiento">
+            <SelectInput name="followUpStatus" defaultValue="Pendiente de revisión">
+              {pestFollowUpStatuses.map((status) => <option key={status}>{status}</option>)}
+            </SelectInput>
+          </Field>
+          <Field label="Fecha de revisión"><TextInput name="reviewDate" type="date" /></Field>
+          <Field label="Fecha de reaplicación"><TextInput name="reapplicationDate" type="date" /></Field>
+          <Field label="Seguimiento"><TextArea name="followUp" placeholder="Resultado observado, población, daño o producto sugerido para reaplicar." /></Field>
         </FormShell>
       ) : null}
 

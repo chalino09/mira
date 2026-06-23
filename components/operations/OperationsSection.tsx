@@ -95,6 +95,12 @@ type TechnicalPlan = {
   method?: NutritionRecord["method"];
   objective?: NutritionRecord["objective"];
   appliedArea?: string;
+  rafiaWorkType?: string;
+  rafiaSector?: string;
+  maintenanceWorkType?: string;
+  maintenanceSector?: string;
+  cycleWorkType?: string;
+  cycleSector?: string;
   harvestZone?: string;
 };
 
@@ -106,6 +112,9 @@ type ApplicationExecutionDraft = {
   composition: string;
   safetyInterval: string;
   reentryInterval: string;
+  effectiveness: string;
+  reviewDate: string;
+  reapplicationDate: string;
   notes: string;
 };
 
@@ -154,19 +163,22 @@ type ActivityPayload = {
 const activityTypes = [
   { value: "riego", label: "Riego" },
   { value: "fertirriego", label: "Fertirriego" },
-  { value: "fertilizacion", label: "Fertilización" },
   { value: "aplicacion_foliar", label: "Aplicación foliar" },
-  { value: "revision_plagas", label: "Revisión de plagas" },
-  { value: "poda", label: "Poda" },
-  { value: "tutoreo", label: "Tutoreo" },
+  { value: "revision_plagas", label: "Revisión de plagas y enfermedades" },
+  { value: "poda", label: "Deschuponado" },
+  { value: "tutoreo", label: "Manejo de rafia" },
   { value: "deshoje", label: "Deshoje" },
   { value: "cosecha", label: "Cosecha" },
   { value: "limpieza", label: "Limpieza" },
   { value: "mantenimiento", label: "Mantenimiento" },
+  { value: "preparacion_ciclo", label: "Preparación de ciclo" },
   { value: "otro", label: "Otra actividad" }
 ];
 
-const activityLabels = Object.fromEntries(activityTypes.map((item) => [item.value, item.label]));
+const activityLabels: Record<string, string> = {
+  ...Object.fromEntries(activityTypes.map((item) => [item.value, item.label])),
+  fertilizacion: "Fertirriego"
+};
 
 const statusLabels: Record<OperationStatus, string> = {
   pendiente: "Pendiente",
@@ -204,6 +216,39 @@ const applicationCategories: ApplicationRecord["category"][] = [
   "Fertilizante",
   "Microorganismos",
   "Corrector"
+];
+
+const doseUnitOptions = ["ml/L", "g/L", "L/ha", "kg/ha", "ml/20 L", "g/20 L", "cc/L", "%"];
+
+const applicationEffectivenessOptions = [
+  "Pendiente de revisión",
+  "Funcionó",
+  "Requiere reaplicación",
+  "Subió población de plaga"
+];
+
+const rafiaWorkTypes = [
+  "Anillado",
+  "Enredado",
+  "Colocación de rafia",
+  "Cambio de rafia",
+  "Retiro por fin de ciclo"
+];
+
+const maintenanceWorkTypes = [
+  "Cambio de plástico",
+  "Cambio de malacates",
+  "Sistema de riego",
+  "Estructura/invernadero",
+  "Otro mantenimiento"
+];
+
+const cyclePreparationTypes = [
+  "Tractor",
+  "Preparación de camas",
+  "Colocación de cinta",
+  "Desinfección/acondicionamiento",
+  "Otro inicio de ciclo"
 ];
 
 const applicationCategoryToDb: Record<ApplicationRecord["category"], string> = {
@@ -277,6 +322,9 @@ function technicalPlanSummary(task: OperationTaskRow) {
       .filter(Boolean).join(" · ");
   }
   if (task.type === "aplicacion_foliar") return plan.appliedArea ?? "";
+  if (task.type === "tutoreo") return [plan.rafiaWorkType, plan.rafiaSector].filter(Boolean).join(" · ");
+  if (task.type === "mantenimiento") return [plan.maintenanceWorkType, plan.maintenanceSector].filter(Boolean).join(" · ");
+  if (task.type === "otro" && plan.cycleWorkType) return [plan.cycleWorkType, plan.cycleSector].filter(Boolean).join(" · ");
   if (task.type === "cosecha") return plan.harvestZone ?? "";
   return "";
 }
@@ -301,15 +349,38 @@ function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan 
   }
   if (type === "fertirriego" || type === "fertilizacion") {
     return {
-      method: plan.method ?? (type === "fertirriego" ? "Fertirriego" : "Foliar"),
+      method: plan.method ?? "Fertirriego",
       objective: plan.objective ?? "Calidad",
       targetPh: plan.targetPh ?? "",
       targetEc: plan.targetEc ?? ""
     };
   }
   if (type === "aplicacion_foliar") return { appliedArea: plan.appliedArea ?? "" };
+  if (type === "tutoreo") {
+    return {
+      rafiaWorkType: plan.rafiaWorkType ?? "Enredado",
+      rafiaSector: plan.rafiaSector ?? ""
+    };
+  }
+  if (type === "mantenimiento") {
+    return {
+      maintenanceWorkType: plan.maintenanceWorkType ?? "Sistema de riego",
+      maintenanceSector: plan.maintenanceSector ?? ""
+    };
+  }
+  if (type === "preparacion_ciclo") {
+    return {
+      cycleWorkType: plan.cycleWorkType ?? "Preparación de camas",
+      cycleSector: plan.cycleSector ?? ""
+    };
+  }
   if (type === "cosecha") return { harvestZone: plan.harvestZone ?? "" };
   return {};
+}
+
+function activityLabel(task: OperationTaskRow) {
+  if (task.type === "otro" && task.technical_plan?.cycleWorkType) return "Preparación de ciclo";
+  return activityLabels[task.type] ?? task.type;
 }
 
 function optionalFormNumber(value: FormDataEntryValue | null) {
@@ -361,7 +432,7 @@ function ActivityFormModal({
           }))
       : [];
     setMaterialRows(taskMaterials.length ? taskMaterials : [emptyMaterial()]);
-    setActivityType(task?.type ?? "fertirriego");
+    setActivityType(task?.type === "otro" && task.technical_plan?.cycleWorkType ? "preparacion_ciclo" : task?.type ?? "fertirriego");
     setTechnicalPlan(task?.technical_plan ?? {});
     setFormError("");
   }, [assignments, materials, open, task]);
@@ -375,9 +446,10 @@ function ActivityFormModal({
     }
 
     const form = new FormData(event.currentTarget);
+    const dbActivityType = activityType === "preparacion_ciclo" ? "otro" : activityType;
     await onSave({
       greenhouseId: String(form.get("greenhouseId")),
-      type: activityType,
+      type: dbActivityType,
       title: String(form.get("title")),
       scheduledDate: String(form.get("scheduledDate")),
       scheduledTime: String(form.get("scheduledTime") ?? ""),
@@ -476,7 +548,7 @@ function ActivityFormModal({
               <Field label="Método">
                 <SelectInput
                   onChange={(event) => updateTechnicalPlan({ method: event.target.value as NutritionRecord["method"] })}
-                  value={technicalPlan.method ?? (activityType === "fertirriego" ? "Fertirriego" : "Foliar")}
+                  value={technicalPlan.method ?? "Fertirriego"}
                 >
                   {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
                 </SelectInput>
@@ -501,6 +573,63 @@ function ActivityFormModal({
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Área planeada">
               <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Invernadero completo o sección 1" value={technicalPlan.appliedArea ?? ""} />
             </Field>
+          ) : null}
+          {activityType === "tutoreo" ? (
+            <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+              <Field label="Tipo de manejo">
+                <SelectInput
+                  onChange={(event) => updateTechnicalPlan({ rafiaWorkType: event.target.value })}
+                  value={technicalPlan.rafiaWorkType ?? "Enredado"}
+                >
+                  {rafiaWorkTypes.map((item) => <option key={item}>{item}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Sector o módulo">
+                <TextInput
+                  onChange={(event) => updateTechnicalPlan({ rafiaSector: event.target.value })}
+                  placeholder="Sector 1, módulo A o línea 3"
+                  value={technicalPlan.rafiaSector ?? ""}
+                />
+              </Field>
+            </div>
+          ) : null}
+          {activityType === "mantenimiento" ? (
+            <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+              <Field label="Tipo de mantenimiento">
+                <SelectInput
+                  onChange={(event) => updateTechnicalPlan({ maintenanceWorkType: event.target.value })}
+                  value={technicalPlan.maintenanceWorkType ?? "Sistema de riego"}
+                >
+                  {maintenanceWorkTypes.map((item) => <option key={item}>{item}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Sector o módulo">
+                <TextInput
+                  onChange={(event) => updateTechnicalPlan({ maintenanceSector: event.target.value })}
+                  placeholder="Sector 1, módulo A o línea principal"
+                  value={technicalPlan.maintenanceSector ?? ""}
+                />
+              </Field>
+            </div>
+          ) : null}
+          {activityType === "preparacion_ciclo" ? (
+            <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+              <Field label="Tipo de preparación">
+                <SelectInput
+                  onChange={(event) => updateTechnicalPlan({ cycleWorkType: event.target.value })}
+                  value={technicalPlan.cycleWorkType ?? "Preparación de camas"}
+                >
+                  {cyclePreparationTypes.map((item) => <option key={item}>{item}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Sector o módulo">
+                <TextInput
+                  onChange={(event) => updateTechnicalPlan({ cycleSector: event.target.value })}
+                  placeholder="Hectárea 1, cama norte o módulo B"
+                  value={technicalPlan.cycleSector ?? ""}
+                />
+              </Field>
+            </div>
           ) : null}
           {activityType === "cosecha" ? (
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Zona de cosecha">
@@ -574,14 +703,16 @@ function ActivityFormModal({
                   placeholder="Dosis"
                   value={material.dose}
                 />
-                <TextInput
+                <SelectInput
                   aria-label={`Unidad ${index + 1}`}
                   onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
                     itemIndex === index ? { ...item, unit: event.target.value } : item
                   ))}
-                  placeholder="Unidad"
                   value={material.unit}
-                />
+                >
+                  <option value="">Unidad</option>
+                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                </SelectInput>
                 <Button
                   aria-label={`Quitar producto ${index + 1}`}
                   className="h-11 w-11 px-0"
@@ -608,6 +739,16 @@ function ActivityFormModal({
       </form>
     </Modal>
   );
+}
+
+function applicationNotesWithFollowUp(application: ApplicationExecutionDraft) {
+  const followUp = [
+    application.effectiveness ? `Resultado: ${application.effectiveness}` : "",
+    application.reviewDate ? `Revisar: ${application.reviewDate}` : "",
+    application.reapplicationDate ? `Reaplicar: ${application.reapplicationDate}` : ""
+  ].filter(Boolean).join(" · ");
+
+  return [application.notes, followUp ? `Seguimiento foliar - ${followUp}` : ""].filter(Boolean).join("\n");
 }
 
 function CompleteApplicationModal({
@@ -645,6 +786,9 @@ function CompleteApplicationModal({
           composition: "",
           safetyInterval: "",
           reentryInterval: "",
+          effectiveness: "Pendiente de revisión",
+          reviewDate: "",
+          reapplicationDate: "",
           notes: material.notes ?? ""
         }))
     );
@@ -729,6 +873,35 @@ function CompleteApplicationModal({
                     onChange={(event) => updateApplication(index, { reentryInterval: event.target.value })}
                     placeholder="Ej. 12 horas"
                     value={application.reentryInterval}
+                  />
+                </Field>
+                <Field label="Revisión de eficacia">
+                  <SelectInput
+                    onChange={(event) => updateApplication(index, { effectiveness: event.target.value })}
+                    value={application.effectiveness}
+                  >
+                    {applicationEffectivenessOptions.map((option) => <option key={option}>{option}</option>)}
+                  </SelectInput>
+                </Field>
+                <Field label="Fecha de revisión">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { reviewDate: event.target.value })}
+                    type="date"
+                    value={application.reviewDate}
+                  />
+                </Field>
+                <Field label="Fecha de reaplicación">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { reapplicationDate: event.target.value })}
+                    type="date"
+                    value={application.reapplicationDate}
+                  />
+                </Field>
+                <Field label="Observaciones">
+                  <TextInput
+                    onChange={(event) => updateApplication(index, { notes: event.target.value })}
+                    placeholder="Población, daño o condición observada"
+                    value={application.notes}
                   />
                 </Field>
               </div>
@@ -846,7 +1019,7 @@ function CompleteNutritionModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
           <Field label="Método">
-            <SelectInput name="method" defaultValue={task?.technical_plan?.method ?? (task?.type === "fertirriego" ? "Fertirriego" : "Foliar")}>
+            <SelectInput name="method" defaultValue={task?.technical_plan?.method ?? "Fertirriego"}>
               {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
             </SelectInput>
           </Field>
@@ -1202,7 +1375,7 @@ export function OperationsSection() {
         composition: application.composition,
         safetyInterval: application.safetyInterval,
         reentryInterval: application.reentryInterval,
-        notes: application.notes
+        notes: applicationNotesWithFollowUp(application)
       }))
     });
     setCompleting(false);
@@ -1224,7 +1397,7 @@ export function OperationsSection() {
       responsible: currentUser.fullName,
       safetyInterval: application.safetyInterval,
       reentry: application.reentryInterval,
-      notes: application.notes
+      notes: applicationNotesWithFollowUp(application)
     })));
     setApplicationTask(null);
     setNotice({ tone: "green", message: "Aplicación completada y guardada en Registros técnicos." });
@@ -1491,7 +1664,7 @@ export function OperationsSection() {
                           <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
                             <div className="grid min-w-0 gap-2">
                               <p className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">
-                                {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabels[task.type] ?? task.type}
+                                {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabel(task)}
                               </p>
                               <div className="justify-self-start">
                                 <StatusBadge tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>

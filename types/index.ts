@@ -21,13 +21,14 @@ export type TaskType =
   | "Fertirriego"
   | "Fertilización"
   | "Aplicación foliar"
-  | "Revisión de plagas"
-  | "Poda"
-  | "Tutoreo"
+  | "Revisión de plagas y enfermedades"
+  | "Deschuponado"
+  | "Manejo de rafia"
   | "Deshoje"
   | "Cosecha"
   | "Limpieza"
   | "Mantenimiento"
+  | "Preparación de ciclo"
   | "Otra";
 
 export type NavigationItem = {
@@ -60,10 +61,12 @@ export type Greenhouse = {
   longitude: number | null;
   locationAccuracyM: number | null;
   surface: string;
+  budgetAmount: number | null;
   variety: string;
   transplantDate: string;
   plants: number;
   stage: CropStage;
+  managerUserId: string | null;
   manager: string;
   beds: number;
   daysSinceTransplant: number;

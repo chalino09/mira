@@ -32,6 +32,8 @@ supabase/09_manager_experience.sql
 supabase/10_simplified_task_flow.sql
 supabase/11_telegram_connection.sql
 supabase/12_operation_technical_records.sql
+supabase/13_greenhouse_manager_scope.sql
+supabase/14_greenhouse_budget.sql
 ```
 
 4. Levanta la app:
