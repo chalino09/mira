@@ -62,6 +62,7 @@ export type Greenhouse = {
   locationAccuracyM: number | null;
   surface: string;
   budgetAmount: number | null;
+  cropId: string | null;
   variety: string;
   transplantDate: string;
   plants: number;

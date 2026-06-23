@@ -15,7 +15,7 @@ const knownMessages: Record<string, string> = {
   full_name_required: "Escribe tu nombre.",
   company_name_required: "Escribe el nombre de la empresa.",
   greenhouse_name_required: "Escribe el nombre del primer invernadero.",
-  tomato_variety_required: "Escribe la variedad de tomate.",
+  tomato_variety_required: "Escribe la variedad del cultivo.",
   full_name_too_long: "Tu nombre es demasiado largo.",
   company_name_too_long: "El nombre de la empresa es demasiado largo.",
   greenhouse_name_too_long: "El nombre del invernadero es demasiado largo.",

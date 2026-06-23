@@ -29,6 +29,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
+import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
@@ -312,6 +313,7 @@ function GreenhousesSection() {
               label="Plantas"
               value={formatNumber(active.plants)}
             />
+            <CropDdtPanel greenhouse={active} />
             {canManageGreenhouses ? (
               <Button
                 className="mt-5 w-full"

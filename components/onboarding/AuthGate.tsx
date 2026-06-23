@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
+import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
 import type {
@@ -56,7 +57,7 @@ const onboardingStageToDb: Record<CropStage, string> = {
   Producción: "produccion"
 };
 
-const tomatoVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
+const initialCropVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
 
 function mapCropStage(stage?: string | null): CropStage {
   if (stage === "floracion") return "Floración";
@@ -494,7 +495,7 @@ function OnboardingScreen({
             </Field>
             <Field label="Variedad">
               <SelectInput className="rounded-lg bg-app-background" name="variety" defaultValue="Saladette" required>
-                {tomatoVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+                {initialCropVarieties.map((variety) => <option key={variety}>{variety}</option>)}
               </SelectInput>
             </Field>
             <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
@@ -708,7 +709,8 @@ export function AuthGate() {
         locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
         surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
         budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
-        variety: greenhouse.tomato_variety ?? "Roma",
+        cropId: greenhouse.crop_id ?? INITIAL_CROP_ID,
+        variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "Roma",
         transplantDate: greenhouse.transplant_date ?? "",
         plants: greenhouse.plants_count ?? 0,
         stemCount: greenhouse.stem_count === 1 || greenhouse.stem_count === 2 ? greenhouse.stem_count : null,

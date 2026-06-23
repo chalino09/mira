@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
+import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
@@ -146,7 +147,7 @@ const pestFollowUpStatuses = [
   "Reaplicación programada"
 ];
 
-const tomatoVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
+const initialCropVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
 
 function formatVarietyName(value: string) {
   return value
@@ -356,13 +357,13 @@ export function RecordModal() {
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
   const selectedVariety = selectedGreenhouse?.variety ? formatVarietyName(selectedGreenhouse.variety) : "";
-  const canonicalSelectedVariety = tomatoVarieties.find(
+  const canonicalSelectedVariety = initialCropVarieties.find(
     (variety) => variety.toLowerCase() === selectedVariety.toLowerCase()
   ) ?? selectedVariety;
   const selectedVarietyOptions =
-    selectedGreenhouse && selectedVariety && !tomatoVarieties.some((variety) => variety.toLowerCase() === selectedVariety.toLowerCase())
-      ? [...tomatoVarieties.slice(0, -1), selectedVariety, "Otra"]
-      : tomatoVarieties;
+    selectedGreenhouse && selectedVariety && !initialCropVarieties.some((variety) => variety.toLowerCase() === selectedVariety.toLowerCase())
+      ? [...initialCropVarieties.slice(0, -1), selectedVariety, "Otra"]
+      : initialCropVarieties;
   const greenhouseOptions = greenhouses.map((greenhouse) => (
     <option key={greenhouse.id} value={greenhouse.id}>
       {greenhouse.name}
@@ -396,6 +397,7 @@ export function RecordModal() {
       locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
       surface: `${requiredNumber(form.get("surfaceM2")).toLocaleString("es-MX")} m2`,
       budgetAmount: optionalNumber(form.get("budgetAmount")),
+      cropId: selectedGreenhouse?.cropId ?? INITIAL_CROP_ID,
       variety: String(form.get("variety")),
       transplantDate: String(form.get("transplantDate")),
       plants: requiredNumber(form.get("plants")),
@@ -738,7 +740,7 @@ export function RecordModal() {
           </Field>
           <Field label="Variedad">
             <SelectInput name="variety" defaultValue="Saladette" required>
-              {tomatoVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+              {initialCropVarieties.map((variety) => <option key={variety}>{variety}</option>)}
             </SelectInput>
           </Field>
           <Field label="Fecha de trasplante">

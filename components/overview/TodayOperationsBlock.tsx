@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowRight, CalendarRange, CheckCircle2, Clock3 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { cn } from "@/lib/utils";
 import type { Task } from "@/types";
 
 function localDateKey(date = new Date()) {
@@ -19,11 +20,13 @@ function statusTone(status: Task["status"]): "neutral" | "green" | "amber" | "re
 export function TodayOperationsBlock({
   tasks,
   onCompleteTask,
-  onOpenOperations
+  onOpenOperations,
+  className
 }: {
   tasks: Task[];
   onCompleteTask: (taskId: string) => void;
   onOpenOperations: () => void;
+  className?: string;
 }) {
   const today = localDateKey();
   const activeTasks = tasks.filter((task) => task.status !== "Completada" && task.status !== "Cancelada");
@@ -35,7 +38,7 @@ export function TodayOperationsBlock({
     .slice(0, 4);
 
   return (
-    <section className="mt-14 border-y border-app-border py-5">
+    <section className={cn("mt-14 border-y border-app-border py-5", className)}>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-app-border bg-white text-app-green">

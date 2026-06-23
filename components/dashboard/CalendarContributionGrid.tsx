@@ -3,6 +3,7 @@ import { addDays, monthShortLabel, startOfIsoWeek } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 const weeks = 18;
+const futureWeeks = 1;
 const daysPerWeek = 7;
 
 type ActivityTone = 0 | 1 | 2 | 3 | 4 | "blocked";
@@ -31,8 +32,9 @@ function activityTone(taskCount: number, hasBlockedTask: boolean): ActivityTone 
 
 export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
   const currentWeekStart = startOfIsoWeek();
-  const startDate = addDays(currentWeekStart, -(weeks - 1) * daysPerWeek);
-  const endDate = addDays(currentWeekStart, daysPerWeek - 1);
+  const pastWeeks = weeks - futureWeeks - 1;
+  const startDate = addDays(currentWeekStart, -pastWeeks * daysPerWeek);
+  const endDate = addDays(currentWeekStart, (futureWeeks + 1) * daysPerWeek - 1);
   const startIso = toIsoDate(startDate);
   const endIso = toIsoDate(endDate);
   const visibleTasks = tasks.filter((task) => task.date >= startIso && task.date <= endIso);
@@ -98,38 +100,39 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto pb-2">
-        <div className="min-w-[760px]">
-          <div
-            className="mb-2 grid gap-1.5 pl-10 text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted"
-            style={{ gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))` }}
-          >
-            {monthLabels.map((label, index) => (
-              <span key={`${label}-${index}`}>{label}</span>
+      <div className="pb-2">
+        <div
+          className="mb-2 grid gap-1 pl-8 text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted sm:gap-1.5 sm:pl-10"
+          style={{ gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))` }}
+        >
+          {monthLabels.map((label, index) => (
+            <span key={`${label}-${index}`}>{label}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-[24px_1fr] gap-2 sm:grid-cols-[32px_1fr]">
+          <div className="grid grid-rows-7 gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted sm:gap-1.5">
+            {["L", "", "M", "", "V", "", "D"].map((label, index) => (
+              <span key={`${label}-${index}`} className="flex aspect-square w-full items-center">
+                {label}
+              </span>
             ))}
           </div>
-          <div className="grid grid-cols-[32px_1fr] gap-2">
-            <div className="grid grid-rows-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">
-              {["L", "", "M", "", "V", "", "D"].map((label, index) => (
-                <span key={`${label}-${index}`} className="flex h-4 items-center">
-                  {label}
-                </span>
-              ))}
-            </div>
-            <div className="grid grid-flow-col grid-rows-7 gap-1.5">
-              {days.map((day, index) => (
-                <span
-                  key={day.iso}
-                  aria-label={`${day.iso}: ${day.taskCount} actividades`}
-                  className={cn(
-                    "h-4 w-4 border border-app-border transition duration-150 hover:z-10 hover:scale-125 hover:border-app-text",
-                    toneClass[day.tone],
-                    day.iso === today && "ring-2 ring-app-text ring-offset-1"
-                  )}
-                  title={`${day.iso} · ${day.taskCount} ${day.taskCount === 1 ? "actividad" : "actividades"}`}
-                />
-              ))}
-            </div>
+          <div
+            className="grid grid-flow-col grid-rows-7 gap-1 sm:gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))` }}
+          >
+            {days.map((day) => (
+              <span
+                key={day.iso}
+                aria-label={`${day.iso}: ${day.taskCount} actividades`}
+                className={cn(
+                  "aspect-square w-full border border-app-border transition duration-150 hover:z-10 hover:scale-110 hover:border-app-text",
+                  toneClass[day.tone],
+                  day.iso === today && "ring-2 ring-app-text ring-offset-1"
+                )}
+                title={`${day.iso} · ${day.taskCount} ${day.taskCount === 1 ? "actividad" : "actividades"}`}
+              />
+            ))}
           </div>
         </div>
       </div>

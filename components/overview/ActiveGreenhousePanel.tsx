@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import type { ApplicationRecord, Greenhouse, IrrigationRecord } from "@/types";
-import { formatNumber } from "@/lib/utils";
+import { getCropDdtStatus } from "@/lib/crop-ddt";
+import { cn, formatNumber } from "@/lib/utils";
 import { fetchWeatherByCoordinates, fetchWeatherByLocation, type WeatherReading } from "@/lib/weather";
 
 type ActiveGreenhousePanelProps = {
   greenhouse: Greenhouse;
   lastIrrigation?: IrrigationRecord;
   lastApplication?: ApplicationRecord;
+  showDdtReading?: boolean;
+  variant?: "feature" | "rail";
 };
 
 export function ActiveGreenhousePanel({
   greenhouse,
   lastIrrigation,
-  lastApplication
+  lastApplication,
+  showDdtReading = true,
+  variant = "feature"
 }: ActiveGreenhousePanelProps) {
   const [weather, setWeather] = useState<WeatherReading | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
@@ -60,19 +65,44 @@ export function ActiveGreenhousePanel({
   const temperature =
     weather?.temperature ?? (greenhouse.temperature > 0 ? greenhouse.temperature : null);
   const humidity = weather?.humidity ?? (greenhouse.humidity > 0 ? greenhouse.humidity : null);
+  const ddtStatus = getCropDdtStatus(
+    greenhouse.cropId,
+    greenhouse.transplantDate,
+    greenhouse.daysSinceTransplant
+  );
 
   const readings = [
+    ...(showDdtReading
+      ? [
+          ddtStatus.status === "missing-date"
+            ? "SIN FECHA DE TRASPLANTE"
+            : `${ddtStatus.ddt} DDT · ${ddtStatus.label.toUpperCase()}`
+        ]
+      : []),
     `${temperature !== null ? Math.round(temperature) : "--"}°C CLIMA ACTUAL`,
     `${humidity !== null ? Math.round(humidity) : "--"}% HUMEDAD`,
     `${lastIrrigation ? formatNumber(lastIrrigation.liters) : "0"} L ÚLTIMO RIEGO`,
     `${lastApplication?.category.toUpperCase() ?? "SIN REGISTRO"} ÚLTIMA APLICACIÓN`
   ];
+  const isRail = variant === "rail";
 
   return (
-    <aside className="flex min-h-[300px] flex-col justify-center border-l border-app-border pl-0 pt-8 lg:pl-12 lg:pt-0">
-      <p className="text-8xl font-semibold leading-none text-app-text/[0.035] sm:text-9xl">01</p>
-      <div className="-mt-4">
-        <h2 className="text-4xl font-light tracking-normal text-app-text">{greenhouse.name}</h2>
+    <aside
+      className={cn(
+        "flex flex-col justify-center",
+        isRail
+          ? "border-t border-app-border py-5"
+          : "min-h-[300px] border-l border-app-border pl-0 pt-8 lg:pl-12 lg:pt-0"
+      )}
+    >
+      {!isRail ? <p className="text-8xl font-semibold leading-none text-app-text/[0.035] sm:text-9xl">01</p> : null}
+      <div className={cn(!isRail && "-mt-4")}>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
+          Ambiente y riego
+        </p>
+        <h2 className={cn("mt-3 font-light tracking-normal text-app-text", isRail ? "text-3xl" : "text-4xl")}>
+          {greenhouse.name}
+        </h2>
         <p className="mt-5 flex items-center gap-2 text-sm font-medium text-app-green">
           <span className="h-2 w-2 rounded-full bg-app-green" />
           Operativo

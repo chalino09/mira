@@ -1,5 +1,6 @@
 import { CalendarDays, MapPin, Sprout, UserRound } from "lucide-react";
 import { RiskBadge } from "@/components/ui/StatusBadge";
+import { getCropDdtStatus } from "@/lib/crop-ddt";
 import { formatDate, formatNumber } from "@/lib/utils";
 import type { Greenhouse } from "@/types";
 
@@ -10,6 +11,12 @@ type GreenhouseCardProps = {
 };
 
 export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCardProps) {
+  const ddtStatus = getCropDdtStatus(
+    greenhouse.cropId,
+    greenhouse.transplantDate,
+    greenhouse.daysSinceTransplant
+  );
+
   return (
     <button
       className="w-full border-t border-app-border bg-transparent py-5 text-left transition hover:bg-white/55"
@@ -25,7 +32,9 @@ export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCar
               </span>
             ) : null}
           </div>
-          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{greenhouse.variety} · {greenhouse.stage}</p>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">
+            {greenhouse.variety} · {greenhouse.stage} · {ddtStatus.status === "missing-date" ? "Sin DDT" : `${ddtStatus.ddt} DDT`}
+          </p>
         </div>
         <RiskBadge level={greenhouse.healthStatus} />
       </div>
