@@ -399,12 +399,12 @@ function telegramDispatchMessage(data: any) {
   const pendingWithoutConnection = Number(data?.pendingWithoutConnection ?? 0);
 
   if (!sent && !failed && !pendingWithoutConnection) {
-    return "No hay notificaciones pendientes para Telegram.";
+    return "No hay notificaciones pendientes para esta semana.";
   }
 
   return [
-    sent ? `${sent} chat${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"}` : "",
-    pendingWithoutConnection ? `${pendingWithoutConnection} encargado${pendingWithoutConnection === 1 ? "" : "s"} sin Telegram conectado` : "",
+    sent ? `${sent} encargado${sent === 1 ? "" : "s"} notificado${sent === 1 ? "" : "s"}` : "",
+    pendingWithoutConnection ? `${pendingWithoutConnection} encargado${pendingWithoutConnection === 1 ? "" : "s"} sin conexión` : "",
     failed ? `${failed} fallo${failed === 1 ? "" : "s"}` : ""
   ].filter(Boolean).join(" · ");
 }
@@ -1336,7 +1336,7 @@ export function OperationsSection() {
       if (dispatchError) {
         setNotice({
           tone: "red",
-          message: `Semana publicada, pero Telegram no pudo enviarse: ${appErrorMessage(dispatchError, "revisa la funcion telegram-dispatch.")}`
+          message: `Semana publicada, pero no se pudo enviar la notificación: ${appErrorMessage(dispatchError, "revisa la funcion de envio.")}`
         });
       } else {
         setNotice({ tone: "green", message: `Semana publicada. ${telegramDispatchMessage(data)}` });
@@ -1362,7 +1362,7 @@ export function OperationsSection() {
     setDispatchingTelegram(false);
 
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo enviar a Telegram.") });
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reenviar la semana.") });
       return;
     }
 
@@ -1692,7 +1692,7 @@ export function OperationsSection() {
             <div className="flex flex-col gap-3 border-b border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-app-muted">
                 {plan.status === "published"
-                  ? "La semana está publicada. Puedes procesar pendientes hacia Telegram."
+                  ? "La semana está publicada. Puedes reenviarla si hiciste cambios."
                   : "Publica cuando instrucciones y responsables estén listos."}
               </p>
               {plan.status === "published" ? (
@@ -1702,7 +1702,7 @@ export function OperationsSection() {
                   onClick={sendTelegramForPlan}
                   variant="secondary"
                 >
-                  {dispatchingTelegram ? "Enviando..." : "Enviar Telegram"}
+                  {dispatchingTelegram ? "Enviando..." : "Reenviar semana"}
                 </Button>
               ) : (
                 <Button
@@ -1814,7 +1814,7 @@ export function OperationsSection() {
           <div className="mt-10 grid gap-4 border-t border-app-border py-6 md:grid-cols-3">
             <div className="flex items-start gap-3">
               <Clock3 className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Planeación enviada</p><p className="mt-1 text-xs leading-5 text-app-muted">Al publicar, Mira prepara y envía la semana a Telegram.</p></div>
+              <div><p className="text-sm font-medium">Planeación enviada</p><p className="mt-1 text-xs leading-5 text-app-muted">Al publicar, Mira prepara y envía la semana a los encargados.</p></div>
             </div>
             <div className="flex items-start gap-3">
               <Users className="mt-0.5 h-4 w-4 text-app-green" />
@@ -1822,7 +1822,7 @@ export function OperationsSection() {
             </div>
             <div className="flex items-start gap-3">
               <MessageCircle className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Canal conversacional</p><p className="mt-1 text-xs leading-5 text-app-muted">Los encargados conectados reciben sus actividades asignadas.</p></div>
+              <div><p className="text-sm font-medium">Canal de avisos</p><p className="mt-1 text-xs leading-5 text-app-muted">Los encargados conectados reciben sus actividades asignadas.</p></div>
             </div>
           </div>
         </>
