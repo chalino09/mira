@@ -29,7 +29,6 @@ const managerSections = new Set([
   "overview",
   "greenhouses",
   "calendar",
-  "monitoring",
   "records",
   "pests",
   "harvest"

@@ -39,6 +39,7 @@ supabase/16_crop_ddt_stages.sql
 supabase/17_nutrition_monitoring.sql
 supabase/18_assigned_task_greenhouse_visibility.sql
 supabase/19_telegram_operational_sessions.sql
+supabase/20_nutrition_monitoring_admin_scope.sql
 ```
 
 4. Levanta la app:

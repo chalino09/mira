@@ -1,7 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calculator, FlaskConical, History, Save, Sprout } from "lucide-react";
+import { AlertTriangle, Calculator, Download, FlaskConical, GitCompare, History, LineChart as LineChartIcon, Save, Sprout } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceArea,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
@@ -123,6 +133,41 @@ function analyteOrder(key: NutritionAnalyteKey) {
   return NUTRITION_ANALYTES.find((analyte) => analyte.key === key)?.sortOrder ?? 99;
 }
 
+function analyteLabel(key: NutritionAnalyteKey) {
+  return NUTRITION_ANALYTES.find((analyte) => analyte.key === key)?.shortLabel ?? key;
+}
+
+function statusRank(status: NutritionDiagnosticStatus) {
+  if (status === "Bajo") return 0;
+  if (status === "Adecuado") return 1;
+  return 2;
+}
+
+function trendLabel(delta: number) {
+  if (Math.abs(delta) < 0.0001) return "Sin cambio";
+  return delta > 0 ? "Subio" : "Bajo";
+}
+
+function eventValue(event: SavedMonitoringEvent, sampleType: NutritionSampleType, analyteKey: NutritionAnalyteKey) {
+  return event.values.find((value) => value.sampleType === sampleType && value.analyteKey === analyteKey);
+}
+
+function csvCell(value: unknown) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function StatusPill({ status }: { status?: NutritionDiagnosticStatus }) {
   if (!status) {
     return <span className="inline-flex border border-app-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-app-muted">--</span>;
@@ -147,31 +192,21 @@ function RawInputsBlock({
   return (
     <section className="border-t border-app-border py-6">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
-            {SAMPLE_TYPE_LABELS[sampleType]}
-          </p>
-        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
+          {SAMPLE_TYPE_LABELS[sampleType]}
+        </p>
         <FlaskConical className="h-4 w-4 text-app-green" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {NUTRITION_CAPTURE_KEYS.map((key) => {
           const analyte = NUTRITION_ANALYTES.find((item) => item.key === key);
-          const unit = sampleType === "petiole_cell_extract"
-            ? key === "n_no3"
-              ? "ppm NO3-"
-              : key === "ph"
-                ? "adim."
-                : key === "ec"
-                  ? "mS/cm"
-                  : "ppm"
-            : key === "n_no3"
-              ? "ppm NO3-"
-              : key === "ph"
-                ? "adim."
-                : key === "ec"
-                  ? "mS/cm"
-                  : "ppm";
+          const unit = key === "n_no3"
+            ? "ppm NO3-"
+            : key === "ph"
+              ? "adim."
+              : key === "ec"
+                ? "mS/cm"
+                : "ppm";
 
           return (
             <Field key={`${sampleType}-${key}`} label={`${analyte?.shortLabel ?? key} · ${unit}`}>
@@ -191,6 +226,26 @@ function RawInputsBlock({
   );
 }
 
+function MiniMetric({
+  className,
+  label,
+  value,
+  detail,
+}: {
+  className?: string;
+  label: string;
+  value: string | number;
+  detail?: string;
+}) {
+  return (
+    <div className={cn("border-t border-app-border py-4", className)}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">{label}</p>
+      <p className="mt-2 text-2xl font-light text-app-text">{value}</p>
+      {detail ? <p className="mt-1 text-xs text-app-muted">{detail}</p> : null}
+    </div>
+  );
+}
+
 export function NutritionMonitoringSection() {
   const { currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
@@ -206,6 +261,13 @@ export function NutritionMonitoringSection() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedAnalyte, setSelectedAnalyte] = useState<NutritionAnalyteKey>("n_no3");
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [activeMonitoringTab, setActiveMonitoringTab] = useState<"current" | "history">("current");
+
+  const canUseMonitoring = currentUser.role === "owner" || currentUser.role === "admin";
 
   const resetDraft = useCallback(() => {
     setSampleDate(todayIso());
@@ -219,6 +281,7 @@ export function NutritionMonitoringSection() {
   const handleGreenhouseChange = (nextGreenhouseId: string) => {
     setGreenhouseId(nextGreenhouseId);
     setSelectedHistoryId(null);
+    setCompareIds([]);
     resetDraft();
   };
 
@@ -236,6 +299,7 @@ export function NutritionMonitoringSection() {
 
   useEffect(() => {
     setSelectedHistoryId(null);
+    setCompareIds([]);
   }, [activeGreenhouseId]);
 
   const ddt = useMemo(
@@ -256,7 +320,7 @@ export function NutritionMonitoringSection() {
   );
 
   const loadHistory = useCallback(async () => {
-    if (!activeGreenhouseId || !organization.id) {
+    if (!canUseMonitoring || !activeGreenhouseId || !organization.id) {
       setSavedEvents([]);
       return;
     }
@@ -271,14 +335,18 @@ export function NutritionMonitoringSection() {
     setHistoryError("");
 
     try {
-      const { data: eventRows, error: eventsError } = await supabase
+      let eventsQuery = supabase
         .from("nutrition_monitoring_events")
         .select("id, sample_date, ddt, notes, created_at")
         .eq("company_id", organization.id)
         .eq("greenhouse_id", activeGreenhouseId)
         .order("sample_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .order("created_at", { ascending: false });
+
+      if (dateFrom) eventsQuery = eventsQuery.gte("sample_date", dateFrom);
+      if (dateTo) eventsQuery = eventsQuery.lte("sample_date", dateTo);
+
+      const { data: eventRows, error: eventsError } = await eventsQuery;
 
       if (eventsError) throw eventsError;
 
@@ -352,11 +420,100 @@ export function NutritionMonitoringSection() {
     } finally {
       setIsLoadingHistory(false);
     }
-  }, [activeGreenhouseId, organization.id]);
+  }, [activeGreenhouseId, canUseMonitoring, dateFrom, dateTo, organization.id]);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+
+  const chronologicalEvents = useMemo(
+    () => [...savedEvents].sort((left, right) => left.sampleDate.localeCompare(right.sampleDate)),
+    [savedEvents]
+  );
+
+  const trendData = useMemo(
+    () =>
+      chronologicalEvents.map((event) => {
+        const petiole = eventValue(event, "petiole_cell_extract", selectedAnalyte);
+        const soil = eventValue(event, "soil_solution", selectedAnalyte);
+        return {
+          date: event.sampleDate.slice(5),
+          ddt: event.ddt,
+          petiole: petiole?.diagnosticValue ?? null,
+          soil: soil?.diagnosticValue ?? null,
+          rangeMin: petiole?.rangeMin ?? soil?.rangeMin ?? null,
+          rangeMax: petiole?.rangeMax ?? soil?.rangeMax ?? null
+        };
+      }),
+    [chronologicalEvents, selectedAnalyte]
+  );
+
+  const selectedRange = useMemo(() => {
+    const ranges = trendData.filter((row) => row.rangeMin !== null && row.rangeMax !== null);
+    return ranges[0] ?? null;
+  }, [trendData]);
+
+  const repeatedAlerts = useMemo(() => {
+    const alerts: Array<{ key: string; label: string; detail: string; status: NutritionDiagnosticStatus; count: number }> = [];
+
+    NUTRITION_ANALYTES.forEach((analyte) => {
+      sampleTypes.forEach((sampleType) => {
+        const series = chronologicalEvents
+          .map((event) => ({ event, value: eventValue(event, sampleType, analyte.key) }))
+          .filter((item) => item.value);
+
+        const latest = series[series.length - 1]?.value;
+        if (!latest || latest.diagnosticStatus === "Adecuado") return;
+
+        let count = 0;
+        for (let index = series.length - 1; index >= 0; index -= 1) {
+          if (series[index].value?.diagnosticStatus !== latest.diagnosticStatus) break;
+          count += 1;
+        }
+
+        if (count >= 2) {
+          alerts.push({
+            key: `${sampleType}-${analyte.key}`,
+            label: `${analyte.shortLabel} ${sampleType === "petiole_cell_extract" ? "ECP" : "suelo"}`,
+            detail: `${latest.diagnosticStatus} por ${count} monitoreos seguidos`,
+            status: latest.diagnosticStatus,
+            count
+          });
+        }
+      });
+    });
+
+    return alerts.sort((left, right) => right.count - left.count);
+  }, [chronologicalEvents]);
+
+  const compareEvents = useMemo(
+    () => compareIds.map((id) => savedEvents.find((event) => event.id === id)).filter((event): event is SavedMonitoringEvent => Boolean(event)),
+    [compareIds, savedEvents]
+  );
+
+  const compareRows = useMemo(() => {
+    if (compareEvents.length !== 2) return [];
+    const [older, newer] = [...compareEvents].sort((left, right) => left.sampleDate.localeCompare(right.sampleDate));
+
+    return NUTRITION_ANALYTES.flatMap((analyte) =>
+      sampleTypes.map((sampleType) => {
+        const before = eventValue(older, sampleType, analyte.key);
+        const after = eventValue(newer, sampleType, analyte.key);
+        const delta = (after?.diagnosticValue ?? 0) - (before?.diagnosticValue ?? 0);
+        return {
+          key: `${sampleType}-${analyte.key}`,
+          analyte,
+          sampleType,
+          before,
+          after,
+          delta,
+          statusChange: before && after ? `${before.diagnosticStatus} -> ${after.diagnosticStatus}` : "--",
+          improved: before && after ? statusRank(after.diagnosticStatus) === 1 && statusRank(before.diagnosticStatus) !== 1 : false,
+          worsened: before && after ? statusRank(after.diagnosticStatus) !== 1 && statusRank(before.diagnosticStatus) === 1 : false
+        };
+      })
+    );
+  }, [compareEvents]);
 
   const applySavedMonitoring = (event: SavedMonitoringEvent) => {
     const nextPetioleValues: NutritionRawValues = {};
@@ -398,8 +555,64 @@ export function NutritionMonitoringSection() {
     setSoilValues((current) => ({ ...current, [key]: value }));
   };
 
+  const toggleCompare = (eventId: string) => {
+    setCompareIds((current) => {
+      if (current.includes(eventId)) return current.filter((id) => id !== eventId);
+      return [eventId, ...current].slice(0, 2);
+    });
+  };
+
+  const exportHistory = () => {
+    const rows = [
+      ["fecha", "ddt", "muestra", "nutrimento", "valor", "unidad", "rango_min", "rango_max", "estado", "notas"]
+    ];
+
+    savedEvents.forEach((event) => {
+      event.values.forEach((value) => {
+        rows.push([
+          event.sampleDate,
+          String(event.ddt),
+          SAMPLE_TYPE_LABELS[value.sampleType],
+          value.analyteLabel,
+          String(value.diagnosticValue),
+          value.diagnosticUnit,
+          value.rangeMin === null ? "" : String(value.rangeMin),
+          value.rangeMax === null ? "" : String(value.rangeMax),
+          value.diagnosticStatus,
+          event.notes
+        ]);
+      });
+    });
+
+    downloadCsv(`monitoreo-nutrimental-${activeGreenhouse?.name ?? "invernadero"}.csv`, rows);
+  };
+
+  const exportCompare = () => {
+    if (compareEvents.length !== 2) return;
+    const rows = [
+      ["nutrimento", "muestra", "fecha_base", "estado_base", "valor_base", "fecha_comparada", "estado_comparado", "valor_comparado", "delta"]
+    ];
+    const [older, newer] = [...compareEvents].sort((left, right) => left.sampleDate.localeCompare(right.sampleDate));
+
+    compareRows.forEach((row) => {
+      rows.push([
+        row.analyte.shortLabel,
+        row.sampleType === "petiole_cell_extract" ? "ECP" : "Suelo",
+        older.sampleDate,
+        row.before?.diagnosticStatus ?? "",
+        row.before ? String(row.before.diagnosticValue) : "",
+        newer.sampleDate,
+        row.after?.diagnosticStatus ?? "",
+        row.after ? String(row.after.diagnosticValue) : "",
+        String(row.delta)
+      ]);
+    });
+
+    downloadCsv(`comparativo-nutrimental-${older.sampleDate}-${newer.sampleDate}.csv`, rows);
+  };
+
   const saveMonitoring = async () => {
-    if (!activeGreenhouse || !organization.id) return;
+    if (!activeGreenhouse || !organization.id || !canUseMonitoring) return;
     setNotice(null);
     setIsSaving(true);
 
@@ -484,6 +697,10 @@ export function NutritionMonitoringSection() {
     }
   };
 
+  if (!canUseMonitoring) {
+    return <EmptyState icon={FlaskConical} title="Monitoreo nutrimental disponible para owner y admin." />;
+  }
+
   if (!greenhouses.length || !activeGreenhouse) {
     return <EmptyState icon={Sprout} title="No hay invernaderos disponibles para monitoreo." />;
   }
@@ -491,7 +708,7 @@ export function NutritionMonitoringSection() {
   return (
     <section>
       <div className="mb-10 border-b border-app-border pb-7 pt-8 md:pt-10">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div>
           <div>
             <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
             <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
@@ -499,17 +716,9 @@ export function NutritionMonitoringSection() {
               Nutrimental
             </h1>
             <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
-              Captura de extracto celular de peciolo y solución de suelo con rangos por DDT.
+              Captura, compara y exporta extracto celular de peciolo y solucion de suelo con rangos por DDT.
             </p>
           </div>
-          <Button
-            disabled={isSaving || !result.complete}
-            icon={<Save className="h-4 w-4" />}
-            onClick={saveMonitoring}
-            variant="primary"
-          >
-            {isSaving ? "Guardando" : "Guardar monitoreo"}
-          </Button>
         </div>
       </div>
 
@@ -526,8 +735,82 @@ export function NutritionMonitoringSection() {
         </div>
       ) : null}
 
-      <div className="grid gap-10 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
+      <div className="mb-8 flex flex-col gap-4 border-b border-app-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="grid gap-2 sm:grid-cols-2" role="tablist" aria-label="Secciones de monitoreo nutrimental">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMonitoringTab === "current"}
+            className={cn(
+              "border px-4 py-3 text-left transition",
+              activeMonitoringTab === "current"
+                ? "border-app-green bg-app-soft text-app-green"
+                : "border-app-border bg-white text-app-muted hover:text-app-text"
+            )}
+            onClick={() => setActiveMonitoringTab("current")}
+          >
+            <span className="block text-sm font-medium text-app-text">Monitoreo actual</span>
+            <span className="mt-1 block text-xs">Captura y diagnostico</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMonitoringTab === "history"}
+            className={cn(
+              "border px-4 py-3 text-left transition",
+              activeMonitoringTab === "history"
+                ? "border-app-green bg-app-soft text-app-green"
+                : "border-app-border bg-white text-app-muted hover:text-app-text"
+            )}
+            onClick={() => setActiveMonitoringTab("history")}
+          >
+            <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-app-text">
+              Historial y analisis
+              <span className="border border-app-border bg-white px-2 py-0.5 text-[11px] font-semibold text-app-muted">
+                {savedEvents.length}
+              </span>
+              {repeatedAlerts.length ? (
+                <span className="border border-[#E3BDBD] bg-app-red px-2 py-0.5 text-[11px] font-semibold text-[#7B2A2A]">
+                  {repeatedAlerts.length} alertas
+                </span>
+              ) : null}
+            </span>
+            <span className="mt-1 block text-xs">Graficas y comparativo</span>
+          </button>
+        </div>
+
+        {activeMonitoringTab === "current" ? (
+          <Button
+            disabled={isSaving || !result.complete}
+            icon={<Save className="h-4 w-4" />}
+            onClick={saveMonitoring}
+            variant="primary"
+          >
+            {isSaving ? "Guardando" : "Guardar monitoreo"}
+          </Button>
+        ) : (
+          <Button
+            disabled={!savedEvents.length}
+            icon={<Download className="h-4 w-4" />}
+            onClick={exportHistory}
+            variant="secondary"
+          >
+            Exportar historial
+          </Button>
+        )}
+      </div>
+
+      {activeMonitoringTab === "current" ? (
+      <div className="grid gap-12 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
         <div>
+          <div className="mb-6 flex items-center justify-between gap-4 border-y border-app-border py-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">Captura</p>
+              <p className="mt-2 text-sm text-app-muted">Datos de la muestra actual</p>
+            </div>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">01</span>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Invernadero">
               <SelectInput value={activeGreenhouse.id} onChange={(event) => handleGreenhouseChange(event.target.value)}>
@@ -544,14 +827,8 @@ export function NutritionMonitoringSection() {
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="border-t border-app-border py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">DDT</p>
-              <p className="mt-2 text-3xl font-light text-app-text">{ddt}</p>
-            </div>
-            <div className="border-t border-app-border py-4 sm:col-span-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Trasplante</p>
-              <p className="mt-2 text-lg font-medium text-app-text">{formatDate(activeGreenhouse.transplantDate)}</p>
-            </div>
+            <MiniMetric label="DDT" value={ddt} />
+            <MiniMetric className="sm:col-span-2" label="Trasplante" value={formatDate(activeGreenhouse.transplantDate)} />
           </div>
 
           {sampleTypes.map((sampleType) => (
@@ -566,63 +843,6 @@ export function NutritionMonitoringSection() {
           <Field className="border-y border-app-border py-6" label="Notas">
             <TextArea value={notes} onChange={(event) => setNotes(event.target.value)} />
           </Field>
-
-          <section className="border-b border-app-border py-6">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
-                  Historial guardado
-                </p>
-              </div>
-              <History className="h-4 w-4 text-app-green" />
-            </div>
-            {historyError ? (
-              <div className="border border-[#E3BDBD] bg-app-red px-3 py-2 text-sm text-[#7B2A2A]">
-                {historyError}
-              </div>
-            ) : null}
-            {isLoadingHistory ? (
-              <p className="border-t border-app-border py-4 text-sm text-app-muted">Cargando historial...</p>
-            ) : null}
-            {!isLoadingHistory && !savedEvents.length ? (
-              <p className="border-t border-app-border py-4 text-sm text-app-muted">Sin monitoreos guardados.</p>
-            ) : null}
-            {!isLoadingHistory && savedEvents.length ? (
-              <div className="border-b border-app-border">
-                {savedEvents.map((event) => {
-                  const alerts = event.observations.filter((observation) => observation.severity !== "baja").length;
-                  const recommendationCount = event.observations.filter((observation) => observation.recommendationText).length;
-
-                  return (
-                    <button
-                      key={event.id}
-                      className={cn(
-                        "grid w-full gap-2 border-t border-app-border py-4 text-left transition hover:bg-white/60",
-                        selectedHistoryId === event.id && "bg-app-soft"
-                      )}
-                      onClick={() => applySavedMonitoring(event)}
-                      type="button"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-app-text">
-                            {formatDate(event.sampleDate)} · {event.ddt} DDT
-                          </p>
-                          <p className="mt-1 text-xs text-app-muted">
-                            {alerts} alertas · {recommendationCount} recomendaciones
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
-                          Ver
-                        </span>
-                      </div>
-                      {event.notes ? <p className="line-clamp-2 text-xs leading-5 text-app-muted">{event.notes}</p> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </section>
         </div>
 
         <div>
@@ -630,7 +850,7 @@ export function NutritionMonitoringSection() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
-                  Diagnóstico
+                  Diagnostico
                 </p>
                 <h2 className="mt-3 text-3xl font-light text-app-text">{activeGreenhouse.name}</h2>
                 <p className="mt-2 text-sm text-app-muted">{activeGreenhouse.variety} · {NUTRITION_SOURCE_LABEL}</p>
@@ -639,6 +859,12 @@ export function NutritionMonitoringSection() {
                 <Calculator className="h-4 w-4" />
               </span>
             </div>
+          </div>
+
+          <div className="grid gap-3 border-b border-app-border pb-6 sm:grid-cols-3">
+            <MiniMetric label="Monitoreos" value={savedEvents.length} detail="En filtros actuales" />
+            <MiniMetric label="Alertas repetidas" value={repeatedAlerts.length} detail="Bajos/altos consecutivos" />
+            <MiniMetric label="Comparativo" value={`${compareEvents.length}/2`} detail="Fechas seleccionadas" />
           </div>
 
           <div className="border-b border-app-border">
@@ -709,6 +935,217 @@ export function NutritionMonitoringSection() {
           </div>
         </div>
       </div>
+      ) : (
+
+      <div>
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">Historial y analisis</p>
+            <h2 className="mt-2 text-3xl font-light text-app-text">Evolucion nutrimental</h2>
+          </div>
+        </div>
+
+        <div className="grid gap-10 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.35fr)]">
+          <section className="border-y border-app-border py-6">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
+                Historial guardado
+              </p>
+              <History className="h-4 w-4 text-app-green" />
+            </div>
+            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <Field label="Desde">
+                <TextInput value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" />
+              </Field>
+              <Field label="Hasta">
+                <TextInput value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" />
+              </Field>
+            </div>
+            {historyError ? (
+              <div className="border border-[#E3BDBD] bg-app-red px-3 py-2 text-sm text-[#7B2A2A]">
+                {historyError}
+              </div>
+            ) : null}
+            {isLoadingHistory ? (
+              <p className="border-t border-app-border py-4 text-sm text-app-muted">Cargando historial...</p>
+            ) : null}
+            {!isLoadingHistory && !savedEvents.length ? (
+              <p className="border-t border-app-border py-4 text-sm text-app-muted">Sin monitoreos guardados.</p>
+            ) : null}
+            {!isLoadingHistory && savedEvents.length ? (
+              <div className="border-b border-app-border">
+                {savedEvents.map((event) => {
+                  const alerts = event.observations.filter((observation) => observation.severity !== "baja").length;
+                  const recommendationCount = event.observations.filter((observation) => observation.recommendationText).length;
+                  const isCompared = compareIds.includes(event.id);
+
+                  return (
+                    <div
+                      key={event.id}
+                      className={cn(
+                        "grid gap-3 border-t border-app-border py-4",
+                        selectedHistoryId === event.id && "bg-app-soft"
+                      )}
+                    >
+                      <button
+                        className="text-left"
+                        onClick={() => {
+                          applySavedMonitoring(event);
+                          setActiveMonitoringTab("current");
+                        }}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-app-text">
+                              {formatDate(event.sampleDate)} · {event.ddt} DDT
+                            </p>
+                            <p className="mt-1 text-xs text-app-muted">
+                              {alerts} alertas · {recommendationCount} recomendaciones
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                            Usar
+                          </span>
+                        </div>
+                        {event.notes ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-app-muted">{event.notes}</p> : null}
+                      </button>
+                      <button
+                        className={cn(
+                          "h-8 border px-2 text-xs font-semibold uppercase tracking-[0.14em]",
+                          isCompared ? "border-app-green bg-app-soft text-app-green" : "border-app-border text-app-muted"
+                        )}
+                        onClick={() => toggleCompare(event.id)}
+                        type="button"
+                      >
+                        {isCompared ? "En comparativo" : "Comparar"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+
+          <div className="grid gap-8">
+            <section className="border-y border-app-border py-6">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
+                    Tendencia
+                  </p>
+                  <h3 className="mt-2 text-2xl font-light text-app-text">{analyteLabel(selectedAnalyte)}</h3>
+                </div>
+                <LineChartIcon className="h-4 w-4 text-app-green" />
+              </div>
+              <Field label="Nutrimento">
+                <SelectInput value={selectedAnalyte} onChange={(event) => setSelectedAnalyte(event.target.value as NutritionAnalyteKey)}>
+                  {NUTRITION_ANALYTES.map((analyte) => (
+                    <option key={analyte.key} value={analyte.key}>
+                      {analyte.shortLabel}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <div className="mt-4 h-72 border-t border-app-border pt-4">
+                {trendData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trendData}>
+                      <CartesianGrid stroke="#E6E6E2" vertical={false} />
+                      <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={12} />
+                      <YAxis tickLine={false} axisLine={false} fontSize={12} width={48} />
+                      <Tooltip />
+                      {selectedRange ? (
+                        <ReferenceArea y1={selectedRange.rangeMin ?? undefined} y2={selectedRange.rangeMax ?? undefined} fill="#E7F0E7" />
+                      ) : null}
+                      <Line dataKey="petiole" name="ECP" stroke="#1C3A2A" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                      <Line dataKey="soil" name="Suelo" stroke="#8A6F3D" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-12 text-sm text-app-muted">Sin datos para graficar.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="border-b border-app-border pb-6">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
+                  Alertas por repeticion
+                </p>
+                <AlertTriangle className="h-4 w-4 text-app-green" />
+              </div>
+              {repeatedAlerts.length ? (
+                <div className="grid gap-2">
+                  {repeatedAlerts.map((alert) => (
+                    <div key={alert.key} className="flex items-center justify-between gap-4 border-t border-app-border py-3">
+                      <div>
+                        <p className="text-sm font-medium text-app-text">{alert.label}</p>
+                        <p className="mt-1 text-xs text-app-muted">{alert.detail}</p>
+                      </div>
+                      <StatusPill status={alert.status} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="border-t border-app-border py-4 text-sm text-app-muted">Sin repeticiones críticas en el historial filtrado.</p>
+              )}
+            </section>
+
+            <section className="border-b border-app-border pb-6">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
+                    Comparativo entre fechas
+                  </p>
+                  {compareEvents.length === 2 ? (
+                    <p className="mt-2 text-sm text-app-muted">
+                      {[...compareEvents].sort((left, right) => left.sampleDate.localeCompare(right.sampleDate)).map((event) => formatDate(event.sampleDate)).join(" vs ")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex gap-2">
+                  <Button disabled={compareEvents.length !== 2} icon={<Download className="h-4 w-4" />} onClick={exportCompare} variant="secondary">
+                    Exportar
+                  </Button>
+                  <GitCompare className="mt-3 h-4 w-4 text-app-green sm:mt-0" />
+                </div>
+              </div>
+              {compareEvents.length !== 2 ? (
+                <p className="border-t border-app-border py-4 text-sm text-app-muted">Selecciona dos monitoreos del historial.</p>
+              ) : (
+                <div className="border-b border-app-border">
+                  {compareRows.map((row) => (
+                    <div key={row.key} className="grid gap-3 border-t border-app-border py-4 lg:grid-cols-[120px_1fr_1fr_120px]">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                          {row.analyte.shortLabel}
+                        </p>
+                        <p className="mt-1 text-xs text-app-muted">{row.sampleType === "petiole_cell_extract" ? "ECP" : "Suelo"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-app-text">{formatMeasurement(row.before?.diagnosticValue)} {row.before?.diagnosticUnit ?? ""}</p>
+                        <StatusPill status={row.before?.diagnosticStatus} />
+                      </div>
+                      <div>
+                        <p className="text-sm text-app-text">{formatMeasurement(row.after?.diagnosticValue)} {row.after?.diagnosticUnit ?? ""}</p>
+                        <StatusPill status={row.after?.diagnosticStatus} />
+                      </div>
+                      <div>
+                        <p className={cn("text-sm font-medium", row.improved && "text-app-green", row.worsened && "text-[#7B2A2A]", !row.improved && !row.worsened && "text-app-muted")}>
+                          {trendLabel(row.delta)}
+                        </p>
+                        <p className="mt-1 text-xs text-app-muted">{row.statusChange}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+      )}
     </section>
   );
 }

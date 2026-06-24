@@ -21,7 +21,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 17. `17_nutrition_monitoring.sql`
 18. `18_assigned_task_greenhouse_visibility.sql`
 19. `19_telegram_operational_sessions.sql`
-20. `03_seed_template.sql` solo si quieres datos demo manuales.
+20. `20_nutrition_monitoring_admin_scope.sql`
+21. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -64,6 +65,8 @@ Para guardar monitoreo nutrimental de extracto celular de peciolo y solución de
 Para que los encargados vean el nombre del invernadero en actividades donde fueron asignados, aunque no sean el responsable principal del invernadero, ejecuta `18_assigned_task_greenhouse_visibility.sql`.
 
 Para que Telegram recuerde selección por número, captura mínima y confirmación SI/NO antes de completar o bloquear actividades, ejecuta `19_telegram_operational_sessions.sql`.
+
+Para restringir el monitoreo nutrimental a owner/admin y ocultarlo a managers, ejecuta `20_nutrition_monitoring_admin_scope.sql`.
 
 ## Conectar Telegram
 
