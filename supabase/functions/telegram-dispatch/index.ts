@@ -118,7 +118,7 @@ function buildWeeklyMessage({
   });
 
   lines.push("");
-  lines.push("Responde en Mira al completar o bloquear una actividad.");
+  lines.push("Responde aqui, por ejemplo: completado riego de hoy. Para bloqueo: bloqueado deshoje por falta de material.");
 
   return lines.join("\n");
 }
