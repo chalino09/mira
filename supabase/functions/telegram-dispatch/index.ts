@@ -123,6 +123,50 @@ function buildWeeklyMessage({
   return lines.join("\n");
 }
 
+function buildChangedTasksMessage({
+  greenhouseById,
+  materialsByTaskId,
+  tasks
+}: {
+  greenhouseById: Map<string, string>;
+  materialsByTaskId: Map<string, any[]>;
+  tasks: any[];
+}) {
+  const sortedTasks = [...tasks].sort((left, right) => {
+    const dateCompare = String(left.scheduled_date).localeCompare(String(right.scheduled_date));
+    if (dateCompare) return dateCompare;
+    return String(left.scheduled_time ?? "").localeCompare(String(right.scheduled_time ?? ""));
+  });
+
+  const lines = [
+    "Mira - Cambios en actividades",
+    `${sortedTasks.length} ${sortedTasks.length === 1 ? "actividad actualizada" : "actividades actualizadas"}`,
+    ""
+  ];
+
+  sortedTasks.forEach((task) => {
+    const greenhouseName = greenhouseById.get(task.greenhouse_id) ?? "Invernadero";
+    const priority = task.priority && task.priority !== "normal" ? ` · ${priorityLabels[task.priority] ?? task.priority}` : "";
+    lines.push(`- ${dateLabel(task.scheduled_date)} · ${taskTime(task)} · ${activityLabel(task)}${priority}`);
+    lines.push(`  ${task.title}`);
+    lines.push(`  ${greenhouseName}`);
+
+    if (task.instructions) {
+      lines.push(`  ${task.instructions}`);
+    }
+
+    const materials = materialsByTaskId.get(task.id) ?? [];
+    if (materials.length) {
+      lines.push(`  Insumos: ${materials.map(materialLine).join("; ")}`);
+    }
+  });
+
+  lines.push("");
+  lines.push("Responde aqui para completar o bloquear. Te pedire confirmacion antes de guardar.");
+
+  return lines.join("\n");
+}
+
 function splitMessage(text: string) {
   const chunks: string[] = [];
   let current = "";
@@ -220,7 +264,7 @@ Deno.serve(async (request) => {
     .eq("company_id", plan.company_id)
     .eq("weekly_plan_id", weeklyPlanId)
     .eq("channel", "telegram")
-    .eq("event_type", "weekly_plan_published")
+    .in("event_type", ["weekly_plan_published", "task_updated"])
     .eq("status", "pending")
     .lte("scheduled_for", new Date().toISOString())
     .limit(300);
@@ -314,7 +358,8 @@ Deno.serve(async (request) => {
       continue;
     }
 
-    const userTasks = rows.map((row) => taskById.get(row.task_id)).filter(Boolean);
+    const userTaskIds = Array.from(new Set(rows.map((row) => row.task_id).filter(Boolean)));
+    const userTasks = userTaskIds.map((taskId) => taskById.get(taskId)).filter(Boolean);
     if (!userTasks.length) {
       failed += 1;
       await updateOutbox(adminClient, rows, { status: "failed", last_error: "tasks_not_found" });
@@ -322,12 +367,23 @@ Deno.serve(async (request) => {
     }
 
     try {
-      await sendTelegramMessage(botToken, connection.external_chat_id, buildWeeklyMessage({
-        greenhouseById,
-        materialsByTaskId,
-        tasks: userTasks,
-        weekStart: plan.week_start
-      }));
+      const hasPublishedWeek = rows.some((row) => row.event_type === "weekly_plan_published");
+      await sendTelegramMessage(
+        botToken,
+        connection.external_chat_id,
+        hasPublishedWeek
+          ? buildWeeklyMessage({
+              greenhouseById,
+              materialsByTaskId,
+              tasks: userTasks,
+              weekStart: plan.week_start
+            })
+          : buildChangedTasksMessage({
+              greenhouseById,
+              materialsByTaskId,
+              tasks: userTasks
+            })
+      );
       sent += 1;
       await updateOutbox(adminClient, rows, {
         status: "sent",

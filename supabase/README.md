@@ -20,7 +20,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 16. `16_crop_ddt_stages.sql`
 17. `17_nutrition_monitoring.sql`
 18. `18_assigned_task_greenhouse_visibility.sql`
-19. `03_seed_template.sql` solo si quieres datos demo manuales.
+19. `19_telegram_operational_sessions.sql`
+20. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -62,6 +63,8 @@ Para guardar monitoreo nutrimental de extracto celular de peciolo y solución de
 
 Para que los encargados vean el nombre del invernadero en actividades donde fueron asignados, aunque no sean el responsable principal del invernadero, ejecuta `18_assigned_task_greenhouse_visibility.sql`.
 
+Para que Telegram recuerde selección por número, captura mínima y confirmación SI/NO antes de completar o bloquear actividades, ejecuta `19_telegram_operational_sessions.sql`.
+
 ## Conectar Telegram
 
 1. En Telegram abre `@BotFather`, ejecuta `/newbot` y guarda el token y username entregados.
@@ -101,7 +104,7 @@ supabase functions deploy telegram-webhook --no-verify-jwt
 curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
   -d "url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook" \
   -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
-  -d 'allowed_updates=["message"]'
+  -d 'allowed_updates=["message","callback_query"]'
 ```
 
 Después, el manager entra a Mira, pulsa `Telegram`, abre el enlace y presiona `Iniciar` dentro del bot. Cuando un owner o admin publica una semana en `Operación`, `telegram-dispatch` procesa la cola y envía las actividades asignadas a cada chat conectado. Los tokens y secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.

@@ -38,6 +38,7 @@ supabase/15_greenhouse_crop_details.sql
 supabase/16_crop_ddt_stages.sql
 supabase/17_nutrition_monitoring.sql
 supabase/18_assigned_task_greenhouse_visibility.sql
+supabase/19_telegram_operational_sessions.sql
 ```
 
 4. Levanta la app:
