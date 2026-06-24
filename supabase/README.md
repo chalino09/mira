@@ -19,7 +19,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 15. `15_greenhouse_crop_details.sql`
 16. `16_crop_ddt_stages.sql`
 17. `17_nutrition_monitoring.sql`
-18. `03_seed_template.sql` solo si quieres datos demo manuales.
+18. `18_assigned_task_greenhouse_visibility.sql`
+19. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -59,6 +60,8 @@ Para agregar la base multi-cultivo, ciclos, etapas DDT, rangos nutrimentales y p
 
 Para guardar monitoreo nutrimental de extracto celular de peciolo y solución de suelo, con observaciones fijas y recomendaciones editables por parámetro, ejecuta `17_nutrition_monitoring.sql`.
 
+Para que los encargados vean el nombre del invernadero en actividades donde fueron asignados, aunque no sean el responsable principal del invernadero, ejecuta `18_assigned_task_greenhouse_visibility.sql`.
+
 ## Conectar Telegram
 
 1. En Telegram abre `@BotFather`, ejecuta `/newbot` y guarda el token y username entregados.
@@ -88,6 +91,7 @@ supabase secrets set \
 
 ```bash
 supabase functions deploy telegram-link
+supabase functions deploy telegram-dispatch
 supabase functions deploy telegram-webhook --no-verify-jwt
 ```
 
@@ -100,4 +104,4 @@ curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
   -d 'allowed_updates=["message"]'
 ```
 
-Después, el manager entra a Mira, pulsa `Telegram`, abre el enlace y presiona `Iniciar` dentro del bot. Los tokens y secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.
+Después, el manager entra a Mira, pulsa `Telegram`, abre el enlace y presiona `Iniciar` dentro del bot. Cuando un owner o admin publica una semana en `Operación`, `telegram-dispatch` procesa la cola y envía las actividades asignadas a cada chat conectado. Los tokens y secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.

@@ -79,6 +79,11 @@ type ManagerOption = {
   email: string;
 };
 
+type OperationGreenhouseOption = {
+  id: string;
+  name: string;
+};
+
 type MaterialDraft = {
   productName: string;
   dose: string;
@@ -386,6 +391,22 @@ function activityLabel(task: OperationTaskRow) {
 function optionalFormNumber(value: FormDataEntryValue | null) {
   const textValue = String(value ?? "").trim();
   return textValue ? Number(textValue) : null;
+}
+
+function telegramDispatchMessage(data: any) {
+  const sent = Number(data?.sent ?? 0);
+  const failed = Number(data?.failed ?? 0);
+  const pendingWithoutConnection = Number(data?.pendingWithoutConnection ?? 0);
+
+  if (!sent && !failed && !pendingWithoutConnection) {
+    return "No hay notificaciones pendientes para Telegram.";
+  }
+
+  return [
+    sent ? `${sent} chat${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"}` : "",
+    pendingWithoutConnection ? `${pendingWithoutConnection} encargado${pendingWithoutConnection === 1 ? "" : "s"} sin Telegram conectado` : "",
+    failed ? `${failed} fallo${failed === 1 ? "" : "s"}` : ""
+  ].filter(Boolean).join(" · ");
 }
 
 function ActivityFormModal({
@@ -1127,10 +1148,12 @@ export function OperationsSection() {
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [managers, setManagers] = useState<ManagerOption[]>([]);
+  const [operationGreenhouses, setOperationGreenhouses] = useState<OperationGreenhouseOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [dispatchingTelegram, setDispatchingTelegram] = useState(false);
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -1187,11 +1210,12 @@ export function OperationsSection() {
 
     const taskRows = (tasksResponse.data ?? []) as OperationTaskRow[];
     const taskIds = taskRows.map((task) => task.id);
+    const taskGreenhouseIds = Array.from(new Set(taskRows.map((task) => task.greenhouse_id).filter(Boolean)));
     const managerIds = (membersResponse.data ?? [])
       .map((member: any) => member.user_id)
       .filter((id: string | null): id is string => Boolean(id));
 
-    const [assignmentsResponse, materialsResponse, profilesResponse] = await Promise.all([
+    const [assignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -1200,10 +1224,13 @@ export function OperationsSection() {
         : Promise.resolve({ data: [], error: null }),
       managerIds.length
         ? supabase.from("profiles").select("id, full_name, email").in("id", managerIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskGreenhouseIds.length
+        ? supabase.from("greenhouses").select("id, name").eq("company_id", organization.id).in("id", taskGreenhouseIds)
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error;
+    const detailError = assignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1213,6 +1240,7 @@ export function OperationsSection() {
     setTasks(taskRows);
     setAssignments((assignmentsResponse.data ?? []) as AssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
+    setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
       const profile = profileMap.get(id);
       return {
@@ -1231,7 +1259,10 @@ export function OperationsSection() {
   const assignmentsForTask = (taskId: string) => assignments.filter((item) => item.task_id === taskId);
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
   const managerName = (userId: string) => managers.find((manager) => manager.id === userId)?.name ?? "Encargado";
-  const greenhouseName = (greenhouseId: string) => greenhouses.find((item) => item.id === greenhouseId)?.name ?? "Invernadero";
+  const greenhouseName = (greenhouseId: string) =>
+    operationGreenhouses.find((item) => item.id === greenhouseId)?.name ??
+    greenhouses.find((item) => item.id === greenhouseId)?.name ??
+    "Invernadero";
 
   const saveActivity = async (payload: ActivityPayload) => {
     const supabase = getSupabaseBrowserClient();
@@ -1294,14 +1325,48 @@ export function OperationsSection() {
 
     setPublishing(true);
     setNotice(null);
-    const { error } = await supabase.rpc("publish_weekly_plan", { target_plan_id: plan.id });
-    setPublishing(false);
+    try {
+      const { error } = await supabase.rpc("publish_weekly_plan", { target_plan_id: plan.id });
+      if (error) throw error;
+
+      const { data, error: dispatchError } = await supabase.functions.invoke("telegram-dispatch", {
+        body: { weeklyPlanId: plan.id }
+      });
+
+      if (dispatchError) {
+        setNotice({
+          tone: "red",
+          message: `Semana publicada, pero Telegram no pudo enviarse: ${appErrorMessage(dispatchError, "revisa la funcion telegram-dispatch.")}`
+        });
+      } else {
+        setNotice({ tone: "green", message: `Semana publicada. ${telegramDispatchMessage(data)}` });
+      }
+      await loadOperations();
+    } catch (caught) {
+      setNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo publicar la semana.") });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const sendTelegramForPlan = async () => {
+    if (!plan) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setDispatchingTelegram(true);
+    setNotice(null);
+    const { data, error } = await supabase.functions.invoke("telegram-dispatch", {
+      body: { weeklyPlanId: plan.id }
+    });
+    setDispatchingTelegram(false);
+
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo publicar la semana.") });
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo enviar a Telegram.") });
       return;
     }
-    setNotice({ tone: "green", message: "Semana publicada y notificaciones preparadas." });
-    await loadOperations();
+
+    setNotice({ tone: "green", message: telegramDispatchMessage(data) });
   };
 
   const completeTask = async (task: OperationTaskRow) => {
@@ -1627,17 +1692,28 @@ export function OperationsSection() {
             <div className="flex flex-col gap-3 border-b border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-app-muted">
                 {plan.status === "published"
-                  ? "La semana está publicada. Los cambios posteriores quedan en el historial."
+                  ? "La semana está publicada. Puedes procesar pendientes hacia Telegram."
                   : "Publica cuando instrucciones y responsables estén listos."}
               </p>
-              <Button
-                disabled={publishing || plan.status === "published"}
-                icon={<Send className="h-4 w-4" />}
-                onClick={publishPlan}
-                variant="secondary"
-              >
-                {publishing ? "Publicando..." : plan.status === "published" ? "Semana publicada" : "Publicar semana"}
-              </Button>
+              {plan.status === "published" ? (
+                <Button
+                  disabled={dispatchingTelegram}
+                  icon={<Send className="h-4 w-4" />}
+                  onClick={sendTelegramForPlan}
+                  variant="secondary"
+                >
+                  {dispatchingTelegram ? "Enviando..." : "Enviar Telegram"}
+                </Button>
+              ) : (
+                <Button
+                  disabled={publishing}
+                  icon={<Send className="h-4 w-4" />}
+                  onClick={publishPlan}
+                  variant="secondary"
+                >
+                  {publishing ? "Publicando..." : "Publicar semana"}
+                </Button>
+              )}
             </div>
           ) : null}
 
@@ -1738,7 +1814,7 @@ export function OperationsSection() {
           <div className="mt-10 grid gap-4 border-t border-app-border py-6 md:grid-cols-3">
             <div className="flex items-start gap-3">
               <Clock3 className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Recordatorio diario</p><p className="mt-1 text-xs leading-5 text-app-muted">La cola queda preparada para Telegram.</p></div>
+              <div><p className="text-sm font-medium">Planeación enviada</p><p className="mt-1 text-xs leading-5 text-app-muted">Al publicar, Mira prepara y envía la semana a Telegram.</p></div>
             </div>
             <div className="flex items-start gap-3">
               <Users className="mt-0.5 h-4 w-4 text-app-green" />
@@ -1746,7 +1822,7 @@ export function OperationsSection() {
             </div>
             <div className="flex items-start gap-3">
               <MessageCircle className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Canal conversacional</p><p className="mt-1 text-xs leading-5 text-app-muted">Telegram se conectará en la siguiente entrega.</p></div>
+              <div><p className="text-sm font-medium">Canal conversacional</p><p className="mt-1 text-xs leading-5 text-app-muted">Los encargados conectados reciben sus actividades asignadas.</p></div>
             </div>
           </div>
         </>

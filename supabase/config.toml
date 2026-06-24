@@ -3,3 +3,6 @@ verify_jwt = true
 
 [functions.telegram-webhook]
 verify_jwt = false
+
+[functions.telegram-dispatch]
+verify_jwt = true

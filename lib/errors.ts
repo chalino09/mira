@@ -37,6 +37,7 @@ const knownMessages: Record<string, string> = {
   manager_membership_required: "Solo un manager activo puede conectar Telegram.",
   telegram_link_failed: "No se pudo generar el enlace de Telegram.",
   telegram_disconnect_failed: "No se pudo desconectar Telegram.",
+  telegram_dispatch_failed: "No se pudieron enviar las actividades a Telegram.",
   surface_m2_invalid: "La superficie no puede ser negativa.",
   plants_count_invalid: "El número de plantas no puede ser negativo.",
   beds_count_invalid: "El número de camas no puede ser negativo.",
