@@ -18,7 +18,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 14. `14_greenhouse_budget.sql`
 15. `15_greenhouse_crop_details.sql`
 16. `16_crop_ddt_stages.sql`
-17. `03_seed_template.sql` solo si quieres datos demo manuales.
+17. `17_nutrition_monitoring.sql`
+18. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -55,6 +56,8 @@ Para agregar presupuesto opcional por invernadero/ciclo y compararlo contra cost
 Para guardar si el cultivo va a un tallo o doble tallo y si usa injerto, ejecuta `15_greenhouse_crop_details.sql`.
 
 Para agregar la base multi-cultivo, ciclos, etapas DDT, rangos nutrimentales y plantillas por cultivo, ejecuta `16_crop_ddt_stages.sql`.
+
+Para guardar monitoreo nutrimental de extracto celular de peciolo y solución de suelo, con observaciones fijas y recomendaciones editables por parámetro, ejecuta `17_nutrition_monitoring.sql`.
 
 ## Conectar Telegram
 

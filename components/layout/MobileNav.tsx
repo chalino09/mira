@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarDays, Droplets, Home, Menu, Send, Sprout, X } from "lucide-react";
+import { BarChart3, CalendarDays, FlaskConical, Home, Menu, Send, Sprout, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BrandMark } from "@/components/layout/Sidebar";
 import { navigationItemsForRole } from "@/data/navigation";
@@ -8,12 +8,12 @@ import { cn } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
 import type { SectionId } from "@/types";
 
-const primaryIds: SectionId[] = ["overview", "greenhouses", "calendar", "irrigation", "reports"];
+const primaryIds: SectionId[] = ["overview", "greenhouses", "calendar", "monitoring", "reports"];
 const iconFallback = {
   overview: Home,
   greenhouses: Sprout,
   calendar: CalendarDays,
-  irrigation: Droplets,
+  monitoring: FlaskConical,
   reports: BarChart3
 };
 

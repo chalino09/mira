@@ -4,6 +4,7 @@ export type SectionId =
   | "overview"
   | "greenhouses"
   | "calendar"
+  | "monitoring"
   | "records"
   | "irrigation"
   | "nutrition"

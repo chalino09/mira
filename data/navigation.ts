@@ -2,6 +2,7 @@ import {
   ActivitySquare,
   BarChart3,
   CalendarDays,
+  FlaskConical,
   Home,
   Leaf,
   Settings,
@@ -15,6 +16,7 @@ export const navigationItems: NavigationItem[] = [
   { id: "overview", label: "Inicio", icon: Home },
   { id: "calendar", label: "Operación", icon: CalendarDays },
   { id: "greenhouses", label: "Invernaderos", icon: Sprout },
+  { id: "monitoring", label: "Monitoreo", icon: FlaskConical },
   { id: "records", label: "Registros técnicos", icon: ActivitySquare },
   { id: "pests", label: "Plagas", icon: ShieldAlert },
   { id: "harvest", label: "Cosecha", icon: Leaf },
@@ -27,6 +29,7 @@ const managerSections = new Set([
   "overview",
   "greenhouses",
   "calendar",
+  "monitoring",
   "records",
   "pests",
   "harvest"

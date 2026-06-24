@@ -36,6 +36,7 @@ supabase/13_greenhouse_manager_scope.sql
 supabase/14_greenhouse_budget.sql
 supabase/15_greenhouse_crop_details.sql
 supabase/16_crop_ddt_stages.sql
+supabase/17_nutrition_monitoring.sql
 ```
 
 4. Levanta la app:
