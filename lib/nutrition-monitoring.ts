@@ -31,7 +31,7 @@ export type NutritionValueResult = {
   range: NutritionReferenceRange;
   diagnosticStatus: NutritionDiagnosticStatus;
   estimated: boolean;
-  metadata: Record<string, number | boolean>;
+  metadata: Record<string, number | boolean | string>;
 };
 
 export type NutritionObservationResult = {
@@ -58,6 +58,13 @@ type RangeTemplate = {
   max: number;
   ddtMin?: number | null;
   ddtMax?: number | null;
+};
+
+type UnitConversion = {
+  inputUnit: string;
+  diagnosticUnit: string;
+  factor: number;
+  conversion: string;
 };
 
 const DDT_BANDS: Array<{ ddtMin: number; ddtMax: number | null }> = [
@@ -139,6 +146,43 @@ const DIAGNOSTIC_UNITS: Record<NutritionSampleType, Record<NutritionAnalyteKey, 
     na: "meq/L",
     ph: "adim.",
     ec: "mS/cm"
+  }
+};
+
+const UNIT_CONVERSIONS: Record<NutritionSampleType, Partial<Record<NutritionAnalyteKey, UnitConversion>>> = {
+  petiole_cell_extract: {
+    n_no3: {
+      inputUnit: "ppm NO3-",
+      diagnosticUnit: "ppm N-NO3-",
+      factor: 14 / 62,
+      conversion: "NO3- a N-NO3-"
+    }
+  },
+  soil_solution: {
+    n_no3: {
+      inputUnit: "ppm NO3-",
+      diagnosticUnit: "meq/L",
+      factor: 1 / 62,
+      conversion: "ppm NO3- a meq/L NO3-"
+    },
+    k: {
+      inputUnit: "ppm",
+      diagnosticUnit: "meq/L",
+      factor: 1 / 39.09,
+      conversion: "ppm K+ a meq/L K+"
+    },
+    ca: {
+      inputUnit: "ppm",
+      diagnosticUnit: "meq/L",
+      factor: 1 / 20.04,
+      conversion: "ppm Ca2+ a meq/L Ca2+"
+    },
+    na: {
+      inputUnit: "ppm",
+      diagnosticUnit: "meq/L",
+      factor: 1 / 22.99,
+      conversion: "ppm Na+ a meq/L Na+"
+    }
   }
 };
 
@@ -312,6 +356,29 @@ function meqFromPpm(value: number | null, divisor: number) {
   return value === null ? null : value / divisor;
 }
 
+export function nutritionInputUnitFor(sampleType: NutritionSampleType, analyteKey: NutritionAnalyteKey) {
+  return UNIT_CONVERSIONS[sampleType][analyteKey]?.inputUnit ?? INPUT_UNITS[sampleType][analyteKey];
+}
+
+export function nutritionDiagnosticUnitFor(sampleType: NutritionSampleType, analyteKey: NutritionAnalyteKey) {
+  return UNIT_CONVERSIONS[sampleType][analyteKey]?.diagnosticUnit ?? DIAGNOSTIC_UNITS[sampleType][analyteKey];
+}
+
+function diagnosticValueFromRaw(sampleType: NutritionSampleType, analyteKey: NutritionAnalyteKey, raw: number) {
+  const conversion = UNIT_CONVERSIONS[sampleType][analyteKey];
+  const metadata: Record<string, number | boolean | string> = conversion
+    ? {
+        conversionFactor: round(conversion.factor, 8),
+        conversion: conversion.conversion
+      }
+    : {};
+
+  return {
+    value: conversion ? raw * conversion.factor : raw,
+    metadata
+  };
+}
+
 function valueResult(
   cropId: string | null | undefined,
   sampleType: NutritionSampleType,
@@ -320,7 +387,7 @@ function valueResult(
   diagnosticValue: number,
   ddt: number,
   estimated = false,
-  metadata: Record<string, number | boolean> = {}
+  metadata: Record<string, number | boolean | string> = {}
 ): NutritionValueResult | null {
   const range = nutritionRangeFor(cropId, sampleType, analyteKey, ddt);
   if (!range) return null;
@@ -330,9 +397,9 @@ function valueResult(
     analyteKey,
     analyteLabel: range.analyteLabel,
     rawValue: round(rawValue),
-    rawUnit: range.inputUnit,
+    rawUnit: nutritionInputUnitFor(sampleType, analyteKey),
     diagnosticValue: round(diagnosticValue),
-    diagnosticUnit: range.diagnosticUnit,
+    diagnosticUnit: nutritionDiagnosticUnitFor(sampleType, analyteKey),
     range,
     diagnosticStatus: diagnosticStatus(diagnosticValue, range.min, range.max),
     estimated,
@@ -347,10 +414,6 @@ function calculatePetioleValue(
   ddt: number
 ) {
   const raw = parseNutritionNumber(rawValues[analyteKey]);
-
-  if (analyteKey === "n_no3" && raw !== null) {
-    return valueResult(cropId, "petiole_cell_extract", analyteKey, raw, raw * (14 / 62), ddt);
-  }
 
   if (analyteKey === "mg") {
     const k = parseNutritionNumber(rawValues.k);
@@ -372,7 +435,8 @@ function calculatePetioleValue(
   }
 
   if (raw === null) return null;
-  return valueResult(cropId, "petiole_cell_extract", analyteKey, raw, raw, ddt);
+  const diagnostic = diagnosticValueFromRaw("petiole_cell_extract", analyteKey, raw);
+  return valueResult(cropId, "petiole_cell_extract", analyteKey, raw, diagnostic.value, ddt, false, diagnostic.metadata);
 }
 
 function calculateSoilValue(
@@ -382,22 +446,6 @@ function calculateSoilValue(
   ddt: number
 ) {
   const raw = parseNutritionNumber(rawValues[analyteKey]);
-
-  if (analyteKey === "n_no3" && raw !== null) {
-    return valueResult(cropId, "soil_solution", analyteKey, raw, raw / 62, ddt);
-  }
-
-  if (analyteKey === "k" && raw !== null) {
-    return valueResult(cropId, "soil_solution", analyteKey, raw, raw / 39.09, ddt);
-  }
-
-  if (analyteKey === "ca" && raw !== null) {
-    return valueResult(cropId, "soil_solution", analyteKey, raw, raw / 20.04, ddt);
-  }
-
-  if (analyteKey === "na" && raw !== null) {
-    return valueResult(cropId, "soil_solution", analyteKey, raw, raw / 22.99, ddt);
-  }
 
   if (analyteKey === "mg") {
     const ca = parseNutritionNumber(rawValues.ca);
@@ -417,7 +465,8 @@ function calculateSoilValue(
   }
 
   if (raw === null) return null;
-  return valueResult(cropId, "soil_solution", analyteKey, raw, raw, ddt);
+  const diagnostic = diagnosticValueFromRaw("soil_solution", analyteKey, raw);
+  return valueResult(cropId, "soil_solution", analyteKey, raw, diagnostic.value, ddt, false, diagnostic.metadata);
 }
 
 function severityFor(

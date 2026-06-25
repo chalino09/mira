@@ -24,6 +24,7 @@ import {
   NUTRITION_CAPTURE_KEYS,
   NUTRITION_SOURCE_LABEL,
   SAMPLE_TYPE_LABELS,
+  nutritionInputUnitFor,
   sampleValue,
   statusTone,
   type NutritionAnalyteKey,
@@ -200,13 +201,7 @@ function RawInputsBlock({
       <div className="grid gap-3 sm:grid-cols-2">
         {NUTRITION_CAPTURE_KEYS.map((key) => {
           const analyte = NUTRITION_ANALYTES.find((item) => item.key === key);
-          const unit = key === "n_no3"
-            ? "ppm NO3-"
-            : key === "ph"
-              ? "adim."
-              : key === "ec"
-                ? "mS/cm"
-                : "ppm";
+          const unit = nutritionInputUnitFor(sampleType, key);
 
           return (
             <Field key={`${sampleType}-${key}`} label={`${analyte?.shortLabel ?? key} · ${unit}`}>
@@ -895,7 +890,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                             {formatMeasurement(petiole?.diagnosticValue)} {petiole?.diagnosticUnit ?? ""}
                           </p>
                           <p className="mt-1 text-xs text-app-muted">
-                            Rango {petiole ? `${formatMeasurement(petiole.range.min)}-${formatMeasurement(petiole.range.max)}` : "--"}
+                            Rango {petiole ? `${formatMeasurement(petiole.range.min)}-${formatMeasurement(petiole.range.max)} ${petiole.diagnosticUnit}` : "--"}
                           </p>
                         </div>
                         <div className="border-l border-app-border pl-4">
@@ -907,7 +902,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                             {formatMeasurement(soil?.diagnosticValue)} {soil?.diagnosticUnit ?? ""}
                           </p>
                           <p className="mt-1 text-xs text-app-muted">
-                            Rango {soil ? `${formatMeasurement(soil.range.min)}-${formatMeasurement(soil.range.max)}` : "--"}
+                            Rango {soil ? `${formatMeasurement(soil.range.min)}-${formatMeasurement(soil.range.max)} ${soil.diagnosticUnit}` : "--"}
                           </p>
                         </div>
                       </div>
