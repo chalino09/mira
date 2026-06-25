@@ -11,7 +11,7 @@ import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
-import { cn } from "@/lib/utils";
+import { cn, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
@@ -32,12 +32,7 @@ function daysSince(date: string) {
 }
 
 function optionalNumber(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").replace(/,/g, "").trim();
-  if (!text) {
-    return null;
-  }
-
-  return Number(text);
+  return parseNumericInput(String(value ?? ""));
 }
 
 function requiredNumber(value: FormDataEntryValue | null) {
@@ -799,7 +794,7 @@ export function RecordModal() {
           <Field label="Superficie m2">
             <FormattedNumberInput
               name="surfaceM2"
-              defaultValue={Number(selectedGreenhouse.surface.replace(/[^\d.]/g, "")) || 0}
+              defaultValue={parseNumericInput(selectedGreenhouse.surface) ?? 0}
             />
           </Field>
           <Field label="Variedad">

@@ -9,6 +9,52 @@ export function formatNumber(value?: number | null) {
   return new Intl.NumberFormat("es-MX").format(value ?? 0);
 }
 
+export function cleanNumericInput(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+
+  const text = String(value ?? "");
+  const match = text.match(/^\s*\$?\s*[-+]?\d[\d,.\s]*/);
+  if (!match) {
+    return "";
+  }
+
+  const numericText = match[0].replace(/[$,\s]/g, "");
+  const sign = numericText.startsWith("-") ? "-" : "";
+  const unsignedText = numericText.replace(/^[-+]/, "");
+  const [integer = "", ...decimalParts] = unsignedText.split(".");
+  const integerDigits = integer.replace(/\D/g, "");
+  const decimalDigits = decimalParts.join("").replace(/\D/g, "");
+
+  if (!integerDigits && !decimalDigits) {
+    return "";
+  }
+
+  return decimalParts.length ? `${sign}${integerDigits || "0"}.${decimalDigits}` : `${sign}${integerDigits}`;
+}
+
+export function parseNumericInput(value: string | number | null | undefined) {
+  const cleaned = cleanNumericInput(value);
+  if (!cleaned) {
+    return null;
+  }
+
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function formatNumericInput(value: string | number | null | undefined) {
+  const cleaned = cleanNumericInput(value);
+  if (!cleaned) return "";
+
+  const hasDecimal = cleaned.includes(".");
+  const [integer = "", decimal = ""] = cleaned.split(".");
+  const formattedInteger = integer ? Number(integer).toLocaleString("es-MX") : "0";
+
+  return hasDecimal ? `${formattedInteger}.${decimal}` : formattedInteger;
+}
+
 export function formatCurrency(value?: number | null) {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",

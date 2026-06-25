@@ -12,6 +12,7 @@ import { appErrorMessage } from "@/lib/errors";
 import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
+import { parseNumericInput } from "@/lib/utils";
 import type {
   Activity,
   ApplicationRecord,
@@ -148,8 +149,7 @@ function daysSince(date?: string | null) {
 }
 
 function optionalNumber(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").replace(/,/g, "").trim();
-  return text ? Number(text) : null;
+  return parseNumericInput(String(value ?? ""));
 }
 
 function optionalInteger(value: FormDataEntryValue | null) {

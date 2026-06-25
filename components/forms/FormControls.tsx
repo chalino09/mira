@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatNumericInput } from "@/lib/utils";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10";
@@ -30,23 +30,6 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
   return <input className={cn(fieldClass, className)} {...props} />;
 }
 
-function cleanNumericText(value: string) {
-  const cleaned = value.replace(/,/g, "").replace(/[^\d.]/g, "");
-  const [integer = "", ...decimalParts] = cleaned.split(".");
-  return decimalParts.length ? `${integer}.${decimalParts.join("")}` : integer;
-}
-
-function formatNumericText(value: string) {
-  const cleaned = cleanNumericText(value);
-  if (!cleaned) return "";
-
-  const hasDecimal = cleaned.includes(".");
-  const [integer = "", decimal = ""] = cleaned.split(".");
-  const formattedInteger = integer ? Number(integer).toLocaleString("es-MX") : "0";
-
-  return hasDecimal ? `${formattedInteger}.${decimal}` : formattedInteger;
-}
-
 export function FormattedNumberInput({
   className,
   defaultValue,
@@ -54,7 +37,7 @@ export function FormattedNumberInput({
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode" | "defaultValue"> & {
   defaultValue?: number | string | null;
 }) {
-  const [value, setValue] = useState(defaultValue == null ? "" : formatNumericText(String(defaultValue)));
+  const [value, setValue] = useState(defaultValue == null ? "" : formatNumericInput(defaultValue));
 
   return (
     <input
@@ -62,7 +45,7 @@ export function FormattedNumberInput({
       inputMode="decimal"
       type="text"
       value={value}
-      onChange={(event) => setValue(formatNumericText(event.target.value))}
+      onChange={(event) => setValue(formatNumericInput(event.target.value))}
       {...props}
     />
   );

@@ -48,7 +48,7 @@ import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
-import { cn, formatCurrency, formatDate, formatNumber } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatNumber, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
@@ -769,8 +769,7 @@ function getUniqueProducts(applications: ApplicationRecord[], nutrition: Nutriti
 
 function greenhouseSurfaceTotal(greenhouses: Greenhouse[]) {
   return greenhouses.reduce((sum, greenhouse) => {
-    const surface = Number(greenhouse.surface.replace(/[^\d.]/g, ""));
-    return Number.isFinite(surface) ? sum + surface : sum;
+    return sum + (parseNumericInput(greenhouse.surface) ?? 0);
   }, 0);
 }
 
