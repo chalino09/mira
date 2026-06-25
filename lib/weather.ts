@@ -3,7 +3,16 @@
 export type WeatherReading = {
   temperature: number;
   humidity: number;
+  today?: WeatherDailySummary;
+  tomorrow?: WeatherDailySummary;
   sourceName: string;
+};
+
+export type WeatherDailySummary = {
+  minTemperature: number | null;
+  maxTemperature: number | null;
+  precipitationMm: number | null;
+  precipitationProbability: number | null;
 };
 
 export type LocationMatch = {
@@ -27,11 +36,40 @@ type ForecastResponse = {
     temperature_2m?: number;
     relative_humidity_2m?: number;
   };
+  daily?: {
+    temperature_2m_max?: number[];
+    temperature_2m_min?: number[];
+    precipitation_sum?: number[];
+    precipitation_probability_max?: number[];
+  };
 };
 
 type GeocodingResult = NonNullable<GeocodingResponse["results"]>[number];
 
 const weatherCache = new Map<string, WeatherReading>();
+
+function dailySummary(forecast: ForecastResponse, index: number): WeatherDailySummary | undefined {
+  const minTemperature = forecast.daily?.temperature_2m_min?.[index];
+  const maxTemperature = forecast.daily?.temperature_2m_max?.[index];
+  const precipitationMm = forecast.daily?.precipitation_sum?.[index];
+  const precipitationProbability = forecast.daily?.precipitation_probability_max?.[index];
+
+  if (
+    typeof minTemperature !== "number" &&
+    typeof maxTemperature !== "number" &&
+    typeof precipitationMm !== "number" &&
+    typeof precipitationProbability !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    minTemperature: typeof minTemperature === "number" ? minTemperature : null,
+    maxTemperature: typeof maxTemperature === "number" ? maxTemperature : null,
+    precipitationMm: typeof precipitationMm === "number" ? precipitationMm : null,
+    precipitationProbability: typeof precipitationProbability === "number" ? precipitationProbability : null
+  };
+}
 
 async function fetchCurrentWeather(
   latitude: number,
@@ -48,6 +86,8 @@ async function fetchCurrentWeather(
   forecastUrl.searchParams.set("latitude", String(latitude));
   forecastUrl.searchParams.set("longitude", String(longitude));
   forecastUrl.searchParams.set("current", "temperature_2m,relative_humidity_2m");
+  forecastUrl.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max");
+  forecastUrl.searchParams.set("forecast_days", "2");
   forecastUrl.searchParams.set("timezone", "auto");
 
   const forecastResponse = await fetch(forecastUrl);
@@ -63,7 +103,13 @@ async function fetchCurrentWeather(
     return null;
   }
 
-  const reading = { temperature, humidity, sourceName };
+  const reading = {
+    temperature,
+    humidity,
+    today: dailySummary(forecast, 0),
+    tomorrow: dailySummary(forecast, 1),
+    sourceName
+  };
   weatherCache.set(cacheKey, reading);
   return reading;
 }
