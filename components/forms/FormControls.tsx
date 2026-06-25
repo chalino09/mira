@@ -10,15 +10,20 @@ const fieldClass =
 export function Field({
   label,
   children,
-  className
+  className,
+  preserveCase = false
 }: {
   label: string;
   children: ReactNode;
   className?: string;
+  preserveCase?: boolean;
 }) {
   return (
     <label className={cn("grid gap-2", className)}>
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+      <span className={cn(
+        "text-[11px] font-semibold tracking-[0.18em] text-app-muted",
+        !preserveCase && "uppercase"
+      )}>
         {label}
       </span>
       {children}

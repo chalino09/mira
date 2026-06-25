@@ -204,7 +204,7 @@ function RawInputsBlock({
           const unit = nutritionInputUnitFor(sampleType, key);
 
           return (
-            <Field key={`${sampleType}-${key}`} label={`${analyte?.shortLabel ?? key} · ${unit}`}>
+            <Field key={`${sampleType}-${key}`} label={`${analyte?.shortLabel ?? key} · ${unit}`} preserveCase>
               <TextInput
                 inputMode="decimal"
                 onChange={(event) => onChange(key, event.target.value)}
@@ -874,7 +874,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                 <article key={analyte.key} className="border-t border-app-border py-5">
                   <div className="grid gap-5 lg:grid-cols-[120px_minmax(0,1fr)]">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
+                      <p className="text-[11px] font-semibold tracking-[0.22em] text-app-muted">
                         {analyte.shortLabel}
                       </p>
                       <p className="mt-2 text-sm font-medium text-app-text">{analyte.label}</p>
@@ -1115,7 +1115,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                   {compareRows.map((row) => (
                     <div key={row.key} className="grid gap-3 border-t border-app-border py-4 lg:grid-cols-[120px_1fr_1fr_120px]">
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                        <p className="text-[11px] font-semibold tracking-[0.18em] text-app-muted">
                           {row.analyte.shortLabel}
                         </p>
                         <p className="mt-1 text-xs text-app-muted">{row.sampleType === "petiole_cell_extract" ? "ECP" : "Suelo"}</p>
