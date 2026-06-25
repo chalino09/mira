@@ -1,6 +1,8 @@
 "use client";
 
 export type WeatherReading = {
+  latitude: number;
+  longitude: number;
   temperature: number;
   humidity: number;
   today?: WeatherDailySummary;
@@ -46,7 +48,8 @@ type ForecastResponse = {
 
 type GeocodingResult = NonNullable<GeocodingResponse["results"]>[number];
 
-const weatherCache = new Map<string, WeatherReading>();
+const WEATHER_CACHE_TTL_MS = 15 * 60 * 1000;
+const weatherCache = new Map<string, { reading: WeatherReading; fetchedAt: number }>();
 
 function dailySummary(forecast: ForecastResponse, index: number): WeatherDailySummary | undefined {
   const minTemperature = forecast.daily?.temperature_2m_min?.[index];
@@ -78,8 +81,8 @@ async function fetchCurrentWeather(
   cacheKey: string
 ): Promise<WeatherReading | null> {
   const cached = weatherCache.get(cacheKey);
-  if (cached) {
-    return cached;
+  if (cached && Date.now() - cached.fetchedAt < WEATHER_CACHE_TTL_MS) {
+    return cached.reading;
   }
 
   const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
@@ -104,13 +107,15 @@ async function fetchCurrentWeather(
   }
 
   const reading = {
+    latitude,
+    longitude,
     temperature,
     humidity,
     today: dailySummary(forecast, 0),
     tomorrow: dailySummary(forecast, 1),
     sourceName
   };
-  weatherCache.set(cacheKey, reading);
+  weatherCache.set(cacheKey, { reading, fetchedAt: Date.now() });
   return reading;
 }
 

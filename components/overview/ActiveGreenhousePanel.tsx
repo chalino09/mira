@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ApplicationRecord, Greenhouse, IrrigationRecord } from "@/types";
 import { getCropDdtStatus } from "@/lib/crop-ddt";
 import { useGreenhouseStore } from "@/lib/store";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
 import { fetchWeatherByCoordinates, fetchWeatherByLocation, type WeatherDailySummary, type WeatherReading } from "@/lib/weather";
 
@@ -14,6 +15,8 @@ type ActiveGreenhousePanelProps = {
   showDdtReading?: boolean;
   variant?: "feature" | "rail";
 };
+
+const WEATHER_REFRESH_INTERVAL_MS = 90 * 60 * 1000;
 
 type WeatherRisk = {
   label: string;
@@ -104,6 +107,8 @@ export function ActiveGreenhousePanel({
   const [weather, setWeather] = useState<WeatherReading | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
   const cropStages = useGreenhouseStore((state) => state.cropStages);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const organization = useGreenhouseStore((state) => state.organization);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,9 +144,11 @@ export function ActiveGreenhousePanel({
     }
 
     loadWeather();
+    const intervalId = window.setInterval(loadWeather, WEATHER_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [greenhouse.latitude, greenhouse.location, greenhouse.longitude]);
 
@@ -198,6 +205,53 @@ export function ActiveGreenhousePanel({
     red: "bg-[#C24A33]",
     muted: "bg-app-muted"
   }[climateRisk.tone];
+
+  useEffect(() => {
+    if (!weather || !organization.id || !greenhouse.id || !currentUser.id) {
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      return;
+    }
+
+    void supabase.rpc("record_weather_snapshot_if_due", {
+      target_company_id: organization.id,
+      target_greenhouse_id: greenhouse.id,
+      target_provider: "open-meteo",
+      target_source_name: weather.sourceName,
+      target_latitude: weather.latitude,
+      target_longitude: weather.longitude,
+      target_temperature_c: weather.temperature,
+      target_relative_humidity_percent: weather.humidity,
+      target_today_min_temperature_c: weather.today?.minTemperature ?? null,
+      target_today_max_temperature_c: weather.today?.maxTemperature ?? null,
+      target_precipitation_mm: weather.today?.precipitationMm ?? null,
+      target_precipitation_probability_percent: weather.today?.precipitationProbability ?? null,
+      target_risk_label: climateRisk.label,
+      target_risk_tone: climateRisk.tone,
+      target_raw_payload: {
+        current: {
+          temperature_c: weather.temperature,
+          relative_humidity_percent: weather.humidity
+        },
+        today: weather.today ?? null,
+        tomorrow: weather.tomorrow ?? null,
+        risk: {
+          label: climateRisk.label,
+          tone: climateRisk.tone
+        }
+      }
+    });
+  }, [
+    climateRisk.label,
+    climateRisk.tone,
+    currentUser.id,
+    greenhouse.id,
+    organization.id,
+    weather
+  ]);
 
   return (
     <aside
