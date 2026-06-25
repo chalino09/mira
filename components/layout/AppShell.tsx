@@ -618,7 +618,7 @@ function CostsSection() {
       <SectionHeader
         action={<Button icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Nuevo costo</Button>}
         title="Costos"
-        description="Mano de obra, insumos, agua, energía, mantenimiento, transporte y margen estimado."
+        description="Mano de obra, insumos, agua, energía, renta, gasolina, refrescos y margen estimado."
       />
       {budgetAmount === null ? (
         <div className="mb-5 border border-[#E3D7B6] bg-[#FFF8E6] px-4 py-3 text-sm leading-6 text-[#725A1A]">

@@ -177,7 +177,10 @@ export type CostRecord = {
     | "Energía"
     | "Plásticos"
     | "Mantenimiento"
-    | "Transporte";
+    | "Transporte"
+    | "Refrescos"
+    | "Renta"
+    | "Gasolina";
   amount: number;
   notes: string;
 };

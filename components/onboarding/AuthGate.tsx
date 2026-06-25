@@ -135,7 +135,10 @@ function mapCostCategory(category?: string | null): CostRecord["category"] {
     energia: "Energía",
     plasticos: "Plásticos",
     mantenimiento: "Mantenimiento",
-    transporte: "Transporte"
+    transporte: "Transporte",
+    refrescos: "Refrescos",
+    renta: "Renta",
+    gasolina: "Gasolina"
   };
 
   return labels[category ?? ""] ?? "Agroinsumos";

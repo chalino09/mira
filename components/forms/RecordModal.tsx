@@ -131,7 +131,10 @@ const costCategoryToDb: Record<CostRecord["category"], string> = {
   Energía: "energia",
   Plásticos: "plasticos",
   Mantenimiento: "mantenimiento",
-  Transporte: "transporte"
+  Transporte: "transporte",
+  Refrescos: "refrescos",
+  Renta: "renta",
+  Gasolina: "gasolina"
 };
 
 const pestFollowUpStatuses = [

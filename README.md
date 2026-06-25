@@ -41,6 +41,7 @@ supabase/18_assigned_task_greenhouse_visibility.sql
 supabase/19_telegram_operational_sessions.sql
 supabase/20_nutrition_monitoring_admin_scope.sql
 supabase/21_technical_lab_studies.sql
+supabase/22_cost_categories.sql
 ```
 
 4. Levanta la app:

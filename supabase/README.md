@@ -23,7 +23,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 19. `19_telegram_operational_sessions.sql`
 20. `20_nutrition_monitoring_admin_scope.sql`
 21. `21_technical_lab_studies.sql`
-22. `03_seed_template.sql` solo si quieres datos demo manuales.
+22. `22_cost_categories.sql`
+23. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -70,6 +71,8 @@ Para que Telegram recuerde selección por número, captura mínima y confirmaci�
 Para restringir el monitoreo nutrimental a owner/admin y ocultarlo a managers, ejecuta `20_nutrition_monitoring_admin_scope.sql`.
 
 Para agregar Laboratorio dentro de Monitoreo con estudios técnicos, parámetros editables y archivos privados de laboratorio, ejecuta `21_technical_lab_studies.sql`.
+
+Para agregar categorías rápidas de costos como refrescos, renta y gasolina, ejecuta `22_cost_categories.sql`.
 
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
