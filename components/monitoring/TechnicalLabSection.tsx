@@ -238,7 +238,7 @@ function draftFromValue(value: LabValueRow): LabParameterDraft {
 }
 
 export function TechnicalLabSection() {
-  const { crops, currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
+  const { crops, currentUser, greenhouses, organization, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
   const [greenhouseId, setGreenhouseId] = useState(initialGreenhouseId);
   const [studyType, setStudyType] = useState<LabStudyType>("suelo");
@@ -286,11 +286,31 @@ export function TechnicalLabSection() {
     setNotice(null);
   }, []);
 
+  const applyGreenhouseSelection = useCallback((nextGreenhouseId: string) => {
+    if (!nextGreenhouseId || nextGreenhouseId === greenhouseId) return;
+    setGreenhouseId(nextGreenhouseId);
+    setSelectedStudyId(null);
+    setEditingStudyId(null);
+    setEditParameters([]);
+    resetForm();
+  }, [greenhouseId, resetForm]);
+
+  const handleGreenhouseChange = (nextGreenhouseId: string) => {
+    applyGreenhouseSelection(nextGreenhouseId);
+    setSelectedGreenhouseId(nextGreenhouseId);
+  };
+
   useEffect(() => {
-    if (!greenhouseId && initialGreenhouseId) {
-      setGreenhouseId(initialGreenhouseId);
+    const selectedExists = greenhouses.some((greenhouse) => greenhouse.id === selectedGreenhouseId);
+    if (selectedGreenhouseId && selectedExists && selectedGreenhouseId !== greenhouseId) {
+      applyGreenhouseSelection(selectedGreenhouseId);
+      return;
     }
-  }, [greenhouseId, initialGreenhouseId]);
+
+    if (!greenhouseId && initialGreenhouseId) {
+      applyGreenhouseSelection(initialGreenhouseId);
+    }
+  }, [applyGreenhouseSelection, greenhouseId, greenhouses, initialGreenhouseId, selectedGreenhouseId]);
 
   const loadHistory = useCallback(async () => {
     if (!canUseLab || !organization.id || !activeGreenhouseId) {
@@ -621,7 +641,7 @@ export function TechnicalLabSection() {
 
           <div className="grid gap-3">
             <Field label="Área productiva">
-              <SelectInput value={activeGreenhouse.id} onChange={(event) => setGreenhouseId(event.target.value)}>
+              <SelectInput value={activeGreenhouse.id} onChange={(event) => handleGreenhouseChange(event.target.value)}>
                 {greenhouses.map((greenhouse) => (
                   <option key={greenhouse.id} value={greenhouse.id}>
                     {greenhouseDisplayName(greenhouse, crops)}

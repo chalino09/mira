@@ -249,7 +249,8 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
     nutritionObservationRules,
     nutritionReferenceRanges,
     organization,
-    selectedGreenhouseId
+    selectedGreenhouseId,
+    setSelectedGreenhouseId
   } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
   const [greenhouseId, setGreenhouseId] = useState(initialGreenhouseId);
@@ -281,18 +282,30 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
     setNotice(null);
   }, []);
 
-  const handleGreenhouseChange = (nextGreenhouseId: string) => {
+  const applyGreenhouseSelection = useCallback((nextGreenhouseId: string) => {
+    if (!nextGreenhouseId || nextGreenhouseId === greenhouseId) return;
     setGreenhouseId(nextGreenhouseId);
     setSelectedHistoryId(null);
     setCompareIds([]);
     resetDraft();
+  }, [greenhouseId, resetDraft]);
+
+  const handleGreenhouseChange = (nextGreenhouseId: string) => {
+    applyGreenhouseSelection(nextGreenhouseId);
+    setSelectedGreenhouseId(nextGreenhouseId);
   };
 
   useEffect(() => {
-    if (!greenhouseId && initialGreenhouseId) {
-      setGreenhouseId(initialGreenhouseId);
+    const selectedExists = greenhouses.some((greenhouse) => greenhouse.id === selectedGreenhouseId);
+    if (selectedGreenhouseId && selectedExists && selectedGreenhouseId !== greenhouseId) {
+      applyGreenhouseSelection(selectedGreenhouseId);
+      return;
     }
-  }, [greenhouseId, initialGreenhouseId]);
+
+    if (!greenhouseId && initialGreenhouseId) {
+      applyGreenhouseSelection(initialGreenhouseId);
+    }
+  }, [applyGreenhouseSelection, greenhouseId, greenhouses, initialGreenhouseId, selectedGreenhouseId]);
 
   const activeGreenhouse = useMemo(
     () => greenhouses.find((greenhouse) => greenhouse.id === greenhouseId) ?? greenhouses[0] ?? null,
