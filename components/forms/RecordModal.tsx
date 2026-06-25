@@ -7,7 +7,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
-import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
+import { INITIAL_CROP_ID, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
@@ -145,15 +146,6 @@ const pestFollowUpStatuses = [
   "Reaplicación programada"
 ];
 
-const initialCropVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
-
-function formatVarietyName(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function pestFollowUpText(form: FormData) {
   const status = String(form.get("followUpStatus") ?? "").trim();
   const reviewDate = String(form.get("reviewDate") ?? "").trim();
@@ -192,19 +184,19 @@ function BudgetInput({
 
 const modalCopy = {
   greenhouse: {
-    title: "Nuevo invernadero",
+    title: "Nueva área productiva",
     kicker: "Infraestructura",
-    note: "Crea un nuevo invernadero con sus datos productivos."
+    note: "Crea una nueva área con sus datos productivos."
   },
   editGreenhouse: {
-    title: "Editar invernadero",
+    title: "Editar área productiva",
     kicker: "Infraestructura",
     note: "Actualiza variedad, etapa, plantas y datos base del cultivo."
   },
   task: {
     title: "Nueva tarea",
     kicker: "Agenda operativa",
-    note: "Programa una acción para el equipo del invernadero."
+    note: "Programa una acción para el equipo del área productiva."
   },
   irrigation: {
     title: "Nuevo riego",
@@ -234,7 +226,7 @@ const modalCopy = {
   cost: {
     title: "Nuevos costos",
     kicker: "Finanzas",
-    note: "Registra varios gastos para el mismo invernadero y fecha."
+    note: "Registra varios gastos para la misma área productiva y fecha."
   }
 };
 
@@ -285,6 +277,7 @@ export function RecordModal() {
   const modal = useGreenhouseStore((state) => state.modal);
   const closeModal = useGreenhouseStore((state) => state.closeModal);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const crops = useGreenhouseStore((state) => state.crops);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
@@ -303,6 +296,7 @@ export function RecordModal() {
   const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
   const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
   const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
+  const [draftCropId, setDraftCropId] = useState(INITIAL_CROP_ID);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
 
   useEffect(() => {
@@ -354,17 +348,17 @@ export function RecordModal() {
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
-  const selectedVariety = selectedGreenhouse?.variety ? formatVarietyName(selectedGreenhouse.variety) : "";
-  const canonicalSelectedVariety = initialCropVarieties.find(
-    (variety) => variety.toLowerCase() === selectedVariety.toLowerCase()
-  ) ?? selectedVariety;
-  const selectedVarietyOptions =
-    selectedGreenhouse && selectedVariety && !initialCropVarieties.some((variety) => variety.toLowerCase() === selectedVariety.toLowerCase())
-      ? [...initialCropVarieties.slice(0, -1), selectedVariety, "Otra"]
-      : initialCropVarieties;
+  const activeCropOptions = crops.filter((crop) => crop.isActive);
+  const cropOptions = activeCropOptions.length
+    ? activeCropOptions
+    : [{ id: INITIAL_CROP_ID, slug: "jitomate", name: "Jitomate", scientificName: null, defaultCycleDays: null, isActive: true }];
+  const defaultCropId = selectedGreenhouse?.cropId ?? cropOptions[0]?.id ?? INITIAL_CROP_ID;
+  const draftCrop = cropOptions.find((crop) => crop.id === draftCropId) ?? cropOptions[0];
+  const existingVarietyForDraftCrop = selectedGreenhouse?.cropId === draftCropId ? selectedGreenhouse.variety : null;
+  const draftVarietyOptions = cropVarietyOptionsForSlug(draftCrop?.slug, existingVarietyForDraftCrop);
   const greenhouseOptions = greenhouses.map((greenhouse) => (
     <option key={greenhouse.id} value={greenhouse.id}>
-      {greenhouse.name}
+      {greenhouseDisplayName(greenhouse, crops)}
     </option>
   ));
 
@@ -380,12 +374,19 @@ export function RecordModal() {
     }
   };
 
+  useEffect(() => {
+    if (modal === "greenhouse" || modal === "editGreenhouse") {
+      setDraftCropId(defaultCropId);
+    }
+  }, [defaultCropId, modal]);
+
   const managerNameFor = (managerUserId: string | null) =>
     managerOptions.find((manager) => manager.id === managerUserId)?.name
     ?? (managerUserId === currentUser.id ? currentUser.fullName : "Sin encargado");
 
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
     const managerUserId = String(form.get("managerUserId") ?? "").trim() || null;
+    const cropId = String(form.get("cropId") ?? defaultCropId).trim() || null;
 
     return {
       name: String(form.get("name")),
@@ -395,8 +396,8 @@ export function RecordModal() {
       locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
       surface: `${requiredNumber(form.get("surfaceM2")).toLocaleString("es-MX")} m2`,
       budgetAmount: optionalNumber(form.get("budgetAmount")),
-      cropId: selectedGreenhouse?.cropId ?? INITIAL_CROP_ID,
-      variety: String(form.get("variety")),
+      cropId,
+      variety: String(form.get("variety") ?? "").trim(),
       transplantDate: String(form.get("transplantDate")),
       plants: requiredNumber(form.get("plants")),
       stemCount: Number(form.get("stemCount")) === 1 || Number(form.get("stemCount")) === 2
@@ -423,7 +424,9 @@ export function RecordModal() {
     location_accuracy_m: greenhouse.locationAccuracyM,
     surface_m2: requiredNumber(form.get("surfaceM2")),
     budget_amount: greenhouse.budgetAmount,
-    tomato_variety: greenhouse.variety,
+    crop_id: greenhouse.cropId,
+    crop_variety: greenhouse.variety,
+    tomato_variety: greenhouse.cropId === INITIAL_CROP_ID ? greenhouse.variety : null,
     transplant_date: greenhouse.transplantDate || null,
     plants_count: greenhouse.plants,
     stem_count: greenhouse.stemCount,
@@ -726,8 +729,8 @@ export function RecordModal() {
 
       {modal === "greenhouse" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleGreenhouse}>
-          <Field label="Nombre">
-            <TextInput name="name" required placeholder="Invernadero 2" />
+          <Field label="Nombre del área">
+            <TextInput name="name" required placeholder="Hectárea 2" />
           </Field>
           <PreciseLocationField key="new-greenhouse-location" />
           <Field label="Superficie m2">
@@ -736,9 +739,25 @@ export function RecordModal() {
           <Field label="Presupuesto del ciclo">
             <BudgetInput />
           </Field>
+          <Field label="Cultivo">
+            <SelectInput
+              name="cropId"
+              onChange={(event) => setDraftCropId(event.target.value)}
+              required
+              value={draftCropId}
+            >
+              {cropOptions.map((crop) => (
+                <option key={crop.id} value={crop.id}>
+                  {crop.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Variedad">
-            <SelectInput name="variety" defaultValue="Saladette" required>
-              {initialCropVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+            <SelectInput key={`new-${draftCropId}`} name="variety" required defaultValue={draftVarietyOptions[0]}>
+              {draftVarietyOptions.map((variety) => (
+                <option key={variety}>{variety}</option>
+              ))}
             </SelectInput>
           </Field>
           <Field label="Fecha de trasplante">
@@ -784,7 +803,7 @@ export function RecordModal() {
 
       {modal === "editGreenhouse" && selectedGreenhouse ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleEditGreenhouse}>
-          <Field label="Nombre">
+          <Field label="Nombre del área">
             <TextInput name="name" required defaultValue={selectedGreenhouse.name} />
           </Field>
           <PreciseLocationField
@@ -800,9 +819,30 @@ export function RecordModal() {
               defaultValue={parseNumericInput(selectedGreenhouse.surface) ?? 0}
             />
           </Field>
+          <Field label="Cultivo">
+            <SelectInput
+              name="cropId"
+              onChange={(event) => setDraftCropId(event.target.value)}
+              required
+              value={draftCropId}
+            >
+              {cropOptions.map((crop) => (
+                <option key={crop.id} value={crop.id}>
+                  {crop.name}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
           <Field label="Variedad">
-            <SelectInput name="variety" defaultValue={canonicalSelectedVariety} required>
-              {selectedVarietyOptions.map((variety) => <option key={variety}>{variety}</option>)}
+            <SelectInput
+              defaultValue={draftVarietyOptions.find((variety) => variety.toLowerCase() === selectedGreenhouse.variety.toLowerCase()) ?? draftVarietyOptions[0]}
+              key={`edit-${selectedGreenhouse.id}-${draftCropId}`}
+              name="variety"
+              required
+            >
+              {draftVarietyOptions.map((variety) => (
+                <option key={variety}>{variety}</option>
+              ))}
             </SelectInput>
           </Field>
           <Field label="Presupuesto del ciclo">
@@ -851,7 +891,7 @@ export function RecordModal() {
 
       {modal === "task" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleTask}>
-          <Field label="Invernadero">
+          <Field label="Área productiva">
             <SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput>
           </Field>
           <Field label="Tipo">
@@ -873,7 +913,7 @@ export function RecordModal() {
 
       {modal === "irrigation" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Duración min"><TextInput name="durationMin" type="number" required defaultValue={0} /></Field>
           <Field label="Litros estimados"><TextInput name="liters" type="number" required defaultValue={0} /></Field>
@@ -886,7 +926,7 @@ export function RecordModal() {
 
       {modal === "nutrition" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -926,7 +966,7 @@ export function RecordModal() {
 
       {modal === "application" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -951,7 +991,7 @@ export function RecordModal() {
               </div>
             ))}
           </section>
-          <Field label="Área aplicada"><TextInput name="area" placeholder="Invernadero completo o sección 1" /></Field>
+          <Field label="Área aplicada"><TextInput name="area" placeholder="Área completa o sección 1" /></Field>
           <Field label="Intervalo de seguridad (antes de cosecha)"><TextInput name="safetyInterval" placeholder="Ej. 3 días" /></Field>
           <Field label="Tiempo de reentrada"><TextInput name="reentry" placeholder="Ej. 12 horas" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
@@ -960,7 +1000,7 @@ export function RecordModal() {
 
       {modal === "pest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handlePest}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="detectedAt" type="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Problema"><TextInput name="problem" required placeholder="Mosquita blanca" /></Field>
           <Field label="Incidencia"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
@@ -980,7 +1020,7 @@ export function RecordModal() {
 
       {modal === "harvest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Kg cosechados"><TextInput name="kilograms" type="number" required defaultValue={0} /></Field>
           <Field label="Primera"><TextInput name="firstQuality" type="number" defaultValue={0} /></Field>
@@ -994,7 +1034,7 @@ export function RecordModal() {
 
       {modal === "cost" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
-          <Field label="Invernadero"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">

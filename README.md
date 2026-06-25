@@ -42,6 +42,7 @@ supabase/19_telegram_operational_sessions.sql
 supabase/20_nutrition_monitoring_admin_scope.sql
 supabase/21_technical_lab_studies.sql
 supabase/22_cost_categories.sql
+supabase/23_multi_crop_foundation.sql
 ```
 
 4. Levanta la app:

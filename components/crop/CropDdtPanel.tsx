@@ -1,8 +1,11 @@
+"use client";
+
 import { CalendarDays, Sprout } from "lucide-react";
 import {
   NUTRIENT_COLORS,
   getCropDdtStatus
 } from "@/lib/crop-ddt";
+import { useGreenhouseStore } from "@/lib/store";
 import { cn, formatNumber } from "@/lib/utils";
 import type { Greenhouse } from "@/types";
 
@@ -12,12 +15,15 @@ type CropDdtPanelProps = {
 };
 
 export function CropDdtPanel({ greenhouse, compact = false }: CropDdtPanelProps) {
+  const cropStages = useGreenhouseStore((state) => state.cropStages);
   const status = getCropDdtStatus(
     greenhouse.cropId,
     greenhouse.transplantDate,
-    greenhouse.daysSinceTransplant
+    greenhouse.daysSinceTransplant,
+    cropStages
   );
   const visibleStage = status.stage ?? status.nextStage;
+  const hasTechnicalCatalog = status.status !== "missing-catalog";
 
   return (
     <section className="border-t border-app-border py-5">
@@ -27,23 +33,29 @@ export function CropDdtPanel({ greenhouse, compact = false }: CropDdtPanelProps)
             Etapa por DDT
           </p>
           <h3 className="mt-3 text-3xl font-light tracking-normal text-app-text">
-            {status.status === "missing-date" ? "Sin trasplante" : `${formatNumber(status.ddt)} DDT`}
+            {status.status === "missing-catalog"
+              ? "Sin catálogo"
+              : status.status === "missing-date"
+                ? "Sin trasplante"
+                : `${formatNumber(status.ddt)} DDT`}
           </h3>
           <p className="mt-2 text-sm text-app-muted">{status.label} · {status.detail}</p>
         </div>
         <div className="grid h-10 w-10 place-items-center border border-app-border bg-white text-app-green">
-          {status.status === "missing-date" ? <CalendarDays className="h-4 w-4" /> : <Sprout className="h-4 w-4" />}
+          {hasTechnicalCatalog && status.status !== "missing-date" ? <Sprout className="h-4 w-4" /> : <CalendarDays className="h-4 w-4" />}
         </div>
       </div>
 
+      {hasTechnicalCatalog ? (
       <div className="mt-5 h-2 overflow-hidden bg-app-border">
         <div
           className="h-full bg-app-green transition-all"
           style={{ width: `${Math.round(status.progress * 100)}%` }}
         />
       </div>
+      ) : null}
 
-      {!compact ? (
+      {!compact && hasTechnicalCatalog ? (
         <div className="mt-5 grid grid-cols-6 gap-px overflow-hidden border border-app-border bg-app-border text-center text-[10px] font-semibold uppercase tracking-normal">
           {status.stages.map((stage) => (
             <div

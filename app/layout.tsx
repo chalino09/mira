@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "mira",
-  description: "Dashboard operativo para invernaderos de jitomate"
+  description: "Dashboard operativo multi-cultivo para áreas productivas"
 };
 
 export default function RootLayout({

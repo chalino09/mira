@@ -16,7 +16,7 @@ import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
+import { INITIAL_CROP_ID, cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appErrorMessage } from "@/lib/errors";
 import {
   calculateNutritionMonitoring,
@@ -242,7 +242,15 @@ function MiniMetric({
 }
 
 export function NutritionMonitoringSection({ embedded = false }: { embedded?: boolean }) {
-  const { currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
+  const {
+    crops,
+    currentUser,
+    greenhouses,
+    nutritionObservationRules,
+    nutritionReferenceRanges,
+    organization,
+    selectedGreenhouseId
+  } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
   const [greenhouseId, setGreenhouseId] = useState(initialGreenhouseId);
   const [sampleDate, setSampleDate] = useState(todayIso());
@@ -291,6 +299,22 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
     [greenhouseId, greenhouses]
   );
   const activeGreenhouseId = activeGreenhouse?.id ?? "";
+  const activeCropId = activeGreenhouse?.cropId ?? null;
+  const activeCropLabel = cropLabelForId(activeCropId, crops);
+  const activeNutritionRanges = useMemo(
+    () => nutritionReferenceRanges.filter((range) => range.cropId === activeCropId),
+    [activeCropId, nutritionReferenceRanges]
+  );
+  const activeNutritionRules = useMemo(
+    () => nutritionObservationRules.filter((rule) => rule.cropId === activeCropId),
+    [activeCropId, nutritionObservationRules]
+  );
+  const hasNutritionDataset = activeNutritionRanges.length > 0 && activeNutritionRules.length > 0;
+  const nutritionSourceLabel = hasNutritionDataset
+    ? activeCropId === INITIAL_CROP_ID
+      ? NUTRITION_SOURCE_LABEL
+      : "Dataset nutrimental activo"
+    : "Sin rangos nutrimentales";
 
   useEffect(() => {
     setSelectedHistoryId(null);
@@ -309,9 +333,11 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
         ddt,
         petioleValues,
         soilValues,
-        recommendations
+        recommendations,
+        referenceRanges: nutritionReferenceRanges,
+        observationRules: nutritionObservationRules
       }),
-    [activeGreenhouse?.cropId, ddt, petioleValues, recommendations, soilValues]
+    [activeGreenhouse?.cropId, ddt, nutritionObservationRules, nutritionReferenceRanges, petioleValues, recommendations, soilValues]
   );
 
   const loadHistory = useCallback(async () => {
@@ -579,7 +605,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
       });
     });
 
-    downloadCsv(`monitoreo-nutrimental-${activeGreenhouse?.name ?? "invernadero"}.csv`, rows);
+    downloadCsv(`monitoreo-nutrimental-${activeGreenhouse?.name ?? "area-productiva"}.csv`, rows);
   };
 
   const exportCompare = () => {
@@ -612,6 +638,10 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
     setIsSaving(true);
 
     try {
+      if (!hasNutritionDataset || !activeGreenhouse.cropId) {
+        throw new Error("Sin rangos nutrimentales para este cultivo.");
+      }
+
       if (!result.complete) {
         throw new Error("Completa los valores crudos de ambos bloques.");
       }
@@ -626,7 +656,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
         .insert({
           company_id: organization.id,
           greenhouse_id: activeGreenhouse.id,
-          crop_id: activeGreenhouse.cropId ?? INITIAL_CROP_ID,
+          crop_id: activeGreenhouse.cropId,
           sample_date: sampleDate,
           ddt,
           notes: notes.trim() || null,
@@ -697,7 +727,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
   }
 
   if (!greenhouses.length || !activeGreenhouse) {
-    return <EmptyState icon={Sprout} title="No hay invernaderos disponibles para monitoreo." />;
+    return <EmptyState icon={Sprout} title="No hay áreas productivas disponibles para monitoreo." />;
   }
 
   return (
@@ -778,7 +808,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
 
         {activeMonitoringTab === "current" ? (
           <Button
-            disabled={isSaving || !result.complete}
+            disabled={isSaving || !hasNutritionDataset || !result.complete}
             icon={<Save className="h-4 w-4" />}
             onClick={saveMonitoring}
             variant="primary"
@@ -809,11 +839,11 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Invernadero">
+            <Field label="Área productiva">
               <SelectInput value={activeGreenhouse.id} onChange={(event) => handleGreenhouseChange(event.target.value)}>
                 {greenhouses.map((greenhouse) => (
                   <option key={greenhouse.id} value={greenhouse.id}>
-                    {greenhouse.name}
+                    {greenhouseDisplayName(greenhouse, crops)}
                   </option>
                 ))}
               </SelectInput>
@@ -827,6 +857,12 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
             <MiniMetric label="DDT" value={ddt} />
             <MiniMetric className="sm:col-span-2" label="Trasplante" value={formatDate(activeGreenhouse.transplantDate)} />
           </div>
+
+          {!hasNutritionDataset ? (
+            <div className="mt-5 border border-[#E3D7B6] bg-[#FFF8E6] px-3 py-3 text-sm leading-6 text-[#725A1A]">
+              {activeCropLabel} está registrado, pero todavía no tiene rangos nutrimentales cargados. No se aplicarán reglas de jitomate.
+            </div>
+          ) : null}
 
           {sampleTypes.map((sampleType) => (
             <RawInputsBlock
@@ -850,7 +886,9 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                   Diagnostico
                 </p>
                 <h2 className="mt-3 text-3xl font-light text-app-text">{activeGreenhouse.name}</h2>
-                <p className="mt-2 text-sm text-app-muted">{activeGreenhouse.variety} · {NUTRITION_SOURCE_LABEL}</p>
+                <p className="mt-2 text-sm text-app-muted">
+                  {activeCropLabel} · {activeGreenhouse.variety || "Sin variedad"} · {nutritionSourceLabel}
+                </p>
               </div>
               <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-app-border bg-white text-app-green">
                 <Calculator className="h-4 w-4" />

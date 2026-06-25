@@ -1,6 +1,9 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import type { ApplicationRecord, Greenhouse, IrrigationRecord } from "@/types";
 import { getCropDdtStatus } from "@/lib/crop-ddt";
+import { useGreenhouseStore } from "@/lib/store";
 import { cn, formatNumber } from "@/lib/utils";
 import { fetchWeatherByCoordinates, fetchWeatherByLocation, type WeatherReading } from "@/lib/weather";
 
@@ -21,6 +24,7 @@ export function ActiveGreenhousePanel({
 }: ActiveGreenhousePanelProps) {
   const [weather, setWeather] = useState<WeatherReading | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+  const cropStages = useGreenhouseStore((state) => state.cropStages);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +42,7 @@ export function ActiveGreenhousePanel({
           ? await fetchWeatherByCoordinates(
               greenhouse.latitude!,
               greenhouse.longitude!,
-              greenhouse.location || "coordenadas del invernadero"
+              greenhouse.location || "coordenadas del área productiva"
             )
           : await fetchWeatherByLocation(greenhouse.location);
         if (!cancelled) {
@@ -68,13 +72,16 @@ export function ActiveGreenhousePanel({
   const ddtStatus = getCropDdtStatus(
     greenhouse.cropId,
     greenhouse.transplantDate,
-    greenhouse.daysSinceTransplant
+    greenhouse.daysSinceTransplant,
+    cropStages
   );
 
   const readings = [
     ...(showDdtReading
       ? [
-          ddtStatus.status === "missing-date"
+          ddtStatus.status === "missing-catalog"
+            ? "SIN CATÁLOGO DDT"
+            : ddtStatus.status === "missing-date"
             ? "SIN FECHA DE TRASPLANTE"
             : `${ddtStatus.ddt} DDT · ${ddtStatus.label.toUpperCase()}`
         ]

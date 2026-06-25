@@ -24,9 +24,10 @@ import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
+import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
-import type { ApplicationRecord, CropStage, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
+import type { ApplicationRecord, CropCatalogItem, CropStage, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
 type PlanStatus = "draft" | "published" | "closed";
 type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -244,7 +245,7 @@ const maintenanceWorkTypes = [
   "Cambio de plástico",
   "Cambio de malacates",
   "Sistema de riego",
-  "Estructura/invernadero",
+  "Estructura/área",
   "Otro mantenimiento"
 ];
 
@@ -416,6 +417,7 @@ function ActivityFormModal({
   saving,
   weekDays,
   greenhouses,
+  crops,
   managers,
   task,
   assignments,
@@ -426,7 +428,8 @@ function ActivityFormModal({
   onSave: (payload: ActivityPayload) => Promise<void>;
   saving: boolean;
   weekDays: Date[];
-  greenhouses: Array<{ id: string; name: string }>;
+  greenhouses: Array<Pick<Greenhouse, "id" | "name" | "cropId">>;
+  crops: CropCatalogItem[];
   managers: ManagerOption[];
   task: OperationTaskRow | null;
   assignments: AssignmentRow[];
@@ -494,10 +497,10 @@ function ActivityFormModal({
     <Modal open={open} onClose={onClose} title={task ? "Editar actividad" : "Nueva actividad semanal"}>
       <form className="grid gap-6" key={task?.id ?? "new-operation"} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Invernadero">
+          <Field label="Área productiva">
             <SelectInput name="greenhouseId" defaultValue={task?.greenhouse_id ?? greenhouses[0]?.id} required>
               {greenhouses.map((greenhouse) => (
-                <option key={greenhouse.id} value={greenhouse.id}>{greenhouse.name}</option>
+                <option key={greenhouse.id} value={greenhouse.id}>{greenhouseDisplayName(greenhouse, crops)}</option>
               ))}
             </SelectInput>
           </Field>
@@ -509,7 +512,7 @@ function ActivityFormModal({
             </SelectInput>
           </Field>
           <Field className="sm:col-span-2" label="Título">
-            <TextInput name="title" defaultValue={task?.title ?? ""} placeholder="Fertirriego matutino Invernadero 1" required />
+            <TextInput name="title" defaultValue={task?.title ?? ""} placeholder="Fertirriego matutino Hectárea 1" required />
           </Field>
           <Field label="Día">
             <SelectInput name="scheduledDate" defaultValue={task?.scheduled_date ?? dateKey(weekDays[0])}>
@@ -592,7 +595,7 @@ function ActivityFormModal({
           ) : null}
           {activityType === "aplicacion_foliar" ? (
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Área planeada">
-              <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Invernadero completo o sección 1" value={technicalPlan.appliedArea ?? ""} />
+              <TextInput onChange={(event) => updateTechnicalPlan({ appliedArea: event.target.value })} placeholder="Área completa o sección 1" value={technicalPlan.appliedArea ?? ""} />
             </Field>
           ) : null}
           {activityType === "tutoreo" ? (
@@ -654,7 +657,7 @@ function ActivityFormModal({
           ) : null}
           {activityType === "cosecha" ? (
             <Field className="border-t border-app-border pt-4 sm:col-span-2" label="Zona de cosecha">
-              <TextInput onChange={(event) => updateTechnicalPlan({ harvestZone: event.target.value })} placeholder="Invernadero completo o sección 1" value={technicalPlan.harvestZone ?? ""} />
+              <TextInput onChange={(event) => updateTechnicalPlan({ harvestZone: event.target.value })} placeholder="Área completa o sección 1" value={technicalPlan.harvestZone ?? ""} />
             </Field>
           ) : null}
         </div>
@@ -841,7 +844,7 @@ function CompleteApplicationModal({
             <TextInput onChange={(event) => setOccurredAt(event.target.value)} required type="date" value={occurredAt} />
           </Field>
           <Field label="Área aplicada">
-            <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Invernadero completo o sección 1" value={appliedArea} />
+            <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Área completa o sección 1" value={appliedArea} />
           </Field>
         </div>
 
@@ -1137,6 +1140,7 @@ function CompleteHarvestModal({
 export function OperationsSection() {
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const crops = useGreenhouseStore((state) => state.crops);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const addApplicationRecords = useGreenhouseStore((state) => state.addApplicationRecords);
   const addIrrigation = useGreenhouseStore((state) => state.addIrrigation);
@@ -1260,9 +1264,10 @@ export function OperationsSection() {
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
   const managerName = (userId: string) => managers.find((manager) => manager.id === userId)?.name ?? "Encargado";
   const greenhouseName = (greenhouseId: string) =>
-    operationGreenhouses.find((item) => item.id === greenhouseId)?.name ??
-    greenhouses.find((item) => item.id === greenhouseId)?.name ??
-    "Invernadero";
+    (greenhouses.find((item) => item.id === greenhouseId)
+      ? greenhouseDisplayName(greenhouses.find((item) => item.id === greenhouseId)!, crops)
+      : operationGreenhouses.find((item) => item.id === greenhouseId)?.name) ??
+    "Área productiva";
 
   const saveActivity = async (payload: ActivityPayload) => {
     const supabase = getSupabaseBrowserClient();
@@ -1830,6 +1835,7 @@ export function OperationsSection() {
 
       <ActivityFormModal
         assignments={assignments}
+        crops={crops}
         greenhouses={greenhouses}
         managers={managers}
         materials={materials}

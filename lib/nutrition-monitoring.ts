@@ -20,6 +20,14 @@ export type NutritionReferenceRange = {
   sortOrder: number;
 };
 
+export type NutritionObservationRule = {
+  cropId: string;
+  observationContext: NutritionObservationContext;
+  petioleStatus: NutritionDiagnosticStatus;
+  soilStatus: NutritionDiagnosticStatus;
+  observationText: string;
+};
+
 export type NutritionValueResult = {
   sampleType: NutritionSampleType;
   analyteKey: NutritionAnalyteKey;
@@ -292,6 +300,21 @@ const OBSERVATION_RULES: Record<NutritionObservationContext, Partial<Record<`${N
   }
 };
 
+export const NUTRITION_OBSERVATION_RULES: NutritionObservationRule[] = Object.entries(OBSERVATION_RULES).flatMap(
+  ([observationContext, rules]) =>
+    Object.entries(rules).map(([statusPair, observationText]) => {
+      const [petioleStatus, soilStatus] = statusPair.split("|") as [NutritionDiagnosticStatus, NutritionDiagnosticStatus];
+
+      return {
+        cropId: INITIAL_CROP_ID,
+        observationContext: observationContext as NutritionObservationContext,
+        petioleStatus,
+        soilStatus,
+        observationText: observationText ?? ""
+      };
+    })
+);
+
 export function parseNutritionNumber(value: string | number | null | undefined) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -314,11 +337,14 @@ export function nutritionRangeFor(
   cropId: string | null | undefined,
   sampleType: NutritionSampleType,
   analyteKey: NutritionAnalyteKey,
-  ddt: number
+  ddt: number,
+  referenceRanges: NutritionReferenceRange[] = NUTRITION_REFERENCE_RANGES
 ) {
-  const ranges = NUTRITION_REFERENCE_RANGES.filter(
+  if (!cropId) return null;
+
+  const ranges = referenceRanges.filter(
     (range) =>
-      range.cropId === (cropId ?? INITIAL_CROP_ID) &&
+      range.cropId === cropId &&
       range.sampleType === sampleType &&
       range.analyteKey === analyteKey
   );
@@ -386,10 +412,11 @@ function valueResult(
   rawValue: number,
   diagnosticValue: number,
   ddt: number,
+  referenceRanges: NutritionReferenceRange[],
   estimated = false,
   metadata: Record<string, number | boolean | string> = {}
 ): NutritionValueResult | null {
-  const range = nutritionRangeFor(cropId, sampleType, analyteKey, ddt);
+  const range = nutritionRangeFor(cropId, sampleType, analyteKey, ddt, referenceRanges);
   if (!range) return null;
 
   return {
@@ -411,7 +438,8 @@ function calculatePetioleValue(
   cropId: string | null | undefined,
   analyteKey: NutritionAnalyteKey,
   rawValues: NutritionRawValues,
-  ddt: number
+  ddt: number,
+  referenceRanges: NutritionReferenceRange[]
 ) {
   const raw = parseNutritionNumber(rawValues[analyteKey]);
 
@@ -428,7 +456,7 @@ function calculatePetioleValue(
     const mgMeq = ec * 10 - naMeq - caMeq - kMeq;
     const mgPpm = mgMeq < 0 ? 0 : mgMeq * 12.15;
 
-    return valueResult(cropId, "petiole_cell_extract", analyteKey, mgPpm, mgPpm, ddt, true, {
+    return valueResult(cropId, "petiole_cell_extract", analyteKey, mgPpm, mgPpm, ddt, referenceRanges, true, {
       mgMeq: round(mgMeq),
       negativeMg: mgMeq < 0
     });
@@ -436,14 +464,15 @@ function calculatePetioleValue(
 
   if (raw === null) return null;
   const diagnostic = diagnosticValueFromRaw("petiole_cell_extract", analyteKey, raw);
-  return valueResult(cropId, "petiole_cell_extract", analyteKey, raw, diagnostic.value, ddt, false, diagnostic.metadata);
+  return valueResult(cropId, "petiole_cell_extract", analyteKey, raw, diagnostic.value, ddt, referenceRanges, false, diagnostic.metadata);
 }
 
 function calculateSoilValue(
   cropId: string | null | undefined,
   analyteKey: NutritionAnalyteKey,
   rawValues: NutritionRawValues,
-  ddt: number
+  ddt: number,
+  referenceRanges: NutritionReferenceRange[]
 ) {
   const raw = parseNutritionNumber(rawValues[analyteKey]);
 
@@ -458,7 +487,7 @@ function calculateSoilValue(
     const mgMeq = ec * 10 - naMeq - caMeq;
     const mgPpm = mgMeq < 0 ? 0 : mgMeq * 12.15;
 
-    return valueResult(cropId, "soil_solution", analyteKey, mgPpm, Math.max(0, mgMeq), ddt, true, {
+    return valueResult(cropId, "soil_solution", analyteKey, mgPpm, Math.max(0, mgMeq), ddt, referenceRanges, true, {
       mgMeq: round(mgMeq),
       negativeMg: mgMeq < 0
     });
@@ -466,7 +495,7 @@ function calculateSoilValue(
 
   if (raw === null) return null;
   const diagnostic = diagnosticValueFromRaw("soil_solution", analyteKey, raw);
-  return valueResult(cropId, "soil_solution", analyteKey, raw, diagnostic.value, ddt, false, diagnostic.metadata);
+  return valueResult(cropId, "soil_solution", analyteKey, raw, diagnostic.value, ddt, referenceRanges, false, diagnostic.metadata);
 }
 
 function severityFor(
@@ -483,18 +512,22 @@ export function calculateNutritionMonitoring({
   ddt,
   petioleValues,
   soilValues,
-  recommendations = {}
+  recommendations = {},
+  referenceRanges = NUTRITION_REFERENCE_RANGES,
+  observationRules = NUTRITION_OBSERVATION_RULES
 }: {
   cropId?: string | null;
   ddt: number;
   petioleValues: NutritionRawValues;
   soilValues: NutritionRawValues;
   recommendations?: Partial<Record<NutritionAnalyteKey, string>>;
+  referenceRanges?: NutritionReferenceRange[];
+  observationRules?: NutritionObservationRule[];
 }): NutritionMonitoringResult {
   const safeDdt = Math.max(0, Math.trunc(ddt || 0));
   const values = NUTRITION_ANALYTES.flatMap((analyte) => {
-    const petiole = calculatePetioleValue(cropId, analyte.key, petioleValues, safeDdt);
-    const soil = calculateSoilValue(cropId, analyte.key, soilValues, safeDdt);
+    const petiole = calculatePetioleValue(cropId, analyte.key, petioleValues, safeDdt, referenceRanges);
+    const soil = calculateSoilValue(cropId, analyte.key, soilValues, safeDdt, referenceRanges);
     return [petiole, soil].filter((item): item is NutritionValueResult => Boolean(item));
   }).sort((left, right) => left.range.sortOrder - right.range.sortOrder || left.sampleType.localeCompare(right.sampleType));
 
@@ -504,8 +537,13 @@ export function calculateNutritionMonitoring({
     if (!petiole || !soil) return [];
 
     const context = observationContext(analyte.key);
-    const ruleKey = `${petiole.diagnosticStatus}|${soil.diagnosticStatus}` as const;
-    const observationText = OBSERVATION_RULES[context][ruleKey] ?? "";
+    const observationText = observationRules.find(
+      (rule) =>
+        rule.cropId === cropId &&
+        rule.observationContext === context &&
+        rule.petioleStatus === petiole.diagnosticStatus &&
+        rule.soilStatus === soil.diagnosticStatus
+    )?.observationText ?? "";
 
     return [
       {

@@ -2,11 +2,13 @@
 
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
 
 export function Topbar() {
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const crops = useGreenhouseStore((state) => state.crops);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const setSelectedGreenhouseId = useGreenhouseStore((state) => state.setSelectedGreenhouseId);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
@@ -18,14 +20,14 @@ export function Topbar() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-center gap-2.5">
           <select
-            aria-label="Invernadero"
+            aria-label="Área productiva"
             className="h-9 min-w-0 rounded-lg border border-app-border bg-white px-3 text-xs font-medium text-app-text outline-none focus:border-app-green focus:ring-2 focus:ring-app-green/10"
             value={selectedGreenhouseId}
             onChange={(event) => setSelectedGreenhouseId(event.target.value)}
           >
             {greenhouses.map((greenhouse) => (
               <option key={greenhouse.id} value={greenhouse.id}>
-                {greenhouse.name}
+                {greenhouseDisplayName(greenhouse, crops)}
               </option>
             ))}
           </select>

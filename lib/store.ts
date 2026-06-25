@@ -5,6 +5,8 @@ import type {
   Activity,
   ApplicationRecord,
   CostRecord,
+  CropCatalogItem,
+  CropStageCatalog,
   CurrentUser,
   Greenhouse,
   HarvestRecord,
@@ -16,6 +18,7 @@ import type {
   SectionId,
   Task
 } from "@/types";
+import type { NutritionObservationRule, NutritionReferenceRange } from "@/lib/nutrition-monitoring";
 import { makeId } from "@/lib/utils";
 
 type AppState = {
@@ -24,6 +27,10 @@ type AppState = {
   modal: ModalType;
   organization: Organization;
   currentUser: CurrentUser;
+  crops: CropCatalogItem[];
+  cropStages: CropStageCatalog[];
+  nutritionReferenceRanges: NutritionReferenceRange[];
+  nutritionObservationRules: NutritionObservationRule[];
   greenhouses: Greenhouse[];
   tasks: Task[];
   irrigationRecords: IrrigationRecord[];
@@ -52,6 +59,10 @@ type AppState = {
   hydrateWorkspace: (data: {
     organization: Organization;
     currentUser: CurrentUser;
+    crops: CropCatalogItem[];
+    cropStages: CropStageCatalog[];
+    nutritionReferenceRanges: NutritionReferenceRange[];
+    nutritionObservationRules: NutritionObservationRule[];
     greenhouses: Greenhouse[];
     tasks: Task[];
     irrigationRecords: IrrigationRecord[];
@@ -78,6 +89,10 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     email: "",
     role: "manager"
   },
+  crops: [],
+  cropStages: [],
+  nutritionReferenceRanges: [],
+  nutritionObservationRules: [],
   greenhouses: [],
   tasks: [],
   irrigationRecords: [],
@@ -96,6 +111,10 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     set(() => ({
       organization: data.organization,
       currentUser: data.currentUser,
+      crops: data.crops,
+      cropStages: data.cropStages,
+      nutritionReferenceRanges: data.nutritionReferenceRanges,
+      nutritionObservationRules: data.nutritionObservationRules,
       greenhouses: data.greenhouses,
       selectedGreenhouseId: data.greenhouses[0]?.id ?? "",
       tasks: data.tasks,

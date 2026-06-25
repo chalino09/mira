@@ -71,7 +71,7 @@ async function fetchCurrentWeather(
 export async function fetchWeatherByCoordinates(
   latitude: number,
   longitude: number,
-  sourceName = "coordenadas del invernadero"
+  sourceName = "coordenadas del área productiva"
 ) {
   return fetchCurrentWeather(
     latitude,

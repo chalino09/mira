@@ -27,7 +27,7 @@ export function MonitoringSection() {
             Diagnóstico técnico
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
-            Monitoreo nutrimental, estudios de laboratorio, documentos privados y acciones técnicas por invernadero.
+            Monitoreo nutrimental, estudios de laboratorio, documentos privados y acciones técnicas por área productiva.
           </p>
         </div>
       </div>

@@ -44,6 +44,7 @@ import { RiskBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
+import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appErrorMessage } from "@/lib/errors";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -232,7 +233,7 @@ function OverviewSection() {
     return (
       <EmptyState
         icon={Sprout}
-        title="No tienes un invernadero asignado. Pide a un owner o admin que te asigne como encargado."
+        title="No tienes un área productiva asignada. Pide a un owner o admin que te asigne como encargado."
       />
     );
   }
@@ -276,16 +277,16 @@ function OverviewSection() {
 }
 
 function GreenhousesSection() {
-  const { currentUser, greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
+  const { crops, currentUser, greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
   const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
   const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
 
   return (
     <section>
       <SectionHeader
-        action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nuevo invernadero</Button> : undefined}
-        title="Invernaderos"
-        description="Inventario de invernaderos, variedades, responsables y estado del cultivo."
+        action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nueva área</Button> : undefined}
+        title="Áreas productivas"
+        description="Inventario de áreas, cultivos, variedades, responsables y estado productivo."
       />
       <div className="grid gap-10 xl:grid-cols-[minmax(0,1.35fr)_320px]">
         <div className="grid gap-3">
@@ -299,12 +300,12 @@ function GreenhousesSection() {
           ))}
         </div>
         {active ? (
-          <EditorialRail title="Invernadero activo">
+          <EditorialRail title="Área activa">
             <EditorialObject
-              detail={`${active.variety} · ${active.stage}`}
+              detail={`${cropLabelForId(active.cropId, crops)} · ${active.variety || "Sin variedad"} · ${active.stage}`}
               icon={Sprout}
               index="01"
-              label="Invernadero seleccionado"
+              label="Área seleccionada"
               value={active.name}
             />
             <EditorialObject
@@ -496,7 +497,7 @@ function PestsSection() {
           ))}
         </div>
       ) : (
-        <EmptyState icon={AlertTriangle} title="No hay alertas sanitarias para este invernadero." />
+        <EmptyState icon={AlertTriangle} title="No hay alertas sanitarias para esta área productiva." />
       )}
     </section>
   );
@@ -622,12 +623,12 @@ function CostsSection() {
       />
       {budgetAmount === null ? (
         <div className="mb-5 border border-[#E3D7B6] bg-[#FFF8E6] px-4 py-3 text-sm leading-6 text-[#725A1A]">
-          Presupuesto del ciclo pendiente de configurar. Puedes seguir operando y capturando costos; cuando lo agregues al invernadero se activará el comparativo.
+          Presupuesto del ciclo pendiente de configurar. Puedes seguir operando y capturando costos; cuando lo agregues al área productiva se activará el comparativo.
         </div>
       ) : null}
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
-        <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en invernadero" : `${budgetUsed}% usado`} tone="soft" />
+        <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en área" : `${budgetUsed}% usado`} tone="soft" />
         <MetricCard icon={WalletCards} label="Disponible" value={remainingBudget === null ? "--" : formatCurrency(remainingBudget)} detail={remainingBudget !== null && remainingBudget < 0 ? "Presupuesto rebasado" : "Contra costos reales"} />
         <MetricCard icon={Leaf} label="Costo por kg" value={formatCurrency(costPerKg)} detail="Contra kg cosechados" />
       </div>
@@ -663,7 +664,7 @@ function ReportsSection() {
     <section>
       <SectionHeader
         title="Reportes"
-        description="Vistas ejecutivas para producción, aplicaciones, costos, sanidad y rendimiento por invernadero."
+        description="Vistas ejecutivas para producción, aplicaciones, costos, sanidad y rendimiento por área productiva."
       />
       <AtmosphericMapVisual className="mb-5" variant="reports" />
       <div className="grid gap-5 xl:grid-cols-2">
@@ -673,7 +674,7 @@ function ReportsSection() {
         <div className="border-y border-app-border py-5">
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Exportaciones</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {["Producción semanal", "Aplicaciones por cultivo", "Historial sanitario", "Rendimiento por invernadero"].map((item) => (
+            {["Producción semanal", "Aplicaciones por cultivo", "Historial sanitario", "Rendimiento por área"].map((item) => (
               <div key={item} className="flex h-14 items-center justify-between border-t border-app-border px-1 text-sm font-medium text-app-text">
                 {item}
                 <FileDown className="h-4 w-4 text-app-muted" />
@@ -850,6 +851,7 @@ function SettingsSection() {
   const {
     organization,
     currentUser,
+    crops,
     greenhouses,
     applicationRecords,
     nutritionRecords,
@@ -1102,8 +1104,8 @@ function SettingsSection() {
     },
     {
       key: "greenhouses",
-      title: "Invernaderos",
-      description: "Invernaderos, ubicación, superficie, variedad y responsable.",
+      title: "Áreas productivas",
+      description: "Áreas, ubicación, superficie, cultivo, variedad y responsable.",
       kicker: "Producción",
       value: `${greenhouses.length} activos`,
       icon: Sprout
@@ -1402,19 +1404,19 @@ function SettingsSection() {
       {activeSetting === "greenhouses" ? (
         <SettingsPanel
           action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="ghost">Nuevo</Button>}
-          description={`Administración rápida de invernaderos, ubicación, superficie y responsables. Superficie total: ${formatNumber(totalSurface)} m2.`}
+          description={`Administración rápida de áreas productivas, ubicación, superficie y responsables. Superficie total: ${formatNumber(totalSurface)} m2.`}
           icon={Sprout}
           kicker="Producción"
-          title="Invernaderos"
+          title="Áreas productivas"
         >
           <div className="border-b border-app-border">
             {greenhouses.map((greenhouse) => (
               <div key={greenhouse.id} className="border-t border-app-border py-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm font-medium text-app-text">{greenhouse.name}</p>
+                    <p className="text-sm font-medium text-app-text">{greenhouseDisplayName(greenhouse, crops)}</p>
                     <p className="mt-1 text-xs leading-5 text-app-muted">
-                      {greenhouse.location || "Sin ubicación"} · {greenhouse.surface} · {greenhouse.variety}
+                      {greenhouse.location || "Sin ubicación"} · {greenhouse.surface} · {greenhouse.variety || "Sin variedad"}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-app-muted">
                       Encargado: {greenhouse.manager}
@@ -1449,7 +1451,7 @@ function SettingsSection() {
       <div className="mt-8 border-t border-app-border py-6">
         <div className="grid gap-3 sm:grid-cols-3">
           <Button icon={<MapPin className="h-4 w-4" />} onClick={() => setActiveSection("greenhouses")} variant="secondary">
-            Ver invernaderos
+            Ver áreas
           </Button>
           <Button icon={<Thermometer className="h-4 w-4" />} onClick={() => setActiveSection("irrigation")} variant="secondary">
             Revisar riego

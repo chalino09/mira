@@ -6,6 +6,7 @@ import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { appErrorMessage } from "@/lib/errors";
+import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { uploadPrivateCompanyFile } from "@/lib/storage";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
@@ -237,7 +238,7 @@ function draftFromValue(value: LabValueRow): LabParameterDraft {
 }
 
 export function TechnicalLabSection() {
-  const { currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
+  const { crops, currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
   const [greenhouseId, setGreenhouseId] = useState(initialGreenhouseId);
   const [studyType, setStudyType] = useState<LabStudyType>("suelo");
@@ -388,7 +389,7 @@ export function TechnicalLabSection() {
   const createStudyDraft = async () => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !organization.id || !activeGreenhouse) {
-      setNotice({ tone: "red", message: "No hay conexión o invernadero activo." });
+      setNotice({ tone: "red", message: "No hay conexión o área productiva activa." });
       return null;
     }
 
@@ -554,7 +555,8 @@ export function TechnicalLabSection() {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
-    const greenhouseName = greenhouses.find((greenhouse) => greenhouse.id === study.greenhouse_id)?.name ?? "este invernadero";
+    const studyGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === study.greenhouse_id);
+    const greenhouseName = studyGreenhouse ? greenhouseDisplayName(studyGreenhouse, crops) : "esta área productiva";
     const confirmed = window.confirm(`Vas a verificar este estudio y guardarlo como listo en: ${greenhouseName}. ¿Confirmas?`);
     if (!confirmed) return;
 
@@ -589,7 +591,7 @@ export function TechnicalLabSection() {
   }
 
   if (!greenhouses.length || !activeGreenhouse) {
-    return <EmptyState icon={Sprout} title="No hay invernaderos disponibles para laboratorio." />;
+    return <EmptyState icon={Sprout} title="No hay áreas productivas disponibles para laboratorio." />;
   }
 
   return (
@@ -618,17 +620,17 @@ export function TechnicalLabSection() {
           </div>
 
           <div className="grid gap-3">
-            <Field label="Invernadero">
+            <Field label="Área productiva">
               <SelectInput value={activeGreenhouse.id} onChange={(event) => setGreenhouseId(event.target.value)}>
                 {greenhouses.map((greenhouse) => (
                   <option key={greenhouse.id} value={greenhouse.id}>
-                    {greenhouse.name}
+                    {greenhouseDisplayName(greenhouse, crops)}
                   </option>
                 ))}
               </SelectInput>
             </Field>
             <div className="border border-app-border bg-app-sidebar px-3 py-3 text-sm leading-6 text-app-text">
-              <span className="font-medium">Destino:</span> este estudio se guardará en {activeGreenhouse.name}.
+              <span className="font-medium">Destino:</span> este estudio se guardará en {greenhouseDisplayName(activeGreenhouse, crops)}.
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <Field label="Fecha de muestra">
@@ -749,7 +751,7 @@ export function TechnicalLabSection() {
                 {selectedStudy.lab_name || "Laboratorio sin nombre"}{selectedStudy.folio ? ` · ${selectedStudy.folio}` : ""}
               </p>
               <div className="mt-4 border border-app-border bg-app-sidebar px-3 py-3 text-sm leading-6 text-app-text">
-                <span className="font-medium">Invernadero destino:</span> {selectedStudyGreenhouse?.name ?? "Sin invernadero identificado"}.
+                <span className="font-medium">Área destino:</span> {selectedStudyGreenhouse ? greenhouseDisplayName(selectedStudyGreenhouse, crops) : "Sin área identificada"}.
                 <span className="text-app-muted"> Verifica esto antes de marcar el estudio como listo.</span>
               </div>
             </div>

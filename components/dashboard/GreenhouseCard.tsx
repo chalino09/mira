@@ -1,6 +1,9 @@
+"use client";
+
 import { CalendarDays, MapPin, Sprout, UserRound } from "lucide-react";
 import { RiskBadge } from "@/components/ui/StatusBadge";
-import { getCropDdtStatus } from "@/lib/crop-ddt";
+import { cropLabelForId, getCropDdtStatus } from "@/lib/crop-ddt";
+import { useGreenhouseStore } from "@/lib/store";
 import { formatDate, formatNumber } from "@/lib/utils";
 import type { Greenhouse } from "@/types";
 
@@ -11,11 +14,20 @@ type GreenhouseCardProps = {
 };
 
 export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCardProps) {
+  const crops = useGreenhouseStore((state) => state.crops);
+  const cropStages = useGreenhouseStore((state) => state.cropStages);
   const ddtStatus = getCropDdtStatus(
     greenhouse.cropId,
     greenhouse.transplantDate,
-    greenhouse.daysSinceTransplant
+    greenhouse.daysSinceTransplant,
+    cropStages
   );
+  const cropLabel = cropLabelForId(greenhouse.cropId, crops);
+  const ddtLabel = ddtStatus.status === "missing-catalog"
+    ? "Sin catálogo DDT"
+    : ddtStatus.status === "missing-date"
+      ? "Sin DDT"
+      : `${ddtStatus.ddt} DDT`;
 
   return (
     <button
@@ -33,7 +45,7 @@ export function GreenhouseCard({ greenhouse, selected, onSelect }: GreenhouseCar
             ) : null}
           </div>
           <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">
-            {greenhouse.variety} · {greenhouse.stage} · {ddtStatus.status === "missing-date" ? "Sin DDT" : `${ddtStatus.ddt} DDT`}
+            {cropLabel} · {greenhouse.variety || "Sin variedad"} · {greenhouse.stage} · {ddtLabel}
           </p>
         </div>
         <RiskBadge level={greenhouse.healthStatus} />

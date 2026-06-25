@@ -1,3 +1,5 @@
+"use client";
+
 import { ActiveGreenhousePanel } from "@/components/overview/ActiveGreenhousePanel";
 import { AttentionBlock } from "@/components/overview/AttentionBlock";
 import { RecentActivityBlock } from "@/components/overview/RecentActivityBlock";
@@ -5,6 +7,7 @@ import { TodayOperationsBlock } from "@/components/overview/TodayOperationsBlock
 import { CalendarContributionGrid } from "@/components/dashboard/CalendarContributionGrid";
 import { cropLabelForId, getCropDdtStatus } from "@/lib/crop-ddt";
 import { greetingForNow, overviewDateLabel } from "@/lib/date";
+import { useGreenhouseStore } from "@/lib/store";
 import { cn, formatNumber } from "@/lib/utils";
 import type {
   Activity,
@@ -24,12 +27,15 @@ function CropStatusRail({
   greenhouse: Greenhouse;
   pendingAlerts: number;
 }) {
+  const crops = useGreenhouseStore((state) => state.crops);
+  const cropStages = useGreenhouseStore((state) => state.cropStages);
   const status = getCropDdtStatus(
     greenhouse.cropId,
     greenhouse.transplantDate,
-    greenhouse.daysSinceTransplant
+    greenhouse.daysSinceTransplant,
+    cropStages
   );
-  const cropLabel = cropLabelForId(greenhouse.cropId);
+  const cropLabel = cropLabelForId(greenhouse.cropId, crops);
   const stageLabel = status.stage?.name ?? status.detail;
 
   const metrics = [
@@ -50,7 +56,11 @@ function CropStatusRail({
               Estado del cultivo
             </p>
             <h2 className="mt-3 text-3xl font-light tracking-normal text-app-text">
-              {status.status === "missing-date" ? "Sin DDT" : `${formatNumber(status.ddt)} DDT`}
+              {status.status === "missing-catalog"
+                ? "Sin catálogo"
+                : status.status === "missing-date"
+                  ? "Sin DDT"
+                  : `${formatNumber(status.ddt)} DDT`}
             </h2>
             <p className="mt-2 text-sm text-app-muted">{stageLabel}</p>
           </div>
@@ -62,12 +72,14 @@ function CropStatusRail({
           />
         </div>
 
+        {status.status !== "missing-catalog" ? (
         <div className="mt-5 h-1.5 overflow-hidden bg-white">
           <div
             className="h-full bg-app-green transition-all"
             style={{ width: `${Math.round(status.progress * 100)}%` }}
           />
         </div>
+        ) : null}
       </div>
 
       <div className="mt-5 grid grid-cols-2 border-y border-app-border">

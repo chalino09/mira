@@ -54,7 +54,7 @@ export function GreenhouseHealthMap({ beds, reviewZones }: GreenhouseHealthMapPr
       <div className="flex items-center justify-between border-b border-app-border bg-white/35 px-5 py-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-app-muted">
-            Mapa operativo del invernadero
+            Mapa operativo del área productiva
           </p>
           <p className="mt-1 text-sm text-app-muted">Sectores, camas y zonas de atención</p>
         </div>
@@ -68,7 +68,7 @@ export function GreenhouseHealthMap({ beds, reviewZones }: GreenhouseHealthMapPr
           preserveAspectRatio="none"
           viewBox="0 0 100 100"
           role="img"
-          aria-label="Mapa abstracto de salud del invernadero"
+          aria-label="Mapa abstracto de salud del área productiva"
         >
           <g opacity="0.34" stroke="#183D2A" strokeWidth="0.12">
             {lines.map((line) => {

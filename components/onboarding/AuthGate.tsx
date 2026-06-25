@@ -9,7 +9,16 @@ import { Button } from "@/components/ui/Button";
 import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
-import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
+import { INITIAL_CROP_ID, isNutrientKey } from "@/lib/crop-ddt";
+import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
+import type {
+  NutritionAnalyteKey,
+  NutritionDiagnosticStatus,
+  NutritionObservationContext,
+  NutritionObservationRule,
+  NutritionReferenceRange,
+  NutritionSampleType
+} from "@/lib/nutrition-monitoring";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
 import { parseNumericInput } from "@/lib/utils";
@@ -17,7 +26,9 @@ import type {
   Activity,
   ApplicationRecord,
   CostRecord,
+  CropCatalogItem,
   CropStage,
+  CropStageCatalog,
   CurrentUser,
   Greenhouse,
   HarvestRecord,
@@ -36,6 +47,7 @@ type OnboardingForm = {
   fullName: string;
   companyName: string;
   greenhouseName: string;
+  cropId: string;
   variety: string;
   location: string;
   latitude: number | null;
@@ -58,7 +70,16 @@ const onboardingStageToDb: Record<CropStage, string> = {
   Producción: "produccion"
 };
 
-const initialCropVarieties = ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom", "Otra"];
+const DEFAULT_CROP_OPTIONS: CropCatalogItem[] = [
+  {
+    id: INITIAL_CROP_ID,
+    slug: "jitomate",
+    name: "Jitomate",
+    scientificName: "Solanum lycopersicum",
+    defaultCycleDays: 182,
+    isActive: true
+  }
+];
 
 function mapCropStage(stage?: string | null): CropStage {
   if (stage === "floracion") return "Floración";
@@ -71,6 +92,73 @@ function mapRiskLevel(level?: string | null): RiskLevel {
   if (level === "media") return "Media";
   if (level === "alta") return "Alta";
   return "Baja";
+}
+
+function mapCrops(rows: any[] | null | undefined): CropCatalogItem[] {
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    scientificName: row.scientific_name ?? null,
+    defaultCycleDays: row.default_cycle_days == null ? null : Number(row.default_cycle_days),
+    isActive: Boolean(row.is_active)
+  }));
+}
+
+function mapCropStages(rows: any[] | null | undefined, nutrientRows: any[] | null | undefined): CropStageCatalog[] {
+  const fertilizerRangesByStage = new Map<string, CropStageCatalog["fertilizerUnitRanges"]>();
+
+  (nutrientRows ?? []).forEach((row) => {
+    if (row.range_context !== "fertilizer_unit" || !isNutrientKey(String(row.nutrient))) return;
+    const stageId = String(row.crop_stage_id ?? "");
+    const ranges = fertilizerRangesByStage.get(stageId) ?? [];
+    ranges.push({
+      nutrient: row.nutrient,
+      min: Number(row.min_value),
+      max: Number(row.max_value),
+      display: row.display_value
+    });
+    ranges.sort((left, right) => left.nutrient.localeCompare(right.nutrient));
+    fertilizerRangesByStage.set(stageId, ranges);
+  });
+
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    cropId: row.crop_id,
+    number: Number(row.stage_number),
+    label: row.stage_label,
+    name: row.stage_name,
+    ddtStart: Number(row.ddt_start),
+    ddtEnd: Number(row.ddt_end),
+    durationDays: Number(row.duration_days),
+    fertilizerUnitRanges: fertilizerRangesByStage.get(row.id) ?? []
+  }));
+}
+
+function mapNutritionRanges(rows: any[] | null | undefined): NutritionReferenceRange[] {
+  return (rows ?? []).map((row) => ({
+    cropId: row.crop_id,
+    sampleType: row.sample_type as NutritionSampleType,
+    analyteKey: row.analyte_key as NutritionAnalyteKey,
+    analyteLabel: row.analyte_label,
+    inputUnit: row.input_unit,
+    diagnosticUnit: row.diagnostic_unit,
+    ddtMin: row.ddt_min == null ? null : Number(row.ddt_min),
+    ddtMax: row.ddt_max == null ? null : Number(row.ddt_max),
+    min: Number(row.min_value),
+    max: Number(row.max_value),
+    sortOrder: Number(row.sort_order)
+  }));
+}
+
+function mapNutritionRules(rows: any[] | null | undefined): NutritionObservationRule[] {
+  return (rows ?? []).map((row) => ({
+    cropId: row.crop_id,
+    observationContext: row.observation_context as NutritionObservationContext,
+    petioleStatus: row.petiole_status as NutritionDiagnosticStatus,
+    soilStatus: row.soil_status as NutritionDiagnosticStatus,
+    observationText: row.observation_text
+  }));
 }
 
 function mapTaskType(type?: string | null, technicalPlan?: Record<string, any> | null): TaskType {
@@ -266,7 +354,7 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
   };
 
   return (
-    <AuthCard kicker="mira" title="Accede al sistema operativo de tu invernadero.">
+    <AuthCard kicker="mira" title="Accede al sistema operativo de tus cultivos.">
       <form className="px-4" onSubmit={handleSubmit}>
         <div className="mb-8 flex items-start justify-between gap-6 border-b border-app-border pb-6">
           <div>
@@ -393,6 +481,34 @@ function OnboardingScreen({
 }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [cropOptions, setCropOptions] = useState<CropCatalogItem[]>(DEFAULT_CROP_OPTIONS);
+  const [selectedCropId, setSelectedCropId] = useState(INITIAL_CROP_ID);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCrops() {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) return;
+
+      const { data } = await supabase
+        .from("crops")
+        .select("id, slug, name, scientific_name, default_cycle_days, is_active")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (!cancelled) {
+        const mapped = mapCrops(data);
+        setCropOptions(mapped.length ? mapped : DEFAULT_CROP_OPTIONS);
+      }
+    }
+
+    loadCrops();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -405,6 +521,7 @@ function OnboardingScreen({
       fullName: String(form.get("fullName") ?? ""),
       companyName: String(form.get("companyName") ?? ""),
       greenhouseName: String(form.get("greenhouseName") ?? ""),
+      cropId: String(form.get("cropId") ?? INITIAL_CROP_ID),
       variety: String(form.get("variety") ?? ""),
       location: String(form.get("location") ?? ""),
       latitude: optionalNumber(form.get("latitude")),
@@ -427,7 +544,9 @@ function OnboardingScreen({
       company_name: values.companyName,
       greenhouse_name: values.greenhouseName,
       greenhouse_location: values.location || null,
-      tomato_variety: values.variety,
+      tomato_variety: values.cropId === INITIAL_CROP_ID ? values.variety : null,
+      crop_variety: values.variety,
+      initial_crop_id: values.cropId,
       initial_crop_stage: onboardingStageToDb[values.stage],
       initial_transplant_date: values.transplantDate || null,
       initial_surface_m2: values.surfaceM2,
@@ -451,9 +570,11 @@ function OnboardingScreen({
 
   const emailName = session.user.email?.split("@")[0] ?? "";
   const today = new Date().toISOString().slice(0, 10);
+  const selectedCrop = cropOptions.find((crop) => crop.id === selectedCropId) ?? cropOptions[0];
+  const varietyOptions = cropVarietyOptionsForSlug(selectedCrop?.slug);
 
   return (
-    <AuthCard kicker="Primer acceso" title="Configura tu empresa y primer invernadero.">
+    <AuthCard kicker="Primer acceso" title="Configura tu empresa y primera área productiva.">
       <form className="grid gap-6 px-4" onSubmit={handleSubmit}>
         <section className="grid gap-4 border-b border-app-border pb-5">
           <div>
@@ -478,7 +599,7 @@ function OnboardingScreen({
               className="rounded-lg bg-app-background"
               name="companyName"
               required
-              placeholder="Invernaderos Familia"
+              placeholder="Producción Familia"
             />
           </Field>
         </section>
@@ -486,7 +607,7 @@ function OnboardingScreen({
         <section className="grid gap-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">
-              Primer invernadero
+              Primera área productiva
             </p>
             <p className="mt-3 text-sm leading-6 text-app-muted">
               Una ficha inicial para entrar con datos útiles desde el primer día.
@@ -494,11 +615,34 @@ function OnboardingScreen({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Nombre">
-              <TextInput className="rounded-lg bg-app-background" name="greenhouseName" required placeholder="Invernadero 1" />
+              <TextInput className="rounded-lg bg-app-background" name="greenhouseName" required placeholder="Hectárea 1" />
+            </Field>
+            <Field label="Cultivo">
+              <SelectInput
+                className="rounded-lg bg-app-background"
+                name="cropId"
+                onChange={(event) => setSelectedCropId(event.target.value)}
+                required
+                value={selectedCropId}
+              >
+                {cropOptions.map((crop) => (
+                  <option key={crop.id} value={crop.id}>
+                    {crop.name}
+                  </option>
+                ))}
+              </SelectInput>
             </Field>
             <Field label="Variedad">
-              <SelectInput className="rounded-lg bg-app-background" name="variety" defaultValue="Saladette" required>
-                {initialCropVarieties.map((variety) => <option key={variety}>{variety}</option>)}
+              <SelectInput
+                className="rounded-lg bg-app-background"
+                defaultValue={varietyOptions[0]}
+                key={selectedCropId}
+                name="variety"
+                required
+              >
+                {varietyOptions.map((variety) => (
+                  <option key={variety}>{variety}</option>
+                ))}
               </SelectInput>
             </Field>
             <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
@@ -600,7 +744,12 @@ export function AuthGate() {
 
     const [
       { data: profile },
-      { data: greenhouseRows }
+      { data: greenhouseRows },
+      { data: cropRows },
+      { data: cropStageRows },
+      { data: nutrientRangeRows },
+      { data: nutritionRangeRows },
+      { data: nutritionRuleRows }
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -611,8 +760,35 @@ export function AuthGate() {
         .from("greenhouses")
         .select("*")
         .eq("company_id", membership.company_id)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("crops")
+        .select("id, slug, name, scientific_name, default_cycle_days, is_active")
+        .eq("is_active", true)
+        .order("name", { ascending: true }),
+      supabase
+        .from("crop_stages")
+        .select("id, crop_id, stage_number, stage_label, stage_name, ddt_start, ddt_end, duration_days")
+        .eq("is_active", true)
+        .order("stage_number", { ascending: true }),
+      supabase
+        .from("nutrient_ranges")
+        .select("crop_stage_id, range_context, nutrient, min_value, max_value, display_value, sort_order")
+        .eq("range_context", "fertilizer_unit")
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("nutrition_reference_ranges")
+        .select("crop_id, sample_type, analyte_key, analyte_label, input_unit, diagnostic_unit, ddt_min, ddt_max, min_value, max_value, sort_order")
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("nutrition_observation_rules")
+        .select("crop_id, observation_context, petiole_status, soil_status, observation_text")
     ]);
+
+    const crops = mapCrops(cropRows);
+    const cropStages = mapCropStages(cropStageRows, nutrientRangeRows);
+    const nutritionReferenceRanges = mapNutritionRanges(nutritionRangeRows);
+    const nutritionObservationRules = mapNutritionRules(nutritionRuleRows);
 
     const organization: Organization = {
       id: company?.id ?? membership.company_id,
@@ -712,8 +888,8 @@ export function AuthGate() {
         locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
         surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
         budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
-        cropId: greenhouse.crop_id ?? INITIAL_CROP_ID,
-        variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "Roma",
+        cropId: greenhouse.crop_id ?? null,
+        variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "",
         transplantDate: greenhouse.transplant_date ?? "",
         plants: greenhouse.plants_count ?? 0,
         stemCount: greenhouse.stem_count === 1 || greenhouse.stem_count === 2 ? greenhouse.stem_count : null,
@@ -838,6 +1014,10 @@ export function AuthGate() {
     hydrateWorkspace({
       organization,
       currentUser,
+      crops,
+      cropStages,
+      nutritionReferenceRanges,
+      nutritionObservationRules,
       greenhouses: mappedGreenhouses,
       tasks,
       irrigationRecords,

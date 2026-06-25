@@ -47,6 +47,36 @@ export type Organization = {
   logoUrl?: string;
 };
 
+export type CropCatalogItem = {
+  id: string;
+  slug: string;
+  name: string;
+  scientificName: string | null;
+  defaultCycleDays: number | null;
+  isActive: boolean;
+};
+
+export type NutrientKey = "N" | "P2O5" | "K2O" | "CaO" | "MgO";
+
+export type StageNutrientRange = {
+  nutrient: NutrientKey;
+  min: number;
+  max: number;
+  display: string;
+};
+
+export type CropStageCatalog = {
+  id: string;
+  cropId: string;
+  number: number;
+  label: string;
+  name: string;
+  ddtStart: number;
+  ddtEnd: number;
+  durationDays: number;
+  fertilizerUnitRanges: StageNutrientRange[];
+};
+
 export type CurrentUser = {
   id: string;
   fullName: string;
