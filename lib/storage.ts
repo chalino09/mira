@@ -33,3 +33,29 @@ export async function uploadCompanyAsset({
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;
 }
+
+export async function uploadPrivateCompanyFile({
+  bucket,
+  companyId,
+  file,
+  supabase,
+  type
+}: {
+  bucket: "technical-lab-files";
+  companyId: string;
+  file: File;
+  supabase: SupabaseClient<any>;
+  type: string;
+}) {
+  const path = `${companyId}/${type}-${crypto.randomUUID()}.${fileExtension(file)}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return path;
+}

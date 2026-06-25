@@ -33,7 +33,7 @@ import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
-import { NutritionMonitoringSection } from "@/components/monitoring/NutritionMonitoringSection";
+import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { OverviewHero } from "@/components/overview/OverviewHero";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
@@ -1474,7 +1474,7 @@ function ActiveSection() {
   if (activeSection === "overview") return <OverviewSection />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
   if (activeSection === "calendar") return <OperationsSection />;
-  if (activeSection === "monitoring") return <NutritionMonitoringSection />;
+  if (activeSection === "monitoring") return <MonitoringSection />;
   if (activeSection === "records") return <TechnicalRecordsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
   if (activeSection === "nutrition") return <NutritionSection />;

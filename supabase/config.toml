@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.telegram-dispatch]
 verify_jwt = true
+
+[functions.lab-extract]
+verify_jwt = true

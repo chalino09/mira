@@ -246,7 +246,7 @@ function MiniMetric({
   );
 }
 
-export function NutritionMonitoringSection() {
+export function NutritionMonitoringSection({ embedded = false }: { embedded?: boolean }) {
   const { currentUser, greenhouses, organization, selectedGreenhouseId } = useGreenhouseStore();
   const initialGreenhouseId = selectedGreenhouseId || greenhouses[0]?.id || "";
   const [greenhouseId, setGreenhouseId] = useState(initialGreenhouseId);
@@ -707,20 +707,22 @@ export function NutritionMonitoringSection() {
 
   return (
     <section>
-      <div className="mb-10 border-b border-app-border pb-7 pt-8 md:pt-10">
-        <div>
+      {!embedded ? (
+        <div className="mb-10 border-b border-app-border pb-7 pt-8 md:pt-10">
           <div>
-            <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-            <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
-            <h1 className="mt-3 text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">
-              Nutrimental
-            </h1>
-            <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
-              Captura, compara y exporta extracto celular de peciolo y solucion de suelo con rangos por DDT.
-            </p>
+            <div>
+              <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
+              <h1 className="mt-3 text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">
+                Nutrimental
+              </h1>
+              <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
+                Captura, compara y exporta extracto celular de peciolo y solucion de suelo con rangos por DDT.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {notice ? (
         <div
