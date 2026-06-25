@@ -17,8 +17,11 @@ const toneClass: Record<ActivityTone, string> = {
   blocked: "bg-app-red"
 };
 
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function activityTone(taskCount: number, hasBlockedTask: boolean): ActivityTone {
@@ -35,8 +38,8 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
   const pastWeeks = weeks - futureWeeks - 1;
   const startDate = addDays(currentWeekStart, -pastWeeks * daysPerWeek);
   const endDate = addDays(currentWeekStart, (futureWeeks + 1) * daysPerWeek - 1);
-  const startIso = toIsoDate(startDate);
-  const endIso = toIsoDate(endDate);
+  const startIso = toLocalDateKey(startDate);
+  const endIso = toLocalDateKey(endDate);
   const visibleTasks = tasks.filter((task) => task.date >= startIso && task.date <= endIso);
   const taskCountByDate = visibleTasks.reduce<Record<string, number>>((acc, task) => {
     acc[task.date] = (acc[task.date] ?? 0) + 1;
@@ -45,14 +48,14 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
   const blockedDates = new Set(
     visibleTasks.filter((task) => task.status === "Bloqueada").map((task) => task.date)
   );
-  const today = toIsoDate(new Date());
+  const today = toLocalDateKey(new Date());
   const completedCount = visibleTasks.filter((task) => task.status === "Completada").length;
   const activeDayCount = Object.keys(taskCountByDate).length;
 
   const days = Array.from({ length: weeks * daysPerWeek }, (_, index) => {
     const date = new Date(startDate);
     date.setDate(startDate.getDate() + index);
-    const iso = toIsoDate(date);
+    const iso = toLocalDateKey(date);
     const taskCount = taskCountByDate[iso] ?? 0;
     return {
       iso,
