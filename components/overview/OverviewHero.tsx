@@ -2,7 +2,6 @@
 
 import { ActiveGreenhousePanel } from "@/components/overview/ActiveGreenhousePanel";
 import { AttentionBlock } from "@/components/overview/AttentionBlock";
-import { RecentActivityBlock } from "@/components/overview/RecentActivityBlock";
 import { TodayOperationsBlock } from "@/components/overview/TodayOperationsBlock";
 import { CalendarContributionGrid } from "@/components/dashboard/CalendarContributionGrid";
 import { cropLabelForId, getCropDdtStatus } from "@/lib/crop-ddt";
@@ -10,7 +9,6 @@ import { greetingForNow, overviewDateLabel } from "@/lib/date";
 import { useGreenhouseStore } from "@/lib/store";
 import { cn, formatNumber } from "@/lib/utils";
 import type {
-  Activity,
   ApplicationRecord,
   CurrentUser,
   Greenhouse,
@@ -105,30 +103,11 @@ function CropStatusRail({
   );
 }
 
-function NutritionReserveSlot() {
-  return (
-    <section className="border-t border-app-border py-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
-        Monitoreo nutrimental
-      </p>
-      <div className="mt-4 grid grid-cols-3 border-y border-app-border">
-        {["ECP", "Suelo", "Agua"].map((label, index) => (
-          <div key={label} className={cn("py-3", index > 0 && "border-l border-app-border pl-3", index === 0 && "pr-3")}>
-            <p className="text-xl font-light text-app-text">--</p>
-            <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-app-muted">{label}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 type OverviewHeroProps = {
   greenhouse: Greenhouse;
   pendingAlerts: number;
   alerts: PestAlert[];
   tasks: Task[];
-  activities: Activity[];
   organization: Organization;
   currentUser: CurrentUser;
   lastIrrigation?: IrrigationRecord;
@@ -143,7 +122,6 @@ export function OverviewHero({
   pendingAlerts,
   alerts,
   tasks,
-  activities,
   organization,
   currentUser,
   lastIrrigation,
@@ -185,10 +163,6 @@ export function OverviewHero({
           <div className="mt-12">
             <CalendarContributionGrid tasks={operationsTasks} />
           </div>
-
-          <div className="mt-10">
-            <RecentActivityBlock activities={activities} />
-          </div>
         </div>
 
         <div className="min-w-0 space-y-8 xl:sticky xl:top-6">
@@ -200,7 +174,6 @@ export function OverviewHero({
             showDdtReading={false}
             variant="rail"
           />
-          <NutritionReserveSlot />
         </div>
       </div>
     </section>
