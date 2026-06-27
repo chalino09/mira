@@ -32,7 +32,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 28. `28_rls_hardening.sql`
 29. `29_pre_production_checks.sql` para diagnostico de solo lectura antes de produccion.
 30. `30_function_grant_hardening.sql` si el diagnostico marca helpers con `anon_execute = true`.
-31. `03_seed_template.sql` solo si quieres datos demo manuales.
+31. `31_operation_completion_result_ids.sql`
+32. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -97,6 +98,8 @@ Para endurecer RLS, permisos de helpers, policies de storage y sesiones de Teleg
 Para validar buckets, RLS, grants, constraints multiempresa y deuda operativa antes de produccion, ejecuta `29_pre_production_checks.sql`. Este archivo solo lee metadatos y datos; no modifica nada.
 
 Si `29_pre_production_checks.sql` muestra helpers con `anon_execute = true`, ejecuta `30_function_grant_hardening.sql` y vuelve a correr el diagnostico.
+
+Para que los cierres de riego, nutricion, aplicacion y cosecha devuelvan los IDs reales de los registros tecnicos creados, ejecuta `31_operation_completion_result_ids.sql` despues de `30_function_grant_hardening.sql`.
 
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 

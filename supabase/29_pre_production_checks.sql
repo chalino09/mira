@@ -239,6 +239,38 @@ policy_checks as (
     and policy.tablename = expected.tablename
     and policy.policyname = expected.policyname
 ),
+rpc_expected(signature) as (
+  values
+    ('public.complete_application_task(uuid, date, text, jsonb)'),
+    ('public.complete_irrigation_task(uuid, date, integer, numeric, text, numeric, numeric, text)'),
+    ('public.complete_nutrition_task(uuid, date, text, text, text, numeric, numeric, text, jsonb)'),
+    ('public.complete_harvest_task(uuid, date, numeric, numeric, numeric, numeric, numeric, text, text)')
+),
+rpc_actual as (
+  select
+    signature,
+    to_regprocedure(signature) as function_oid
+  from rpc_expected
+),
+rpc_checks as (
+  select
+    'operational rpc returns'::text as check_group,
+    signature::text as check_name,
+    jsonb_build_object(
+      'return_type',
+      case
+        when function_oid is null then null
+        else pg_get_function_result(function_oid)
+      end,
+      'expected_return_type', 'jsonb'
+    )::text as detail,
+    case
+      when function_oid is null then 'missing'
+      when pg_get_function_result(function_oid) = 'jsonb' then 'ok'
+      else 'review'
+    end as status
+  from rpc_actual
+),
 legacy_pest_photo_checks as (
   select
     'data debt'::text as check_group,
@@ -291,6 +323,7 @@ all_checks as (
   union all select * from helper_checks
   union all select * from constraint_checks
   union all select * from policy_checks
+  union all select * from rpc_checks
   union all select * from legacy_pest_photo_checks
   union all select * from telegram_connection_checks
   union all select * from lab_file_path_checks

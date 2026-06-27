@@ -49,6 +49,7 @@ supabase/26_private_pest_photos.sql
 supabase/27_tenant_integrity_constraints.sql
 supabase/28_rls_hardening.sql
 supabase/30_function_grant_hardening.sql
+supabase/31_operation_completion_result_ids.sql
 ```
 
 4. Levanta la app:

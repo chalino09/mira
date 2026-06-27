@@ -20,11 +20,12 @@ Validar antes de produccion:
 4. Despliega las Edge Functions tocadas.
 5. Corre `supabase/29_pre_production_checks.sql` en Supabase SQL Editor.
 6. Si el diagnostico marca helpers con `anon_execute = true`, corre `supabase/30_function_grant_hardening.sql` y repite el diagnostico.
-7. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
+7. Si el diagnostico marca `operational rpc returns` en `review`, corre `supabase/31_operation_completion_result_ids.sql` y repite el diagnostico.
+8. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
 
 ## Orden de SQL
 
-En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/28_rls_hardening.sql` en orden.
+En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/31_operation_completion_result_ids.sql` en orden.
 
 Si el proyecto ya tiene los SQL aplicados, no repitas todo por costumbre. Aplica solo los archivos nuevos que falten y despues corre:
 
@@ -38,6 +39,12 @@ Si el diagnostico muestra `helper grants` en `review` por `anon_execute = true`,
 
 ```text
 supabase/30_function_grant_hardening.sql
+```
+
+Si muestra `operational rpc returns` en `review`, aplica:
+
+```text
+supabase/31_operation_completion_result_ids.sql
 ```
 
 ## Deploy de funciones

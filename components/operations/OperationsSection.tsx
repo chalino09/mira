@@ -341,6 +341,22 @@ function isOperationsSetupError(error: any) {
   return ["42P01", "42703", "PGRST204", "PGRST205"].includes(error?.code);
 }
 
+function rpcRecordId(data: unknown) {
+  if (data && typeof data === "object" && "recordId" in data) {
+    const id = (data as { recordId?: unknown }).recordId;
+    return typeof id === "string" ? id : undefined;
+  }
+  return undefined;
+}
+
+function rpcRecordIds(data: unknown) {
+  if (data && typeof data === "object" && "recordIds" in data) {
+    const ids = (data as { recordIds?: unknown }).recordIds;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+  }
+  return [];
+}
+
 function emptyMaterial(): MaterialDraft {
   return { productName: "", dose: "", unit: "", notes: "" };
 }
@@ -1444,7 +1460,7 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error } = await supabase.rpc("complete_application_task", {
+    const { data, error } = await supabase.rpc("complete_application_task", {
       target_task_id: applicationTask.id,
       target_occurred_at: payload.occurredAt,
       target_applied_area: payload.appliedArea || null,
@@ -1466,7 +1482,9 @@ export function OperationsSection({
       return;
     }
 
-    addApplicationRecords(payload.applications.map((application) => ({
+    const recordIds = rpcRecordIds(data);
+    addApplicationRecords(payload.applications.map((application, index) => ({
+      id: recordIds[index],
       sourceTaskId: applicationTask.id,
       greenhouseId: applicationTask.greenhouse_id,
       date: payload.occurredAt,
@@ -1492,7 +1510,7 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error } = await supabase.rpc("complete_irrigation_task", {
+    const { data, error } = await supabase.rpc("complete_irrigation_task", {
       target_task_id: irrigationTask.id,
       target_occurred_at: payload.date,
       target_duration_min: payload.durationMin,
@@ -1510,6 +1528,7 @@ export function OperationsSection({
 
     addIrrigation({
       ...payload,
+      id: rpcRecordId(data),
       greenhouseId: irrigationTask.greenhouse_id,
       responsible: currentUser.fullName
     });
@@ -1525,7 +1544,7 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error } = await supabase.rpc("complete_nutrition_task", {
+    const { data, error } = await supabase.rpc("complete_nutrition_task", {
       target_task_id: nutritionTask.id,
       target_occurred_at: payload.date,
       target_method: nutritionMethodToDb[payload.method],
@@ -1542,7 +1561,9 @@ export function OperationsSection({
       return;
     }
 
-    payload.products.forEach((product) => addNutrition({
+    const recordIds = rpcRecordIds(data);
+    payload.products.forEach((product, index) => addNutrition({
+      id: recordIds[index],
       greenhouseId: nutritionTask.greenhouse_id,
       date: payload.date,
       product: product.productName,
@@ -1566,7 +1587,7 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error } = await supabase.rpc("complete_harvest_task", {
+    const { data, error } = await supabase.rpc("complete_harvest_task", {
       target_task_id: harvestTask.id,
       target_occurred_at: payload.date,
       target_kilograms: payload.kilograms,
@@ -1583,7 +1604,7 @@ export function OperationsSection({
       return;
     }
 
-    addHarvest({ ...payload, greenhouseId: harvestTask.greenhouse_id });
+    addHarvest({ ...payload, id: rpcRecordId(data), greenhouseId: harvestTask.greenhouse_id });
     setHarvestTask(null);
     setNotice({ tone: "green", message: "Cosecha completada y guardada en Registros técnicos." });
     await loadOperations();
