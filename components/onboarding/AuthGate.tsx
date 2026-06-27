@@ -823,11 +823,7 @@ export function AuthGate() {
         throwInitialLoadError(pausedMembershipError, "No se pudo revisar el estado de tu acceso.");
 
         if (pausedMembership) {
-          setAccessPausedMessage(
-            pausedMembership.status === "disabled"
-              ? "Tu acceso fue desactivado por un administrador. Pide a un owner o admin que reactive tu usuario para volver a operar."
-              : "Tu invitación todavía no está activa. Pide a un owner o admin que revise tu membresía."
-          );
+          setAccessPausedMessage("Tu invitación todavía no está activa.");
           setState("access-paused");
           return;
         }
