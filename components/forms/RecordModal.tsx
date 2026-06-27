@@ -72,6 +72,13 @@ function emptyApplicationProduct(): ApplicationProductDraft {
   return { category: "Bioestimulante", product: "", composition: "", dose: "" };
 }
 
+function insertedId(row: { id?: string } | null | undefined, fallback: string) {
+  if (!row?.id) {
+    throw new Error(fallback);
+  }
+  return row.id;
+}
+
 const taskTypeToDb: Record<TaskType, string> = {
   Riego: "riego",
   Fertirriego: "fertirriego",
@@ -522,19 +529,23 @@ export function RecordModal() {
         status: "Pendiente" as const,
         responsible: currentUser.fullName
       };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("tasks").insert({
-        company_id: organization.id,
-        greenhouse_id: greenhouseId,
-        type: taskTypeToDb[type],
-        title: record.title,
-        scheduled_date: record.date,
-        scheduled_time: record.time || null,
-        status: "pendiente",
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      });
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("tasks")
+        .insert({
+          company_id: organization.id,
+          greenhouse_id: greenhouseId,
+          type: taskTypeToDb[type],
+          title: record.title,
+          scheduled_date: record.date,
+          scheduled_time: record.time || null,
+          status: "pendiente",
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })
+        .select("id")
+        .single();
       if (insertError) throw insertError;
-      addTask(record);
+      addTask({ ...record, id: insertedId(data, "No se pudo confirmar la tarea guardada.") });
     });
   };
 
@@ -553,21 +564,25 @@ export function RecordModal() {
         notes: String(form.get("notes")),
         responsible: currentUser.fullName
       };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("irrigation_records").insert({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId,
-        occurred_at: record.date,
-        duration_min: record.durationMin,
-        estimated_liters: record.liters,
-        sector: record.sector || null,
-        ph: record.ph,
-        ec: record.ec,
-        notes: record.notes,
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      });
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("irrigation_records")
+        .insert({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId,
+          occurred_at: record.date,
+          duration_min: record.durationMin,
+          estimated_liters: record.liters,
+          sector: record.sector || null,
+          ph: record.ph,
+          ec: record.ec,
+          notes: record.notes,
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })
+        .select("id")
+        .single();
       if (insertError) throw insertError;
-      addIrrigation(record);
+      addIrrigation({ ...record, id: insertedId(data, "No se pudo confirmar el riego guardado.") });
     });
   };
 
@@ -587,23 +602,31 @@ export function RecordModal() {
         objective: String(form.get("objective")) as NutritionRecord["objective"],
         notes: String(form.get("notes"))
       }));
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("nutrition_records").insert(records.map((record) => ({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId,
-        product_name: record.product,
-        dose: record.dose,
-        method: nutritionMethodToDb[record.method],
-        ph: record.ph,
-        ec: record.ec,
-        occurred_at: record.date,
-        crop_stage: cropStageToDb[record.stage],
-        objective: nutritionObjectiveToDb[record.objective],
-        notes: record.notes,
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      })));
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("nutrition_records")
+        .insert(records.map((record) => ({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId,
+          product_name: record.product,
+          dose: record.dose,
+          method: nutritionMethodToDb[record.method],
+          ph: record.ph,
+          ec: record.ec,
+          occurred_at: record.date,
+          crop_stage: cropStageToDb[record.stage],
+          objective: nutritionObjectiveToDb[record.objective],
+          notes: record.notes,
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })))
+        .select("id");
       if (insertError) throw insertError;
-      records.forEach(addNutrition);
+      records.forEach((record, index) => {
+        addNutrition({
+          ...record,
+          id: insertedId(data?.[index], "No se pudo confirmar la nutrición guardada.")
+        });
+      });
     });
   };
 
@@ -624,23 +647,31 @@ export function RecordModal() {
         reentry: String(form.get("reentry")),
         notes: String(form.get("notes"))
       }));
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("application_records").insert(records.map((record) => ({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId,
-        category: applicationCategoryToDb[record.category],
-        product_name: record.product,
-        composition: record.composition,
-        dose: record.dose,
-        applied_area: record.area,
-        safety_interval: record.safetyInterval,
-        reentry_interval: record.reentry,
-        occurred_at: record.date,
-        notes: record.notes,
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      })));
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("application_records")
+        .insert(records.map((record) => ({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId,
+          category: applicationCategoryToDb[record.category],
+          product_name: record.product,
+          composition: record.composition,
+          dose: record.dose,
+          applied_area: record.area,
+          safety_interval: record.safetyInterval,
+          reentry_interval: record.reentry,
+          occurred_at: record.date,
+          notes: record.notes,
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })))
+        .select("id");
       if (insertError) throw insertError;
-      records.forEach(addApplication);
+      records.forEach((record, index) => {
+        addApplication({
+          ...record,
+          id: insertedId(data?.[index], "No se pudo confirmar la aplicación guardada.")
+        });
+      });
     });
   };
 
@@ -677,22 +708,26 @@ export function RecordModal() {
         photoStoragePath,
         photoUrl
       };
-      const { error: insertError } = await supabase.from("pest_alerts").insert({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId,
-        problem: record.problem,
-        severity: riskLevelToDb[record.severity],
-        affected_zone: record.zone,
-        detected_at: record.detectedAt,
-        action_taken: record.action,
-        follow_up: record.followUp,
-        photo_storage_path: record.photoStoragePath ?? null,
-        photo_url: null,
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      });
+      const { data, error: insertError } = await supabase
+        .from("pest_alerts")
+        .insert({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId,
+          problem: record.problem,
+          severity: riskLevelToDb[record.severity],
+          affected_zone: record.zone,
+          detected_at: record.detectedAt,
+          action_taken: record.action,
+          follow_up: record.followUp,
+          photo_storage_path: record.photoStoragePath ?? null,
+          photo_url: null,
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })
+        .select("id")
+        .single();
       if (insertError) throw insertError;
-      addPest(record);
+      addPest({ ...record, id: insertedId(data, "No se pudo confirmar la alerta sanitaria guardada.") });
     });
   };
 
@@ -711,22 +746,26 @@ export function RecordModal() {
         destination: String(form.get("destination")),
         notes: String(form.get("notes"))
       };
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("harvest_records").insert({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId,
-        occurred_at: record.date,
-        kilograms: record.kilograms,
-        first_quality_kg: record.firstQuality,
-        second_quality_kg: record.secondQuality,
-        discard_kg: record.discard,
-        estimated_price: record.estimatedPrice,
-        destination: record.destination,
-        notes: record.notes,
-        responsible_user_id: currentUser.id,
-        created_by: currentUser.id
-      });
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("harvest_records")
+        .insert({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId,
+          occurred_at: record.date,
+          kilograms: record.kilograms,
+          first_quality_kg: record.firstQuality,
+          second_quality_kg: record.secondQuality,
+          discard_kg: record.discard,
+          estimated_price: record.estimatedPrice,
+          destination: record.destination,
+          notes: record.notes,
+          responsible_user_id: currentUser.id,
+          created_by: currentUser.id
+        })
+        .select("id")
+        .single();
       if (insertError) throw insertError;
-      addHarvest(record);
+      addHarvest({ ...record, id: insertedId(data, "No se pudo confirmar la cosecha guardada.") });
     });
   };
 
@@ -741,17 +780,25 @@ export function RecordModal() {
         amount: Number(cost.amount),
         notes: cost.notes
       }));
-      const { error: insertError } = await getSupabaseBrowserClient()!.from("cost_records").insert(records.map((record) => ({
-        company_id: organization.id,
-        greenhouse_id: record.greenhouseId || null,
-        category: costCategoryToDb[record.category],
-        amount: record.amount,
-        occurred_at: record.date,
-        notes: record.notes,
-        created_by: currentUser.id
-      })));
+      const { data, error: insertError } = await getSupabaseBrowserClient()!
+        .from("cost_records")
+        .insert(records.map((record) => ({
+          company_id: organization.id,
+          greenhouse_id: record.greenhouseId || null,
+          category: costCategoryToDb[record.category],
+          amount: record.amount,
+          occurred_at: record.date,
+          notes: record.notes,
+          created_by: currentUser.id
+        })))
+        .select("id");
       if (insertError) throw insertError;
-      records.forEach(addCost);
+      records.forEach((record, index) => {
+        addCost({
+          ...record,
+          id: insertedId(data?.[index], "No se pudo confirmar el costo guardado.")
+        });
+      });
     });
   };
 

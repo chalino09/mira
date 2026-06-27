@@ -21,6 +21,8 @@ import type {
 import type { NutritionObservationRule, NutritionReferenceRange } from "@/lib/nutrition-monitoring";
 import { makeId } from "@/lib/utils";
 
+type WithOptionalId<T extends { id: string }> = Omit<T, "id"> & Partial<Pick<T, "id">>;
+
 type AppState = {
   activeSection: SectionId;
   selectedGreenhouseId: string;
@@ -45,17 +47,17 @@ type AppState = {
   updateOrganization: (organization: Organization) => void;
   openModal: (modal: ModalType) => void;
   closeModal: () => void;
-  addTask: (task: Omit<Task, "id">) => void;
+  addTask: (task: WithOptionalId<Task>) => void;
   completeTask: (id: string) => void;
-  addIrrigation: (record: Omit<IrrigationRecord, "id">) => void;
+  addIrrigation: (record: WithOptionalId<IrrigationRecord>) => void;
   addGreenhouse: (greenhouse: Greenhouse) => void;
   updateGreenhouse: (greenhouse: Greenhouse) => void;
-  addNutrition: (record: Omit<NutritionRecord, "id">) => void;
-  addApplication: (record: Omit<ApplicationRecord, "id">) => void;
-  addApplicationRecords: (records: Omit<ApplicationRecord, "id">[]) => void;
-  addPest: (record: Omit<PestAlert, "id">) => void;
-  addHarvest: (record: Omit<HarvestRecord, "id">) => void;
-  addCost: (record: Omit<CostRecord, "id">) => void;
+  addNutrition: (record: WithOptionalId<NutritionRecord>) => void;
+  addApplication: (record: WithOptionalId<ApplicationRecord>) => void;
+  addApplicationRecords: (records: WithOptionalId<ApplicationRecord>[]) => void;
+  addPest: (record: WithOptionalId<PestAlert>) => void;
+  addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
+  addCost: (record: WithOptionalId<CostRecord>) => void;
   hydrateWorkspace: (data: {
     organization: Organization;
     currentUser: CurrentUser;
@@ -128,7 +130,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addTask: (task) =>
     set((state) => ({
-      tasks: [{ ...task, id: makeId("task") }, ...state.tasks],
+      tasks: [{ ...task, id: task.id ?? makeId("task") }, ...state.tasks],
       activities: [
         {
           id: makeId("act"),
@@ -149,7 +151,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addIrrigation: (record) =>
     set((state) => ({
-      irrigationRecords: [{ ...record, id: makeId("riego") }, ...state.irrigationRecords],
+      irrigationRecords: [{ ...record, id: record.id ?? makeId("riego") }, ...state.irrigationRecords],
       activities: [
         {
           id: makeId("act"),
@@ -176,7 +178,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addNutrition: (record) =>
     set((state) => ({
-      nutritionRecords: [{ ...record, id: makeId("nut") }, ...state.nutritionRecords],
+      nutritionRecords: [{ ...record, id: record.id ?? makeId("nut") }, ...state.nutritionRecords],
       activities: [
         {
           id: makeId("act"),
@@ -191,7 +193,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addApplication: (record) =>
     set((state) => ({
-      applicationRecords: [{ ...record, id: makeId("app") }, ...state.applicationRecords],
+      applicationRecords: [{ ...record, id: record.id ?? makeId("app") }, ...state.applicationRecords],
       activities: [
         {
           id: makeId("act"),
@@ -207,7 +209,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
   addApplicationRecords: (records) =>
     set((state) => ({
       applicationRecords: [
-        ...records.map((record) => ({ ...record, id: makeId("app") })),
+        ...records.map((record) => ({ ...record, id: record.id ?? makeId("app") })),
         ...state.applicationRecords
       ],
       activities: records.length
@@ -225,7 +227,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addPest: (record) =>
     set((state) => ({
-      pestAlerts: [{ ...record, id: makeId("pest") }, ...state.pestAlerts],
+      pestAlerts: [{ ...record, id: record.id ?? makeId("pest") }, ...state.pestAlerts],
       activities: [
         {
           id: makeId("act"),
@@ -240,7 +242,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addHarvest: (record) =>
     set((state) => ({
-      harvestRecords: [{ ...record, id: makeId("harv") }, ...state.harvestRecords],
+      harvestRecords: [{ ...record, id: record.id ?? makeId("harv") }, ...state.harvestRecords],
       activities: [
         {
           id: makeId("act"),
@@ -255,7 +257,7 @@ export const useGreenhouseStore = create<AppState>((set) => ({
     })),
   addCost: (record) =>
     set((state) => ({
-      costRecords: [{ ...record, id: makeId("cost") }, ...state.costRecords],
+      costRecords: [{ ...record, id: record.id ?? makeId("cost") }, ...state.costRecords],
       activities: [
         {
           id: makeId("act"),
