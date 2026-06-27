@@ -490,19 +490,13 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
 
 function PestsSection() {
   const {
-    currentUser,
     greenhousePests,
-    greenhouses,
     openModal,
-    organization,
-    setActiveSection,
     updatePest
   } = useFilteredData();
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [editingAlert, setEditingAlert] = useState<PestAlert | null>(null);
   const [savingAlert, setSavingAlert] = useState(false);
-  const [creatingFollowUpId, setCreatingFollowUpId] = useState<string | null>(null);
-  const canCreateFollowUpTask = currentUser.role !== "manager";
 
   const handleEditAlert = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -551,91 +545,6 @@ function PestsSection() {
     setNotice({ tone: "green", message: "Alerta sanitaria actualizada." });
   };
 
-  const createFollowUpTask = async (alert: PestAlert) => {
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase || !organization.id) {
-      setNotice({ tone: "red", message: "No se pudo conectar con Supabase para crear el seguimiento." });
-      return;
-    }
-
-    const greenhouse = greenhouses.find((item) => item.id === alert.greenhouseId);
-    if (!greenhouse) {
-      setNotice({ tone: "red", message: "Selecciona un invernadero valido para crear el seguimiento." });
-      return;
-    }
-
-    if (!greenhouse.managerUserId || greenhouse.manager === "Sin encargado") {
-      setNotice({ tone: "red", message: "Asigna un encargado activo al invernadero antes de crear el seguimiento." });
-      return;
-    }
-
-    const scheduledDate = localDateKey();
-    const weekStart = dateKey(startOfIsoWeek());
-    const title = `Seguimiento sanitario: ${alert.problem}`;
-    const instructions = [
-      `Alerta: ${alert.problem}`,
-      alert.zone ? `Zona: ${alert.zone}` : "",
-      `Incidencia: ${alert.severity}`,
-      alert.action ? `Accion tomada: ${alert.action}` : "",
-      alert.followUp ? `Seguimiento registrado: ${alert.followUp}` : "",
-      "Confirmar avance, evidencia y siguiente accion sanitaria."
-    ].filter(Boolean).join("\n");
-
-    setCreatingFollowUpId(alert.id);
-    setNotice(null);
-
-    const existingResponse = await supabase
-      .from("tasks")
-      .select("id")
-      .eq("company_id", organization.id)
-      .eq("greenhouse_id", alert.greenhouseId)
-      .eq("title", title)
-      .eq("scheduled_date", scheduledDate)
-      .neq("status", "cancelada")
-      .limit(1);
-
-    if (existingResponse.error) {
-      setCreatingFollowUpId(null);
-      setNotice({
-        tone: "red",
-        message: appErrorMessage(existingResponse.error, "No se pudo revisar si el seguimiento ya existe.")
-      });
-      return;
-    }
-
-    if (existingResponse.data?.length) {
-      setCreatingFollowUpId(null);
-      setActiveSection("calendar");
-      return;
-    }
-
-    const { error } = await supabase.rpc("create_operational_task_with_plan", {
-      target_company_id: organization.id,
-      target_week_start: weekStart,
-      target_greenhouse_id: alert.greenhouseId,
-      target_type: "revision_plagas",
-      target_title: title,
-      target_scheduled_date: scheduledDate,
-      target_scheduled_time: null,
-      target_priority: alert.severity === "Alta" ? "high" : "normal",
-      target_instructions: instructions,
-      target_execution_mode: "manager",
-      target_crew_size: null,
-      target_assignee_ids: [greenhouse.managerUserId],
-      target_materials: [],
-      target_technical_plan: {}
-    });
-
-    setCreatingFollowUpId(null);
-
-    if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo crear el seguimiento en Operación.") });
-      return;
-    }
-
-    setActiveSection("calendar");
-  };
-
   return (
     <section>
       <SectionHeader
@@ -661,17 +570,6 @@ function PestsSection() {
                 <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => setEditingAlert(alert)} type="button" variant="secondary">
                   Editar seguimiento
                 </Button>
-                {canCreateFollowUpTask ? (
-                  <Button
-                    disabled={creatingFollowUpId === alert.id}
-                    icon={<Plus className="h-4 w-4" />}
-                    onClick={() => createFollowUpTask(alert)}
-                    type="button"
-                    variant="primary"
-                  >
-                    {creatingFollowUpId === alert.id ? "Creando..." : "Crear tarea"}
-                  </Button>
-                ) : null}
               </div>
               <div className="mt-6 grid gap-6 text-sm sm:grid-cols-2">
                 <div className="border-l border-app-border pl-4">
