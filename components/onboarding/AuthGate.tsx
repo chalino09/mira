@@ -1,6 +1,7 @@
 "use client";
 
 import type { Session } from "@supabase/supabase-js";
+import { ArrowLeft } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
@@ -42,7 +43,7 @@ import type {
   TaskType
 } from "@/types";
 
-type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error";
+type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error" | "access-paused";
 
 type OnboardingForm = {
   fullName: string;
@@ -338,10 +339,12 @@ function MissingEnvScreen() {
 
 function LoadErrorScreen({
   error,
-  onRetry
+  onRetry,
+  onSignOut
 }: {
   error: string;
   onRetry: () => void;
+  onSignOut: () => void;
 }) {
   return (
     <AuthCard kicker="Carga interrumpida" title="No pudimos cargar tu espacio.">
@@ -354,6 +357,24 @@ function LoadErrorScreen({
         </p>
         <Button className="h-11 rounded-lg" onClick={onRetry} type="button" variant="primary">
           Reintentar
+        </Button>
+        <Button className="h-11 rounded-lg" icon={<ArrowLeft className="h-4 w-4" />} onClick={onSignOut} type="button">
+          Regresar al acceso
+        </Button>
+      </div>
+    </AuthCard>
+  );
+}
+
+function AccessPausedScreen({ message, onSignOut }: { message: string; onSignOut: () => void }) {
+  return (
+    <AuthCard kicker="Acceso pausado" title="Tu usuario no tiene una membresía activa.">
+      <div className="space-y-5 px-4">
+        <p className="text-sm leading-6 text-app-muted">
+          {message}
+        </p>
+        <Button className="h-11 rounded-lg" icon={<ArrowLeft className="h-4 w-4" />} onClick={onSignOut} type="button">
+          Regresar al acceso
         </Button>
       </div>
     </AuthCard>
@@ -435,10 +456,12 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
 
 function CompleteProfileScreen({
   session,
-  onDone
+  onDone,
+  onSignOut
 }: {
   session: Session;
   onDone: () => void;
+  onSignOut: () => void;
 }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -502,6 +525,9 @@ function CompleteProfileScreen({
           <Button className="mt-2 h-11 rounded-lg" disabled={loading} type="submit" variant="primary">
             {loading ? "Guardando..." : "Continuar"}
           </Button>
+          <Button className="h-11 rounded-lg" icon={<ArrowLeft className="h-4 w-4" />} onClick={onSignOut} type="button">
+            Regresar al acceso
+          </Button>
         </div>
       </form>
     </AuthCard>
@@ -510,10 +536,12 @@ function CompleteProfileScreen({
 
 function OnboardingScreen({
   session,
-  onDone
+  onDone,
+  onSignOut
 }: {
   session: Session;
   onDone: () => void;
+  onSignOut: () => void;
 }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -728,6 +756,9 @@ function OnboardingScreen({
         <Button className="h-11 rounded-lg" disabled={loading} type="submit" variant="primary">
           {loading ? "Creando..." : "Crear espacio"}
         </Button>
+        <Button className="h-11 rounded-lg" icon={<ArrowLeft className="h-4 w-4" />} onClick={onSignOut} type="button">
+          Regresar al acceso
+        </Button>
       </form>
     </AuthCard>
   );
@@ -737,7 +768,16 @@ export function AuthGate() {
   const [state, setState] = useState<AuthState>("loading");
   const [session, setSession] = useState<Session | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [accessPausedMessage, setAccessPausedMessage] = useState("");
   const hydrateWorkspace = useGreenhouseStore((store) => store.hydrateWorkspace);
+
+  const signOut = useCallback(async () => {
+    await getSupabaseBrowserClient()?.auth.signOut();
+    setSession(null);
+    setLoadError("");
+    setAccessPausedMessage("");
+    setState("signed-out");
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoadError("");
@@ -774,6 +814,24 @@ export function AuthGate() {
       throwInitialLoadError(membershipError, "No se pudo cargar tu membresía.");
 
       if (!membership) {
+        const { data: pausedMembership, error: pausedMembershipError } = await supabase
+          .from("company_members")
+          .select("id, status, role")
+          .eq("user_id", nextSession.user.id)
+          .limit(1)
+          .maybeSingle();
+        throwInitialLoadError(pausedMembershipError, "No se pudo revisar el estado de tu acceso.");
+
+        if (pausedMembership) {
+          setAccessPausedMessage(
+            pausedMembership.status === "inactive"
+              ? "Tu acceso fue desactivado por un administrador. Pide a un owner o admin que reactive tu usuario para volver a operar."
+              : "Tu invitación todavía no está activa. Pide a un owner o admin que revise tu membresía."
+          );
+          setState("access-paused");
+          return;
+        }
+
         setState("onboarding");
         return;
       }
@@ -1158,15 +1216,19 @@ export function AuthGate() {
   }
 
   if (state === "profile" && session) {
-    return <CompleteProfileScreen session={session} onDone={refresh} />;
+    return <CompleteProfileScreen session={session} onDone={refresh} onSignOut={signOut} />;
   }
 
   if (state === "onboarding" && session) {
-    return <OnboardingScreen session={session} onDone={refresh} />;
+    return <OnboardingScreen session={session} onDone={refresh} onSignOut={signOut} />;
+  }
+
+  if (state === "access-paused") {
+    return <AccessPausedScreen message={accessPausedMessage} onSignOut={signOut} />;
   }
 
   if (state === "load-error") {
-    return <LoadErrorScreen error={loadError || "No se pudo cargar tu espacio."} onRetry={refresh} />;
+    return <LoadErrorScreen error={loadError || "No se pudo cargar tu espacio."} onRetry={refresh} onSignOut={signOut} />;
   }
 
   return <AppShell />;
