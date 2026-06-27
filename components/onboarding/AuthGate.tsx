@@ -42,7 +42,7 @@ import type {
   TaskType
 } from "@/types";
 
-type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready";
+type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error";
 
 type OnboardingForm = {
   fullName: string;
@@ -309,6 +309,17 @@ function AuthCard({
   );
 }
 
+function initialLoadErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  return appErrorMessage(error, "No se pudo cargar tu espacio.");
+}
+
+function throwInitialLoadError(error: unknown, fallback: string) {
+  if (error) {
+    throw new Error(appErrorMessage(error, fallback));
+  }
+}
+
 function MissingEnvScreen() {
   return (
     <AuthCard kicker="Configuración pendiente" title="Conecta Supabase para activar el acceso.">
@@ -320,6 +331,30 @@ function MissingEnvScreen() {
           NEXT_PUBLIC_SUPABASE_URL<br />
           NEXT_PUBLIC_SUPABASE_ANON_KEY
         </div>
+      </div>
+    </AuthCard>
+  );
+}
+
+function LoadErrorScreen({
+  error,
+  onRetry
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
+  return (
+    <AuthCard kicker="Carga interrumpida" title="No pudimos cargar tu espacio.">
+      <div className="space-y-5 px-4">
+        <p className="text-sm leading-6 text-app-muted">
+          Mira no pudo leer todos los datos necesarios de Supabase. Esto puede ser un permiso, una migración pendiente o una conexión inestable.
+        </p>
+        <p className="border border-[#E3BDBD] bg-app-red px-3 py-2 text-sm text-[#7B2A2A]" role="alert">
+          {error}
+        </p>
+        <Button className="h-11 rounded-lg" onClick={onRetry} type="button" variant="primary">
+          Reintentar
+        </Button>
       </div>
     </AuthCard>
   );
@@ -701,355 +736,399 @@ function OnboardingScreen({
 export function AuthGate() {
   const [state, setState] = useState<AuthState>("loading");
   const [session, setSession] = useState<Session | null>(null);
+  const [loadError, setLoadError] = useState("");
   const hydrateWorkspace = useGreenhouseStore((store) => store.hydrateWorkspace);
 
   const refresh = useCallback(async () => {
+    setLoadError("");
+    setState("loading");
+
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       setState("missing-env");
       return;
     }
 
-    const { data } = await supabase.auth.getSession();
-    const nextSession = data.session;
-    setSession(nextSession);
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      throwInitialLoadError(sessionError, "No se pudo validar tu sesión.");
 
-    if (!nextSession) {
-      setState("signed-out");
-      return;
-    }
+      const nextSession = data.session;
+      setSession(nextSession);
 
-    await supabase.rpc("accept_company_invites");
-
-    const { data: membership, error } = await supabase
-      .from("company_members")
-      .select("id, role, company_id, companies(id, name, legal_name, logo_url)")
-      .eq("user_id", nextSession.user.id)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      setState("onboarding");
-      return;
-    }
-
-    if (!membership) {
-      setState("onboarding");
-      return;
-    }
-
-    const company = Array.isArray(membership.companies)
-      ? membership.companies[0]
-      : membership.companies;
-
-    const [
-      { data: profile },
-      { data: greenhouseRows },
-      { data: cropRows },
-      { data: cropStageRows },
-      { data: nutrientRangeRows },
-      { data: nutritionRangeRows },
-      { data: nutritionRuleRows }
-    ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .eq("id", nextSession.user.id)
-        .maybeSingle(),
-      supabase
-        .from("greenhouses")
-        .select("*")
-        .eq("company_id", membership.company_id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("crops")
-        .select("id, slug, name, scientific_name, default_cycle_days, is_active")
-        .eq("is_active", true)
-        .order("name", { ascending: true }),
-      supabase
-        .from("crop_stages")
-        .select("id, crop_id, stage_number, stage_label, stage_name, ddt_start, ddt_end, duration_days")
-        .eq("is_active", true)
-        .order("stage_number", { ascending: true }),
-      supabase
-        .from("nutrient_ranges")
-        .select("crop_stage_id, range_context, nutrient, min_value, max_value, display_value, sort_order")
-        .eq("range_context", "fertilizer_unit")
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("nutrition_reference_ranges")
-        .select("crop_id, sample_type, analyte_key, analyte_label, input_unit, diagnostic_unit, ddt_min, ddt_max, min_value, max_value, sort_order")
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("nutrition_observation_rules")
-        .select("crop_id, observation_context, petiole_status, soil_status, observation_text")
-    ]);
-
-    const crops = mapCrops(cropRows);
-    const cropStages = mapCropStages(cropStageRows, nutrientRangeRows);
-    const nutritionReferenceRanges = mapNutritionRanges(nutritionRangeRows);
-    const nutritionObservationRules = mapNutritionRules(nutritionRuleRows);
-
-    const organization: Organization = {
-      id: company?.id ?? membership.company_id,
-      name: company?.name ?? "Empresa",
-      legalName: company?.legal_name ?? undefined,
-      logoUrl: company?.logo_url ?? undefined
-    };
-
-    const profileName = String(profile?.full_name ?? "").trim();
-    const accountEmail = String(nextSession.user.email ?? "").trim();
-    if (!profileName || profileName.toLowerCase() === accountEmail.toLowerCase()) {
-      setState("profile");
-      return;
-    }
-
-    const currentUser: CurrentUser = {
-      id: nextSession.user.id,
-      fullName: profileName,
-      email: profile?.email ?? nextSession.user.email ?? "",
-      role: membership.role
-    };
-
-    const canSeeAllGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
-    const visibleGreenhouseRows = canSeeAllGreenhouses
-      ? (greenhouseRows ?? [])
-      : (greenhouseRows ?? []).filter((greenhouse: any) => greenhouse.manager_user_id === currentUser.id);
-    const visibleGreenhouseIds = visibleGreenhouseRows.map((greenhouse: any) => greenhouse.id);
-    const emptyGreenhouseId = "00000000-0000-0000-0000-000000000000";
-    const greenhouseScope = visibleGreenhouseIds.length ? visibleGreenhouseIds : [emptyGreenhouseId];
-
-    const managerUserIds = Array.from(
-      new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_user_id).filter(Boolean))
-    );
-    const { data: managerMemberRows } = managerUserIds.length
-      ? await supabase
-        .from("company_members")
-        .select("user_id")
-        .eq("company_id", membership.company_id)
-        .eq("role", "manager")
-        .eq("status", "active")
-        .in("user_id", managerUserIds)
-      : { data: [] };
-    const activeManagerUserIds = (managerMemberRows ?? []).map((member: any) => member.user_id);
-    const { data: managerProfiles } = activeManagerUserIds.length
-      ? await supabase.from("profiles").select("id, full_name, email").in("id", activeManagerUserIds)
-      : { data: [] };
-    const managerProfileMap = new Map((managerProfiles ?? []).map((manager: any) => [manager.id, manager]));
-
-    const [
-      { data: taskRows },
-      { data: irrigationRows },
-      { data: nutritionRows },
-      { data: applicationRows },
-      { data: pestRows },
-      { data: harvestRows },
-      { data: costRows }
-    ] = await Promise.all([
-      (canSeeAllGreenhouses
-        ? supabase.from("tasks").select("*").eq("company_id", membership.company_id)
-        : supabase.from("tasks").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("scheduled_date", { ascending: true }),
-      (canSeeAllGreenhouses
-        ? supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id)
-        : supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("occurred_at", { ascending: false }),
-      (canSeeAllGreenhouses
-        ? supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id)
-        : supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("occurred_at", { ascending: false }),
-      (canSeeAllGreenhouses
-        ? supabase.from("application_records").select("*").eq("company_id", membership.company_id)
-        : supabase.from("application_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("occurred_at", { ascending: false }),
-      (canSeeAllGreenhouses
-        ? supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id)
-        : supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("detected_at", { ascending: false }),
-      (canSeeAllGreenhouses
-        ? supabase.from("harvest_records").select("*").eq("company_id", membership.company_id)
-        : supabase.from("harvest_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("occurred_at", { ascending: false }),
-      (canSeeAllGreenhouses
-        ? supabase.from("cost_records").select("*").eq("company_id", membership.company_id)
-        : supabase.from("cost_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-      ).order("occurred_at", { ascending: false })
-    ]);
-
-    const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
-      const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
-
-      return {
-        id: greenhouse.id,
-        name: greenhouse.name,
-        location: greenhouse.location ?? "",
-        latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
-        longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
-        locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
-        surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
-        budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
-        cropId: greenhouse.crop_id ?? null,
-        variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "",
-        transplantDate: greenhouse.transplant_date ?? "",
-        plants: greenhouse.plants_count ?? 0,
-        stemCount: greenhouse.stem_count === 1 || greenhouse.stem_count === 2 ? greenhouse.stem_count : null,
-        isGrafted: greenhouse.is_grafted == null ? null : Boolean(greenhouse.is_grafted),
-        stage: mapCropStage(greenhouse.crop_stage),
-        managerUserId: greenhouse.manager_user_id ?? null,
-        manager: managerProfile?.full_name ?? managerProfile?.email ?? "Sin encargado",
-        beds: greenhouse.beds_count ?? 0,
-        daysSinceTransplant: daysSince(greenhouse.transplant_date),
-        healthStatus: mapRiskLevel(greenhouse.health_status),
-        temperature: 0,
-        humidity: 0,
-        estimatedProductionKg: 0
-      };
-    });
-
-    const tasks: Task[] = (taskRows ?? []).map((task: any) => ({
-      id: task.id,
-      greenhouseId: task.greenhouse_id,
-      type: mapTaskType(task.type, task.technical_plan),
-      title: task.title,
-      date: task.scheduled_date,
-      time: task.scheduled_time?.slice(0, 5) ?? "",
-      status: mapTaskStatus(task.status),
-      responsible: currentUser.fullName
-    }));
-
-    const irrigationRecords: IrrigationRecord[] = (irrigationRows ?? []).map((record: any) => ({
-      id: record.id,
-      greenhouseId: record.greenhouse_id,
-      date: record.occurred_at,
-      durationMin: record.duration_min ?? 0,
-      liters: Number(record.estimated_liters ?? 0),
-      sector: record.sector ?? "",
-      ph: record.ph === null ? null : Number(record.ph),
-      ec: record.ec === null ? null : Number(record.ec),
-      notes: record.notes ?? "",
-      responsible: currentUser.fullName
-    }));
-
-    const nutritionRecords: NutritionRecord[] = (nutritionRows ?? []).map((record: any) => ({
-      id: record.id,
-      greenhouseId: record.greenhouse_id,
-      date: record.occurred_at,
-      product: record.product_name,
-      dose: record.dose,
-      method: mapNutritionMethod(record.method),
-      ph: Number(record.ph ?? 0),
-      ec: Number(record.ec ?? 0),
-      stage: mapCropStage(record.crop_stage),
-      objective: mapNutritionObjective(record.objective),
-      notes: record.notes ?? ""
-    }));
-
-    const applicationRecords: ApplicationRecord[] = (applicationRows ?? []).map((record: any) => ({
-      id: record.id,
-      sourceTaskId: record.source_task_id ?? undefined,
-      greenhouseId: record.greenhouse_id,
-      date: record.occurred_at,
-      category: mapApplicationCategory(record.category),
-      product: record.product_name,
-      composition: record.composition ?? "",
-      dose: record.dose,
-      area: record.applied_area ?? "",
-      responsible: currentUser.fullName,
-      safetyInterval: record.safety_interval ?? "",
-      reentry: record.reentry_interval ?? "",
-      notes: record.notes ?? ""
-    }));
-
-    const pestPhotoPaths = (pestRows ?? [])
-      .map((record: any) => String(record.photo_storage_path ?? "").trim())
-      .filter(Boolean);
-    let pestPhotoUrls = new Map<string, string>();
-    if (pestPhotoPaths.length) {
-      try {
-        pestPhotoUrls = await createPrivateCompanyFileUrls({
-          bucket: "pest-photos",
-          paths: pestPhotoPaths,
-          supabase
-        });
-      } catch {
-        pestPhotoUrls = new Map<string, string>();
+      if (!nextSession) {
+        setState("signed-out");
+        return;
       }
+
+      const { error: invitesError } = await supabase.rpc("accept_company_invites");
+      throwInitialLoadError(invitesError, "No se pudieron revisar tus invitaciones.");
+
+      const { data: membership, error: membershipError } = await supabase
+        .from("company_members")
+        .select("id, role, company_id, companies(id, name, legal_name, logo_url)")
+        .eq("user_id", nextSession.user.id)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle();
+      throwInitialLoadError(membershipError, "No se pudo cargar tu membresía.");
+
+      if (!membership) {
+        setState("onboarding");
+        return;
+      }
+
+      const company = Array.isArray(membership.companies)
+        ? membership.companies[0]
+        : membership.companies;
+
+      const [
+        profileResponse,
+        greenhousesResponse,
+        cropsResponse,
+        cropStagesResponse,
+        nutrientRangesResponse,
+        nutritionRangesResponse,
+        nutritionRulesResponse
+      ] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .eq("id", nextSession.user.id)
+          .maybeSingle(),
+        supabase
+          .from("greenhouses")
+          .select("*")
+          .eq("company_id", membership.company_id)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("crops")
+          .select("id, slug, name, scientific_name, default_cycle_days, is_active")
+          .eq("is_active", true)
+          .order("name", { ascending: true }),
+        supabase
+          .from("crop_stages")
+          .select("id, crop_id, stage_number, stage_label, stage_name, ddt_start, ddt_end, duration_days")
+          .eq("is_active", true)
+          .order("stage_number", { ascending: true }),
+        supabase
+          .from("nutrient_ranges")
+          .select("crop_stage_id, range_context, nutrient, min_value, max_value, display_value, sort_order")
+          .eq("range_context", "fertilizer_unit")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("nutrition_reference_ranges")
+          .select("crop_id, sample_type, analyte_key, analyte_label, input_unit, diagnostic_unit, ddt_min, ddt_max, min_value, max_value, sort_order")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("nutrition_observation_rules")
+          .select("crop_id, observation_context, petiole_status, soil_status, observation_text")
+      ]);
+
+      throwInitialLoadError(profileResponse.error, "No se pudo cargar tu perfil.");
+      throwInitialLoadError(greenhousesResponse.error, "No se pudieron cargar las áreas productivas.");
+      throwInitialLoadError(cropsResponse.error, "No se pudo cargar el catálogo de cultivos.");
+      throwInitialLoadError(cropStagesResponse.error, "No se pudieron cargar las etapas de cultivo.");
+      throwInitialLoadError(nutrientRangesResponse.error, "No se pudieron cargar los rangos nutrimentales base.");
+      throwInitialLoadError(nutritionRangesResponse.error, "No se pudieron cargar los rangos de monitoreo nutrimental.");
+      throwInitialLoadError(nutritionRulesResponse.error, "No se pudieron cargar las reglas de observación nutrimental.");
+
+      const profile = profileResponse.data;
+      const greenhouseRows = greenhousesResponse.data;
+      const cropRows = cropsResponse.data;
+      const cropStageRows = cropStagesResponse.data;
+      const nutrientRangeRows = nutrientRangesResponse.data;
+      const nutritionRangeRows = nutritionRangesResponse.data;
+      const nutritionRuleRows = nutritionRulesResponse.data;
+
+      const crops = mapCrops(cropRows);
+      const cropStages = mapCropStages(cropStageRows, nutrientRangeRows);
+      const nutritionReferenceRanges = mapNutritionRanges(nutritionRangeRows);
+      const nutritionObservationRules = mapNutritionRules(nutritionRuleRows);
+
+      const organization: Organization = {
+        id: company?.id ?? membership.company_id,
+        name: company?.name ?? "Empresa",
+        legalName: company?.legal_name ?? undefined,
+        logoUrl: company?.logo_url ?? undefined
+      };
+
+      const profileName = String(profile?.full_name ?? "").trim();
+      const accountEmail = String(nextSession.user.email ?? "").trim();
+      if (!profileName || profileName.toLowerCase() === accountEmail.toLowerCase()) {
+        setState("profile");
+        return;
+      }
+
+      const currentUser: CurrentUser = {
+        id: nextSession.user.id,
+        fullName: profileName,
+        email: profile?.email ?? nextSession.user.email ?? "",
+        role: membership.role
+      };
+
+      const canSeeAllGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
+      const visibleGreenhouseRows = canSeeAllGreenhouses
+        ? (greenhouseRows ?? [])
+        : (greenhouseRows ?? []).filter((greenhouse: any) => greenhouse.manager_user_id === currentUser.id);
+      const visibleGreenhouseIds = visibleGreenhouseRows.map((greenhouse: any) => greenhouse.id);
+      const emptyGreenhouseId = "00000000-0000-0000-0000-000000000000";
+      const greenhouseScope = visibleGreenhouseIds.length ? visibleGreenhouseIds : [emptyGreenhouseId];
+
+      const managerUserIds = Array.from(
+        new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_user_id).filter(Boolean))
+      );
+      const managerMembersResponse = managerUserIds.length
+        ? await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", membership.company_id)
+          .eq("role", "manager")
+          .eq("status", "active")
+          .in("user_id", managerUserIds)
+        : { data: [], error: null };
+      throwInitialLoadError(managerMembersResponse.error, "No se pudo cargar la lista de managers activos.");
+
+      const activeManagerUserIds = (managerMembersResponse.data ?? []).map((member: any) => member.user_id);
+      const managerProfilesResponse = activeManagerUserIds.length
+        ? await supabase.from("profiles").select("id, full_name, email").in("id", activeManagerUserIds)
+        : { data: [], error: null };
+      throwInitialLoadError(managerProfilesResponse.error, "No se pudieron cargar los perfiles de managers.");
+
+      const managerProfileMap = new Map((managerProfilesResponse.data ?? []).map((manager: any) => [manager.id, manager]));
+
+      const [
+        tasksResponse,
+        irrigationResponse,
+        nutritionResponse,
+        applicationResponse,
+        pestResponse,
+        harvestResponse,
+        costResponse
+      ] = await Promise.all([
+        (canSeeAllGreenhouses
+          ? supabase.from("tasks").select("*").eq("company_id", membership.company_id)
+          : supabase.from("tasks").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("scheduled_date", { ascending: true }),
+        (canSeeAllGreenhouses
+          ? supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id)
+          : supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("occurred_at", { ascending: false }),
+        (canSeeAllGreenhouses
+          ? supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id)
+          : supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("occurred_at", { ascending: false }),
+        (canSeeAllGreenhouses
+          ? supabase.from("application_records").select("*").eq("company_id", membership.company_id)
+          : supabase.from("application_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("occurred_at", { ascending: false }),
+        (canSeeAllGreenhouses
+          ? supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id)
+          : supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("detected_at", { ascending: false }),
+        (canSeeAllGreenhouses
+          ? supabase.from("harvest_records").select("*").eq("company_id", membership.company_id)
+          : supabase.from("harvest_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("occurred_at", { ascending: false }),
+        (canSeeAllGreenhouses
+          ? supabase.from("cost_records").select("*").eq("company_id", membership.company_id)
+          : supabase.from("cost_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("occurred_at", { ascending: false })
+      ]);
+
+      throwInitialLoadError(tasksResponse.error, "No se pudieron cargar las tareas.");
+      throwInitialLoadError(irrigationResponse.error, "No se pudieron cargar los riegos.");
+      throwInitialLoadError(nutritionResponse.error, "No se pudieron cargar las nutriciones.");
+      throwInitialLoadError(applicationResponse.error, "No se pudieron cargar las aplicaciones.");
+      throwInitialLoadError(pestResponse.error, "No se pudieron cargar las alertas sanitarias.");
+      throwInitialLoadError(harvestResponse.error, "No se pudieron cargar las cosechas.");
+      throwInitialLoadError(costResponse.error, "No se pudieron cargar los costos.");
+
+      const taskRows = tasksResponse.data;
+      const irrigationRows = irrigationResponse.data;
+      const nutritionRows = nutritionResponse.data;
+      const applicationRows = applicationResponse.data;
+      const pestRows = pestResponse.data;
+      const harvestRows = harvestResponse.data;
+      const costRows = costResponse.data;
+
+      const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
+        const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
+
+        return {
+          id: greenhouse.id,
+          name: greenhouse.name,
+          location: greenhouse.location ?? "",
+          latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
+          longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
+          locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
+          surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
+          budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
+          cropId: greenhouse.crop_id ?? null,
+          variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "",
+          transplantDate: greenhouse.transplant_date ?? "",
+          plants: greenhouse.plants_count ?? 0,
+          stemCount: greenhouse.stem_count === 1 || greenhouse.stem_count === 2 ? greenhouse.stem_count : null,
+          isGrafted: greenhouse.is_grafted == null ? null : Boolean(greenhouse.is_grafted),
+          stage: mapCropStage(greenhouse.crop_stage),
+          managerUserId: greenhouse.manager_user_id ?? null,
+          manager: managerProfile?.full_name ?? managerProfile?.email ?? "Sin encargado",
+          beds: greenhouse.beds_count ?? 0,
+          daysSinceTransplant: daysSince(greenhouse.transplant_date),
+          healthStatus: mapRiskLevel(greenhouse.health_status),
+          temperature: 0,
+          humidity: 0,
+          estimatedProductionKg: 0
+        };
+      });
+
+      const tasks: Task[] = (taskRows ?? []).map((task: any) => ({
+        id: task.id,
+        greenhouseId: task.greenhouse_id,
+        type: mapTaskType(task.type, task.technical_plan),
+        title: task.title,
+        date: task.scheduled_date,
+        time: task.scheduled_time?.slice(0, 5) ?? "",
+        status: mapTaskStatus(task.status),
+        responsible: currentUser.fullName
+      }));
+
+      const irrigationRecords: IrrigationRecord[] = (irrigationRows ?? []).map((record: any) => ({
+        id: record.id,
+        greenhouseId: record.greenhouse_id,
+        date: record.occurred_at,
+        durationMin: record.duration_min ?? 0,
+        liters: Number(record.estimated_liters ?? 0),
+        sector: record.sector ?? "",
+        ph: record.ph === null ? null : Number(record.ph),
+        ec: record.ec === null ? null : Number(record.ec),
+        notes: record.notes ?? "",
+        responsible: currentUser.fullName
+      }));
+
+      const nutritionRecords: NutritionRecord[] = (nutritionRows ?? []).map((record: any) => ({
+        id: record.id,
+        greenhouseId: record.greenhouse_id,
+        date: record.occurred_at,
+        product: record.product_name,
+        dose: record.dose,
+        method: mapNutritionMethod(record.method),
+        ph: Number(record.ph ?? 0),
+        ec: Number(record.ec ?? 0),
+        stage: mapCropStage(record.crop_stage),
+        objective: mapNutritionObjective(record.objective),
+        notes: record.notes ?? ""
+      }));
+
+      const applicationRecords: ApplicationRecord[] = (applicationRows ?? []).map((record: any) => ({
+        id: record.id,
+        sourceTaskId: record.source_task_id ?? undefined,
+        greenhouseId: record.greenhouse_id,
+        date: record.occurred_at,
+        category: mapApplicationCategory(record.category),
+        product: record.product_name,
+        composition: record.composition ?? "",
+        dose: record.dose,
+        area: record.applied_area ?? "",
+        responsible: currentUser.fullName,
+        safetyInterval: record.safety_interval ?? "",
+        reentry: record.reentry_interval ?? "",
+        notes: record.notes ?? ""
+      }));
+
+      const pestPhotoPaths = (pestRows ?? [])
+        .map((record: any) => String(record.photo_storage_path ?? "").trim())
+        .filter(Boolean);
+      let pestPhotoUrls = new Map<string, string>();
+      if (pestPhotoPaths.length) {
+        try {
+          pestPhotoUrls = await createPrivateCompanyFileUrls({
+            bucket: "pest-photos",
+            paths: pestPhotoPaths,
+            supabase
+          });
+        } catch (error) {
+          throw new Error(appErrorMessage(error, "No se pudieron cargar las fotos de plagas."));
+        }
+      }
+
+      const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
+        id: record.id,
+        greenhouseId: record.greenhouse_id,
+        problem: record.problem,
+        severity: mapRiskLevel(record.severity),
+        zone: record.affected_zone ?? "",
+        detectedAt: record.detected_at,
+        action: record.action_taken ?? "",
+        followUp: record.follow_up ?? "",
+        photoStoragePath: record.photo_storage_path ?? undefined,
+        photoUrl: record.photo_storage_path
+          ? pestPhotoUrls.get(record.photo_storage_path) ?? undefined
+          : record.photo_url ?? undefined
+      }));
+
+      const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({
+        id: record.id,
+        greenhouseId: record.greenhouse_id,
+        date: record.occurred_at,
+        kilograms: Number(record.kilograms ?? 0),
+        firstQuality: Number(record.first_quality_kg ?? 0),
+        secondQuality: Number(record.second_quality_kg ?? 0),
+        discard: Number(record.discard_kg ?? 0),
+        estimatedPrice: Number(record.estimated_price ?? 0),
+        destination: record.destination ?? "",
+        notes: record.notes ?? ""
+      }));
+
+      const costRecords: CostRecord[] = (costRows ?? []).map((record: any) => ({
+        id: record.id,
+        greenhouseId: record.greenhouse_id ?? "",
+        date: record.occurred_at,
+        category: mapCostCategory(record.category),
+        amount: Number(record.amount ?? 0),
+        notes: record.notes ?? ""
+      }));
+
+      const activities: Activity[] = [
+        ...harvestRecords.slice(0, 2).map((record) => ({
+          id: `activity-harvest-${record.id}`,
+          greenhouseId: record.greenhouseId,
+          title: "Cosecha registrada",
+          detail: `${record.kilograms.toLocaleString("es-MX")} kg`,
+          time: record.date
+        })),
+        ...irrigationRecords.slice(0, 2).map((record) => ({
+          id: `activity-irrigation-${record.id}`,
+          greenhouseId: record.greenhouseId,
+          title: "Riego registrado",
+          detail: `${record.liters.toLocaleString("es-MX")} L`,
+          time: record.date
+        }))
+      ];
+
+      hydrateWorkspace({
+        organization,
+        currentUser,
+        crops,
+        cropStages,
+        nutritionReferenceRanges,
+        nutritionObservationRules,
+        greenhouses: mappedGreenhouses,
+        tasks,
+        irrigationRecords,
+        nutritionRecords,
+        applicationRecords,
+        pestAlerts,
+        harvestRecords,
+        costRecords,
+        activities
+      });
+
+      setState("ready");
+    } catch (error) {
+      setLoadError(initialLoadErrorMessage(error));
+      setState("load-error");
     }
-
-    const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
-      id: record.id,
-      greenhouseId: record.greenhouse_id,
-      problem: record.problem,
-      severity: mapRiskLevel(record.severity),
-      zone: record.affected_zone ?? "",
-      detectedAt: record.detected_at,
-      action: record.action_taken ?? "",
-      followUp: record.follow_up ?? "",
-      photoStoragePath: record.photo_storage_path ?? undefined,
-      photoUrl: record.photo_storage_path
-        ? pestPhotoUrls.get(record.photo_storage_path) ?? undefined
-        : record.photo_url ?? undefined
-    }));
-
-    const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({
-      id: record.id,
-      greenhouseId: record.greenhouse_id,
-      date: record.occurred_at,
-      kilograms: Number(record.kilograms ?? 0),
-      firstQuality: Number(record.first_quality_kg ?? 0),
-      secondQuality: Number(record.second_quality_kg ?? 0),
-      discard: Number(record.discard_kg ?? 0),
-      estimatedPrice: Number(record.estimated_price ?? 0),
-      destination: record.destination ?? "",
-      notes: record.notes ?? ""
-    }));
-
-    const costRecords: CostRecord[] = (costRows ?? []).map((record: any) => ({
-      id: record.id,
-      greenhouseId: record.greenhouse_id ?? "",
-      date: record.occurred_at,
-      category: mapCostCategory(record.category),
-      amount: Number(record.amount ?? 0),
-      notes: record.notes ?? ""
-    }));
-
-    const activities: Activity[] = [
-      ...harvestRecords.slice(0, 2).map((record) => ({
-        id: `activity-harvest-${record.id}`,
-        greenhouseId: record.greenhouseId,
-        title: "Cosecha registrada",
-        detail: `${record.kilograms.toLocaleString("es-MX")} kg`,
-        time: record.date
-      })),
-      ...irrigationRecords.slice(0, 2).map((record) => ({
-        id: `activity-irrigation-${record.id}`,
-        greenhouseId: record.greenhouseId,
-        title: "Riego registrado",
-        detail: `${record.liters.toLocaleString("es-MX")} L`,
-        time: record.date
-      }))
-    ];
-
-    hydrateWorkspace({
-      organization,
-      currentUser,
-      crops,
-      cropStages,
-      nutritionReferenceRanges,
-      nutritionObservationRules,
-      greenhouses: mappedGreenhouses,
-      tasks,
-      irrigationRecords,
-      nutritionRecords,
-      applicationRecords,
-      pestAlerts,
-      harvestRecords,
-      costRecords,
-      activities
-    });
-
-    setState("ready");
   }, [hydrateWorkspace]);
 
   useEffect(() => {
@@ -1084,6 +1163,10 @@ export function AuthGate() {
 
   if (state === "onboarding" && session) {
     return <OnboardingScreen session={session} onDone={refresh} />;
+  }
+
+  if (state === "load-error") {
+    return <LoadErrorScreen error={loadError || "No se pudo cargar tu espacio."} onRetry={refresh} />;
   }
 
   return <AppShell />;
