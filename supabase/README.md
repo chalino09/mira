@@ -27,7 +27,12 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 23. `23_multi_crop_foundation.sql`
 24. `24_weather_snapshots.sql`
 25. `25_mira_copilot.sql`
-26. `03_seed_template.sql` solo si quieres datos demo manuales.
+26. `26_private_pest_photos.sql`
+27. `27_tenant_integrity_constraints.sql`
+28. `28_rls_hardening.sql`
+29. `29_pre_production_checks.sql` para diagnostico de solo lectura antes de produccion.
+30. `30_function_grant_hardening.sql` si el diagnostico marca helpers con `anon_execute = true`.
+31. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -82,6 +87,16 @@ Para habilitar la base multi-cultivo actualizada, ejecuta `23_multi_crop_foundat
 Para guardar snapshots climáticos por área productiva, ejecuta `24_weather_snapshots.sql`.
 
 Para activar auditoría, insights y borradores de Mira Copilot, ejecuta `25_mira_copilot.sql`.
+
+Para mover evidencias sanitarias a storage privado con URLs firmadas, ejecuta `26_private_pest_photos.sql`.
+
+Para reforzar integridad multiempresa en referencias operativas, laboratorio, monitoreo y Mira Copilot, ejecuta `27_tenant_integrity_constraints.sql`.
+
+Para endurecer RLS, permisos de helpers, policies de storage y sesiones de Telegram, ejecuta `28_rls_hardening.sql`.
+
+Para validar buckets, RLS, grants, constraints multiempresa y deuda operativa antes de produccion, ejecuta `29_pre_production_checks.sql`. Este archivo solo lee metadatos y datos; no modifica nada.
+
+Si `29_pre_production_checks.sql` muestra helpers con `anon_execute = true`, ejecuta `30_function_grant_hardening.sql` y vuelve a correr el diagnostico.
 
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 

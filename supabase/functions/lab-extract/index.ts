@@ -50,6 +50,13 @@ function nullableInteger(value: unknown) {
   return parsed === null ? null : Math.trunc(parsed);
 }
 
+function nullableUuid(value: unknown) {
+  const text = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
+    ? text
+    : null;
+}
+
 async function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -152,7 +159,8 @@ Deno.serve(async (req) => {
   if (!jwt) return json({ error: "missing_authorization" }, 401);
 
   const { study_id } = await req.json().catch(() => ({}));
-  if (!study_id) return json({ error: "study_id_required" }, 400);
+  const studyId = nullableUuid(study_id);
+  if (!studyId) return json({ error: "study_id_required" }, 400);
 
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: `Bearer ${jwt}` } }
@@ -165,7 +173,7 @@ Deno.serve(async (req) => {
   const { data: study, error: studyError } = await adminClient
     .from("technical_lab_studies")
     .select("id, company_id, greenhouse_id")
-    .eq("id", study_id)
+    .eq("id", studyId)
     .single();
 
   if (studyError || !study) return json({ error: "study_not_found" }, 404);
@@ -185,18 +193,23 @@ Deno.serve(async (req) => {
   const { data: files, error: filesError } = await adminClient
     .from("technical_lab_study_files")
     .select("id, file_name, mime_type, storage_path, file_kind")
-    .eq("study_id", study_id)
+    .eq("company_id", study.company_id)
+    .eq("study_id", studyId)
     .order("created_at", { ascending: false })
     .limit(1);
 
   if (filesError) return json({ error: "file_lookup_failed" }, 500);
   const file = files?.[0];
   if (!file) return json({ error: "study_file_required" }, 400);
+  if (!String(file.storage_path ?? "").startsWith(`${study.company_id}/`)) {
+    return json({ error: "study_file_scope_invalid" }, 403);
+  }
 
   await adminClient
     .from("technical_lab_studies")
     .update({ ai_extraction_status: "pending", review_status: "draft" })
-    .eq("id", study_id);
+    .eq("id", studyId)
+    .eq("company_id", study.company_id);
 
   try {
     const { data: fileBytes, error: downloadError } = await adminClient.storage
@@ -247,7 +260,11 @@ Deno.serve(async (req) => {
     if (!outputText) throw new Error("empty_openai_output");
     const extracted = JSON.parse(outputText);
 
-    await adminClient.from("technical_lab_study_values").delete().eq("study_id", study_id);
+    await adminClient
+      .from("technical_lab_study_values")
+      .delete()
+      .eq("study_id", studyId)
+      .eq("company_id", study.company_id);
 
     const studyPatch: Record<string, unknown> = {
       study_type: normalizeStudyType(extracted.study_type),
@@ -270,13 +287,14 @@ Deno.serve(async (req) => {
     await adminClient
       .from("technical_lab_studies")
       .update(studyPatch)
-      .eq("id", study_id);
+      .eq("id", studyId)
+      .eq("company_id", study.company_id);
 
     const rows = (extracted.parameters ?? [])
       .filter((parameter: any) => String(parameter?.parameter_label ?? "").trim())
       .map((parameter: any, index: number) => ({
         company_id: study.company_id,
-        study_id,
+        study_id: studyId,
         parameter_group: normalizeGroup(parameter.parameter_group),
         parameter_key: nullableText(parameter.parameter_key),
         parameter_label: String(parameter.parameter_label).trim(),
@@ -304,7 +322,8 @@ Deno.serve(async (req) => {
     await adminClient
       .from("technical_lab_studies")
       .update({ ai_extraction_status: "failed" })
-      .eq("id", study_id);
+      .eq("id", studyId)
+      .eq("company_id", study.company_id);
 
     return json({ error: caught?.message ?? "lab_extraction_failed" }, 500);
   }

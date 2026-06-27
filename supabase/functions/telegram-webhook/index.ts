@@ -1237,6 +1237,24 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (activeConnection) {
+    const { data: activeMembership } = await adminClient
+      .from("company_members")
+      .select("id")
+      .eq("company_id", activeConnection.company_id)
+      .eq("user_id", activeConnection.user_id)
+      .eq("role", "manager")
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!activeMembership) {
+      await adminClient
+        .from("notification_connections")
+        .update({ status: "disabled" })
+        .eq("id", activeConnection.id);
+      await sendTelegramMessage(botToken, chatId, "Tu acceso de Telegram quedo desactivado. Pide a un owner o admin que revise tu usuario en Mira.");
+      return response({ ok: true });
+    }
+
     await handleOperationalReply({ adminClient, botToken, chatId, connection: activeConnection, text });
     return response({ ok: true });
   }
@@ -1255,7 +1273,7 @@ Deno.serve(async (request) => {
   const tokenHash = await sha256(token);
   const { data: connection } = await adminClient
     .from("notification_connections")
-    .select("id")
+    .select("id, company_id, user_id")
     .eq("channel", "telegram")
     .eq("verification_code_hash", tokenHash)
     .eq("status", "pending")
@@ -1265,6 +1283,28 @@ Deno.serve(async (request) => {
 
   if (!connection) {
     await sendTelegramMessage(botToken, chatId, "Este enlace vencio o ya fue usado. Genera uno nuevo desde Mira.");
+    return response({ ok: true });
+  }
+
+  const { data: pendingMembership } = await adminClient
+    .from("company_members")
+    .select("id")
+    .eq("company_id", connection.company_id)
+    .eq("user_id", connection.user_id)
+    .eq("role", "manager")
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!pendingMembership) {
+    await adminClient
+      .from("notification_connections")
+      .update({
+        verification_code_hash: null,
+        verification_expires_at: null,
+        status: "disabled"
+      })
+      .eq("id", connection.id);
+    await sendTelegramMessage(botToken, chatId, "Este enlace ya no esta vigente. Pide a un owner o admin que revise tu acceso en Mira.");
     return response({ ok: true });
   }
 

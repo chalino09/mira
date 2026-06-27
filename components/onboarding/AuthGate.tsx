@@ -20,6 +20,7 @@ import type {
   NutritionSampleType
 } from "@/lib/nutrition-monitoring";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createPrivateCompanyFileUrls } from "@/lib/storage";
 import { useGreenhouseStore } from "@/lib/store";
 import { parseNumericInput } from "@/lib/utils";
 import type {
@@ -960,6 +961,22 @@ export function AuthGate() {
       notes: record.notes ?? ""
     }));
 
+    const pestPhotoPaths = (pestRows ?? [])
+      .map((record: any) => String(record.photo_storage_path ?? "").trim())
+      .filter(Boolean);
+    let pestPhotoUrls = new Map<string, string>();
+    if (pestPhotoPaths.length) {
+      try {
+        pestPhotoUrls = await createPrivateCompanyFileUrls({
+          bucket: "pest-photos",
+          paths: pestPhotoPaths,
+          supabase
+        });
+      } catch {
+        pestPhotoUrls = new Map<string, string>();
+      }
+    }
+
     const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
       id: record.id,
       greenhouseId: record.greenhouse_id,
@@ -969,7 +986,10 @@ export function AuthGate() {
       detectedAt: record.detected_at,
       action: record.action_taken ?? "",
       followUp: record.follow_up ?? "",
-      photoUrl: record.photo_url ?? undefined
+      photoStoragePath: record.photo_storage_path ?? undefined,
+      photoUrl: record.photo_storage_path
+        ? pestPhotoUrls.get(record.photo_storage_path) ?? undefined
+        : record.photo_url ?? undefined
     }));
 
     const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({

@@ -30,6 +30,13 @@ function response(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
+function nullableUuid(value: unknown) {
+  const text = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
+    ? text
+    : null;
+}
+
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -202,13 +209,16 @@ async function sendTelegramMessage(token: string, chatId: string, text: string) 
   }
 }
 
-async function updateOutbox(adminClient: any, rows: any[], patch: Record<string, unknown>) {
+async function updateOutbox(adminClient: any, rows: any[], patch: Record<string, unknown>, companyId?: string) {
   if (!rows.length) return;
   const attempts = Math.max(...rows.map((row) => row.attempts ?? 0)) + 1;
-  await adminClient
+  let query = adminClient
     .from("notification_outbox")
     .update({ ...patch, attempts })
     .in("id", rows.map((row) => row.id));
+
+  if (companyId) query = query.eq("company_id", companyId);
+  await query;
 }
 
 Deno.serve(async (request) => {
@@ -235,7 +245,7 @@ Deno.serve(async (request) => {
   if (authError || !authData.user) return response({ error: "not_authenticated" }, 401);
 
   const body = await request.json().catch(() => ({}));
-  const weeklyPlanId = String(body.weeklyPlanId ?? "");
+  const weeklyPlanId = nullableUuid(body.weeklyPlanId);
   if (!weeklyPlanId) return response({ error: "plan_not_found" }, 400);
 
   const { data: plan } = await adminClient
@@ -278,12 +288,14 @@ Deno.serve(async (request) => {
   await adminClient
     .from("notification_outbox")
     .update({ status: "processing", last_error: null })
+    .eq("company_id", plan.company_id)
+    .eq("weekly_plan_id", weeklyPlanId)
     .in("id", outboxRows.map((row: any) => row.id));
 
   const taskIds = Array.from(new Set(outboxRows.map((row: any) => row.task_id).filter(Boolean)));
   const userIds = Array.from(new Set(outboxRows.map((row: any) => row.user_id).filter(Boolean)));
 
-  const [tasksResult, connectionsResult] = await Promise.all([
+  const [tasksResult, connectionsResult, membershipsResult] = await Promise.all([
     taskIds.length
       ? adminClient
           .from("tasks")
@@ -299,15 +311,25 @@ Deno.serve(async (request) => {
           .eq("channel", "telegram")
           .eq("status", "active")
           .in("user_id", userIds)
+      : Promise.resolve({ data: [], error: null }),
+    userIds.length
+      ? adminClient
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", plan.company_id)
+          .eq("role", "manager")
+          .eq("status", "active")
+          .in("user_id", userIds)
       : Promise.resolve({ data: [], error: null })
   ]);
 
-  if (tasksResult.error || connectionsResult.error) {
-    await updateOutbox(adminClient, outboxRows, { status: "failed", last_error: "telegram_dispatch_failed" });
+  if (tasksResult.error || connectionsResult.error || membershipsResult.error) {
+    await updateOutbox(adminClient, outboxRows, { status: "failed", last_error: "telegram_dispatch_failed" }, plan.company_id);
     return response({ error: "telegram_dispatch_failed" }, 500);
   }
 
   const tasks = tasksResult.data ?? [];
+  const activeManagerUserIds = new Set((membershipsResult.data ?? []).map((member: any) => member.user_id));
   const greenhouseIds = Array.from(new Set(tasks.map((task: any) => task.greenhouse_id).filter(Boolean)));
   const [greenhousesResult, materialsResult] = await Promise.all([
     greenhouseIds.length
@@ -324,12 +346,16 @@ Deno.serve(async (request) => {
   ]);
 
   if (greenhousesResult.error || materialsResult.error) {
-    await updateOutbox(adminClient, outboxRows, { status: "failed", last_error: "telegram_dispatch_failed" });
+    await updateOutbox(adminClient, outboxRows, { status: "failed", last_error: "telegram_dispatch_failed" }, plan.company_id);
     return response({ error: "telegram_dispatch_failed" }, 500);
   }
 
   const taskById = new Map(tasks.map((task: any) => [task.id, task]));
-  const connectionByUserId = new Map((connectionsResult.data ?? []).map((connection: any) => [connection.user_id, connection]));
+  const connectionByUserId = new Map(
+    (connectionsResult.data ?? [])
+      .filter((connection: any) => activeManagerUserIds.has(connection.user_id))
+      .map((connection: any) => [connection.user_id, connection])
+  );
   const greenhouseById = new Map((greenhousesResult.data ?? []).map((greenhouse: any) => [greenhouse.id, greenhouse.name]));
   const materialsByTaskId = new Map<string, any[]>();
 
@@ -351,10 +377,16 @@ Deno.serve(async (request) => {
   let pendingWithoutConnection = 0;
 
   for (const [userId, rows] of rowsByUser.entries()) {
+    if (!activeManagerUserIds.has(userId)) {
+      failed += 1;
+      await updateOutbox(adminClient, rows, { status: "failed", last_error: "telegram_user_not_active" }, plan.company_id);
+      continue;
+    }
+
     const connection = connectionByUserId.get(userId);
     if (!connection?.external_chat_id) {
       pendingWithoutConnection += 1;
-      await updateOutbox(adminClient, rows, { status: "pending", last_error: "telegram_not_connected" });
+      await updateOutbox(adminClient, rows, { status: "pending", last_error: "telegram_not_connected" }, plan.company_id);
       continue;
     }
 
@@ -362,7 +394,7 @@ Deno.serve(async (request) => {
     const userTasks = userTaskIds.map((taskId) => taskById.get(taskId)).filter(Boolean);
     if (!userTasks.length) {
       failed += 1;
-      await updateOutbox(adminClient, rows, { status: "failed", last_error: "tasks_not_found" });
+      await updateOutbox(adminClient, rows, { status: "failed", last_error: "tasks_not_found" }, plan.company_id);
       continue;
     }
 
@@ -389,13 +421,13 @@ Deno.serve(async (request) => {
         status: "sent",
         sent_at: new Date().toISOString(),
         last_error: null
-      });
+      }, plan.company_id);
     } catch (caught) {
       failed += 1;
       await updateOutbox(adminClient, rows, {
         status: "failed",
         last_error: caught instanceof Error ? caught.message.slice(0, 500) : "telegram_send_failed"
-      });
+      }, plan.company_id);
     }
   }
 

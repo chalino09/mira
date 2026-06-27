@@ -179,6 +179,7 @@ export type PestAlert = {
   detectedAt: string;
   action: string;
   followUp: string;
+  photoStoragePath?: string;
   photoUrl?: string;
 };
 

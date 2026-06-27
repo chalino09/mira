@@ -38,6 +38,25 @@ function nullableUuid(value: unknown) {
     : null;
 }
 
+function sanitizeInsightsForContext(insights: any[], context: any) {
+  const allowedGreenhouseIds = new Set(Object.keys(context.greenhouseById ?? {}));
+  const allowedSourceIds = new Set([
+    ...(context.tasks ?? []).map((item: any) => item.id),
+    ...(context.weather ?? []).map((item: any) => item.id),
+    ...(context.pests ?? []).map((item: any) => item.id)
+  ].filter(Boolean));
+
+  return insights.map((insight) => ({
+    ...insight,
+    greenhouse_id: insight.greenhouse_id && allowedGreenhouseIds.has(insight.greenhouse_id)
+      ? insight.greenhouse_id
+      : null,
+    source_id: insight.source_id && allowedSourceIds.has(insight.source_id)
+      ? insight.source_id
+      : null
+  })).filter((insight) => insight.title && insight.detail);
+}
+
 function insightSchema() {
   return {
     type: "object",
@@ -295,9 +314,11 @@ Deno.serve(async (request) => {
   if (authError || !authData.user) return response({ error: "not_authenticated" }, 401);
 
   const body = await request.json().catch(() => ({}));
-  const companyId = String(body.company_id ?? body.companyId ?? "");
-  const greenhouseId = String(body.greenhouse_id ?? body.greenhouseId ?? "");
+  const companyId = nullableUuid(body.company_id ?? body.companyId);
+  const rawGreenhouseId = String(body.greenhouse_id ?? body.greenhouseId ?? "").trim();
+  const greenhouseId = rawGreenhouseId ? nullableUuid(rawGreenhouseId) : null;
   if (!companyId) return response({ error: "company_required" }, 400);
+  if (rawGreenhouseId && !greenhouseId) return response({ error: "invalid_greenhouse" }, 400);
 
   const { data: membership } = await adminClient
     .from("company_members")
@@ -357,6 +378,9 @@ Deno.serve(async (request) => {
 
   if (tasksResult.error) return response({ error: tasksResult.error.message }, 500);
   if (greenhousesResult.error) return response({ error: greenhousesResult.error.message }, 500);
+  if (greenhouseId && !(greenhousesResult.data ?? []).some((greenhouse: any) => greenhouse.id === greenhouseId)) {
+    return response({ error: "greenhouse_not_found" }, 404);
+  }
 
   const context = {
     today,
@@ -383,7 +407,10 @@ Deno.serve(async (request) => {
     insights = fallback;
   }
 
-  const { data: run } = await adminClient
+  const sanitizedInsights = sanitizeInsightsForContext(insights, context);
+  insights = sanitizedInsights.length || !fallback.length ? sanitizedInsights : fallback;
+
+  const { data: run, error: runError } = await adminClient
     .from("copilot_runs")
     .insert({
       company_id: companyId,
@@ -403,10 +430,11 @@ Deno.serve(async (request) => {
     .select("id")
     .maybeSingle();
 
+  if (runError) return response({ error: "copilot_run_insert_failed" }, 500);
   runId = run?.id ?? null;
 
   if (insights.length) {
-    await adminClient.from("copilot_insights").insert(
+    const { error: insightsError } = await adminClient.from("copilot_insights").insert(
       insights.map((insight: any) => ({
         company_id: companyId,
         greenhouse_id: insight.greenhouse_id,
@@ -420,6 +448,7 @@ Deno.serve(async (request) => {
         evidence: insight.evidence
       }))
     );
+    if (insightsError) return response({ error: "copilot_insights_insert_failed" }, 500);
   }
 
   return response({ ok: true, source, runId, insights });

@@ -11,7 +11,7 @@ import { INITIAL_CROP_ID, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { uploadCompanyAsset } from "@/lib/storage";
+import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { cn, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
@@ -621,16 +621,22 @@ export function RecordModal() {
     save(async () => {
       const photo = form.get("photo");
       const supabase = getSupabaseBrowserClient()!;
-      const photoUrl =
-        photo instanceof File && photo.size > 0
-          ? await uploadCompanyAsset({
-              bucket: "pest-photos",
-              companyId: organization.id,
-              file: photo,
-              supabase,
-              type: "pest"
-            })
-          : undefined;
+      let photoStoragePath: string | undefined;
+      let photoUrl: string | undefined;
+      if (photo instanceof File && photo.size > 0) {
+        photoStoragePath = await uploadPrivateCompanyFile({
+          bucket: "pest-photos",
+          companyId: organization.id,
+          file: photo,
+          supabase,
+          type: "pest"
+        });
+        photoUrl = await createPrivateCompanyFileUrl({
+          bucket: "pest-photos",
+          path: photoStoragePath,
+          supabase
+        });
+      }
       const record = {
         greenhouseId: String(form.get("greenhouseId")),
         problem: String(form.get("problem")),
@@ -639,6 +645,7 @@ export function RecordModal() {
         detectedAt: String(form.get("detectedAt")),
         action: String(form.get("action")),
         followUp: pestFollowUpText(form),
+        photoStoragePath,
         photoUrl
       };
       const { error: insertError } = await supabase.from("pest_alerts").insert({
@@ -650,7 +657,8 @@ export function RecordModal() {
         detected_at: record.detectedAt,
         action_taken: record.action,
         follow_up: record.followUp,
-        photo_url: record.photoUrl ?? null,
+        photo_storage_path: record.photoStoragePath ?? null,
+        photo_url: null,
         responsible_user_id: currentUser.id,
         created_by: currentUser.id
       });

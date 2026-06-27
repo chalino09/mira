@@ -45,6 +45,10 @@ supabase/22_cost_categories.sql
 supabase/23_multi_crop_foundation.sql
 supabase/24_weather_snapshots.sql
 supabase/25_mira_copilot.sql
+supabase/26_private_pest_photos.sql
+supabase/27_tenant_integrity_constraints.sql
+supabase/28_rls_hardening.sql
+supabase/30_function_grant_hardening.sql
 ```
 
 4. Levanta la app:
@@ -68,6 +72,12 @@ En el proveedor de deploy configura estas variables:
 ```text
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+Antes de probar con datos reales, sigue el runbook de pre-produccion en `docs/pre-production-runbook.md` y corre el diagnostico de solo lectura:
+
+```text
+supabase/29_pre_production_checks.sql
 ```
 
 Para activar Mira Copilot configura el secreto de OpenAI y despliega la función:

@@ -14,7 +14,7 @@ export async function uploadCompanyAsset({
   supabase,
   type
 }: {
-  bucket: "company-assets" | "pest-photos";
+  bucket: "company-assets";
   companyId: string;
   file: File;
   supabase: SupabaseClient<any>;
@@ -41,7 +41,7 @@ export async function uploadPrivateCompanyFile({
   supabase,
   type
 }: {
-  bucket: "technical-lab-files";
+  bucket: "pest-photos" | "technical-lab-files";
   companyId: string;
   file: File;
   supabase: SupabaseClient<any>;
@@ -58,4 +58,46 @@ export async function uploadPrivateCompanyFile({
   }
 
   return path;
+}
+
+export async function createPrivateCompanyFileUrl({
+  bucket,
+  expiresInSeconds = 600,
+  path,
+  supabase
+}: {
+  bucket: "pest-photos" | "technical-lab-files";
+  expiresInSeconds?: number;
+  path: string;
+  supabase: SupabaseClient<any>;
+}) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function createPrivateCompanyFileUrls({
+  bucket,
+  expiresInSeconds = 600,
+  paths,
+  supabase
+}: {
+  bucket: "pest-photos" | "technical-lab-files";
+  expiresInSeconds?: number;
+  paths: string[];
+  supabase: SupabaseClient<any>;
+}) {
+  const uniquePaths = Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
+  if (!uniquePaths.length) return new Map<string, string>();
+
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrls(uniquePaths, expiresInSeconds);
+  if (error) throw error;
+
+  const signedUrls = new Map<string, string>();
+  for (const entry of data ?? []) {
+    if (entry.path && entry.signedUrl) {
+      signedUrls.set(entry.path, entry.signedUrl);
+    }
+  }
+  return signedUrls;
 }
