@@ -271,6 +271,76 @@ rpc_checks as (
     end as status
   from rpc_actual
 ),
+member_access_function_expected(signature) as (
+  values
+    ('public.invite_company_member(uuid, text, public.member_role)'),
+    ('public.update_company_member_access(uuid, public.member_role, public.member_status)')
+),
+member_access_function_actual as (
+  select
+    signature,
+    to_regprocedure(signature) as function_oid
+  from member_access_function_expected
+),
+member_access_function_checks as (
+  select
+    'member role hardening'::text as check_group,
+    signature::text as check_name,
+    jsonb_build_object(
+      'contains_owner_required',
+      case
+        when function_oid is null then null
+        else pg_get_functiondef(function_oid) like '%owner_required%'
+      end
+    )::text as detail,
+    case
+      when function_oid is null then 'missing'
+      when pg_get_functiondef(function_oid) like '%owner_required%' then 'ok'
+      else 'review'
+    end as status
+  from member_access_function_actual
+),
+member_policy_expected(policyname, cmd) as (
+  values
+    ('company_members_insert_owner_admin', 'INSERT'),
+    ('company_members_update_owner_admin', 'UPDATE'),
+    ('company_members_delete_owner_admin', 'DELETE')
+),
+member_policy_checks as (
+  select
+    'member role hardening'::text as check_group,
+    ('public.company_members.' || expected.policyname)::text as check_name,
+    jsonb_build_object(
+      'cmd', policy.cmd,
+      'qual', policy.qual,
+      'with_check', policy.with_check
+    )::text as detail,
+    case
+      when policy.policyname is null then 'missing'
+      when policy.cmd <> expected.cmd then 'review'
+      when expected.cmd = 'INSERT'
+        and policy.with_check ilike '%current_user_role%'
+        and policy.with_check ilike '%owner%'
+        and policy.with_check not ilike '%admin%' then 'ok'
+      when expected.cmd = 'UPDATE'
+        and policy.qual ilike '%current_user_role%'
+        and policy.qual ilike '%owner%'
+        and policy.qual not ilike '%admin%'
+        and policy.with_check ilike '%current_user_role%'
+        and policy.with_check ilike '%owner%'
+        and policy.with_check not ilike '%admin%' then 'ok'
+      when expected.cmd = 'DELETE'
+        and policy.qual ilike '%current_user_role%'
+        and policy.qual ilike '%owner%'
+        and policy.qual not ilike '%admin%' then 'ok'
+      else 'review'
+    end as status
+  from member_policy_expected expected
+  left join pg_policies policy
+    on policy.schemaname = 'public'
+    and policy.tablename = 'company_members'
+    and policy.policyname = expected.policyname
+),
 legacy_pest_photo_checks as (
   select
     'data debt'::text as check_group,
@@ -324,6 +394,8 @@ all_checks as (
   union all select * from constraint_checks
   union all select * from policy_checks
   union all select * from rpc_checks
+  union all select * from member_access_function_checks
+  union all select * from member_policy_checks
   union all select * from legacy_pest_photo_checks
   union all select * from telegram_connection_checks
   union all select * from lab_file_path_checks

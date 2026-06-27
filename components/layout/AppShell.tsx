@@ -898,6 +898,8 @@ function SettingsSection() {
   const products = getUniqueProducts(applicationRecords, nutritionRecords);
   const totalSurface = greenhouseSurfaceTotal(greenhouses);
   const canManageUsers = currentUser.role === "owner" || currentUser.role === "admin";
+  const canManageRoles = currentUser.role === "owner";
+  const inviteRoleOptions: MemberRole[] = canManageRoles ? memberRoles : ["manager"];
   const activeMemberCount = members.filter((member) => member.status === "active").length;
   const activeOwnerCount = members.filter((member) => member.role === "owner" && member.status === "active").length;
 
@@ -1019,6 +1021,9 @@ function SettingsSection() {
       if (!canManageUsers) {
         throw new Error("Tu rol no permite administrar usuarios.");
       }
+      if (!canManageRoles && role !== "manager") {
+        throw new Error("Solo un owner puede invitar admins u owners.");
+      }
       if (!email) {
         throw new Error("Escribe el correo del usuario.");
       }
@@ -1057,6 +1062,9 @@ function SettingsSection() {
     try {
       if (!canManageUsers) {
         throw new Error("Tu rol no permite administrar usuarios.");
+      }
+      if (!canManageRoles && (member.role !== "manager" || nextRole !== "manager")) {
+        throw new Error("Solo un owner puede cambiar roles o modificar owners/admins.");
       }
 
       const supabase = getSupabaseBrowserClient();
@@ -1238,7 +1246,10 @@ function SettingsSection() {
                   <SettingRow label="Cargando" value="Consultando miembros" detail="Un momento." />
                 ) : members.length ? (
                   members.map((member) => {
-                    const disabled = !canManageUsers || savingMemberId === member.id;
+                    const isSavingThisMember = savingMemberId === member.id;
+                    const canUpdateMemberStatus = canManageRoles || member.role === "manager";
+                    const roleDisabled = !canManageRoles || isSavingThisMember;
+                    const statusDisabled = !canManageUsers || !canUpdateMemberStatus || isSavingThisMember;
                     const statusOptions: MemberStatus[] = member.userId ? ["active", "disabled"] : ["invited", "disabled"];
 
                     return (
@@ -1255,7 +1266,7 @@ function SettingsSection() {
                           </div>
                           <SelectInput
                             aria-label={`Rol de ${member.email}`}
-                            disabled={disabled}
+                            disabled={roleDisabled}
                             value={member.role}
                             onChange={(event) => updateMemberAccess(member, event.target.value as MemberRole, member.status)}
                           >
@@ -1267,7 +1278,7 @@ function SettingsSection() {
                           </SelectInput>
                           <SelectInput
                             aria-label={`Estado de ${member.email}`}
-                            disabled={disabled}
+                            disabled={statusDisabled}
                             value={member.status}
                             onChange={(event) => updateMemberAccess(member, member.role, event.target.value as MemberStatus)}
                           >
@@ -1305,7 +1316,7 @@ function SettingsSection() {
                 </Field>
                 <Field label="Rol">
                   <SelectInput disabled={!canManageUsers || isInvitingMember} name="memberRole" defaultValue="manager">
-                    {memberRoles.map((role) => (
+                    {inviteRoleOptions.map((role) => (
                       <option key={role} value={role}>
                         {roleLabels[role]}
                       </option>

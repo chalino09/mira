@@ -824,7 +824,7 @@ export function AuthGate() {
 
         if (pausedMembership) {
           setAccessPausedMessage(
-            pausedMembership.status === "inactive"
+            pausedMembership.status === "disabled"
               ? "Tu acceso fue desactivado por un administrador. Pide a un owner o admin que reactive tu usuario para volver a operar."
               : "Tu invitación todavía no está activa. Pide a un owner o admin que revise tu membresía."
           );
