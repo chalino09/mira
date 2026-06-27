@@ -44,6 +44,7 @@ supabase/21_technical_lab_studies.sql
 supabase/22_cost_categories.sql
 supabase/23_multi_crop_foundation.sql
 supabase/24_weather_snapshots.sql
+supabase/25_mira_copilot.sql
 ```
 
 4. Levanta la app:
@@ -67,6 +68,14 @@ En el proveedor de deploy configura estas variables:
 ```text
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+Para activar Mira Copilot configura el secreto de OpenAI y despliega la función:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-proj_...
+supabase secrets set OPENAI_COPILOT_MODEL=gpt-5.5
+supabase functions deploy mira-copilot
 ```
 
 No subas archivos `.env` reales. Usa `.env.example` solo como plantilla.

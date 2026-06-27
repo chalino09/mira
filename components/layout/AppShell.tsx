@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ActivitySquare,
   AlertTriangle,
@@ -27,6 +27,7 @@ import {
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { CopilotPulseBand, MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
@@ -46,6 +47,7 @@ import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appErrorMessage } from "@/lib/errors";
+import { buildCopilotPulse, localDateKey, managerMessageForInsight, type CopilotInsight } from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
@@ -209,7 +211,19 @@ function InlineNotice({ children, tone = "neutral" }: { children: string; tone?:
   );
 }
 
-function OverviewSection() {
+type CopilotSurfaceProps = {
+  copilotInsights: CopilotInsight[];
+  onCreateCopilotTask: (insight: CopilotInsight) => void;
+  onOpenCopilot: () => void;
+  onPrepareCopilotMessage: (insight: CopilotInsight) => void;
+};
+
+function OverviewSection({
+  copilotInsights,
+  onCreateCopilotTask,
+  onOpenCopilot,
+  onPrepareCopilotMessage
+}: CopilotSurfaceProps) {
   const {
     greenhouse,
     greenhouseTasks,
@@ -254,8 +268,13 @@ function OverviewSection() {
   return (
     <>
       {taskNotice ? <InlineNotice tone={taskNotice.tone}>{taskNotice.message}</InlineNotice> : null}
+      <CopilotPulseBand
+        insights={copilotInsights}
+        onCreateTask={onCreateCopilotTask}
+        onOpenCopilot={onOpenCopilot}
+        onPrepareMessage={onPrepareCopilotMessage}
+      />
       <OverviewHero
-        activities={greenhouseActivities}
         alerts={greenhousePests}
         currentUser={currentUser}
         greenhouse={greenhouse}
@@ -1465,16 +1484,16 @@ function SettingsSection() {
   );
 }
 
-function ActiveSection() {
+function ActiveSection(props: CopilotSurfaceProps) {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const canOpenSection = navigationItemsForRole(currentUser.role).some((item) => item.id === activeSection);
 
-  if (!canOpenSection) return <OverviewSection />;
+  if (!canOpenSection) return <OverviewSection {...props} />;
 
-  if (activeSection === "overview") return <OverviewSection />;
+  if (activeSection === "overview") return <OverviewSection {...props} />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
-  if (activeSection === "calendar") return <OperationsSection />;
+  if (activeSection === "calendar") return <OperationsSection copilotInsights={props.copilotInsights} onCreateCopilotTask={props.onCreateCopilotTask} onPrepareCopilotMessage={props.onPrepareCopilotMessage} />;
   if (activeSection === "monitoring") return <MonitoringSection />;
   if (activeSection === "records") return <TechnicalRecordsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
@@ -1490,21 +1509,152 @@ function ActiveSection() {
 export function AppShell() {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const organization = useGreenhouseStore((state) => state.organization);
+  const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const tasks = useGreenhouseStore((state) => state.tasks);
+  const pestAlerts = useGreenhouseStore((state) => state.pestAlerts);
+  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
   const [telegramOpen, setTelegramOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotRunning, setCopilotRunning] = useState(false);
+  const [copilotNotice, setCopilotNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
+  const [remoteCopilotInsights, setRemoteCopilotInsights] = useState<CopilotInsight[]>([]);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
+  const localCopilotInsights = useMemo(
+    () =>
+      buildCopilotPulse({
+        activeGreenhouseId: selectedGreenhouseId || null,
+        alerts: pestAlerts,
+        greenhouses,
+        tasks
+      }),
+    [greenhouses, pestAlerts, selectedGreenhouseId, tasks]
+  );
+  const copilotInsights = remoteCopilotInsights.length ? remoteCopilotInsights : localCopilotInsights;
+
+  const mapRemoteInsights = (rows: any[]): CopilotInsight[] =>
+    rows.map((row, index) => ({
+      id: row.id ?? row.source_id ?? `remote-${index}`,
+      sourceType: row.source_type ?? "operation",
+      sourceId: row.source_id ?? null,
+      greenhouseId: row.greenhouse_id ?? null,
+      title: row.title ?? "Atencion operativa",
+      detail: row.detail ?? "Revisar evidencia antes de actuar.",
+      severity: row.severity ?? "medium",
+      recommendedAction: row.recommended_action ?? "Revisar antes de actuar.",
+      evidence: Array.isArray(row.evidence) ? row.evidence : []
+    }));
+
+  const runCopilot = async () => {
+    if (!organization.id) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCopilotRunning(true);
+    setCopilotNotice(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("mira-copilot", {
+        body: {
+          company_id: organization.id,
+          greenhouse_id: selectedGreenhouseId || null
+        }
+      });
+      if (error) throw error;
+      const insights = mapRemoteInsights(data?.insights ?? []);
+      if (insights.length) setRemoteCopilotInsights(insights);
+      setCopilotNotice({ tone: "green", message: "Mira Copilot actualizo el pulso operativo." });
+    } catch (caught) {
+      setRemoteCopilotInsights([]);
+      setCopilotNotice({
+        tone: "red",
+        message: appErrorMessage(caught, "Copilot usara el pulso local hasta desplegar la funcion.")
+      });
+    } finally {
+      setCopilotRunning(false);
+    }
+  };
+
+  const prepareCopilotMessage = async (insight: CopilotInsight) => {
+    const supabase = getSupabaseBrowserClient();
+    const message = managerMessageForInsight(insight);
+    setCopilotNotice(null);
+
+    if (!supabase || !organization.id) {
+      setCopilotNotice({ tone: "green", message: "Mensaje preparado localmente para revision." });
+      return;
+    }
+
+    const { error } = await supabase.from("copilot_manager_messages").insert({
+      company_id: organization.id,
+      greenhouse_id: (insight.greenhouseId ?? selectedGreenhouseId) || null,
+      task_id: insight.sourceType === "operation" ? insight.sourceId ?? null : null,
+      message_body: message,
+      status: "draft",
+      created_by: currentUser.id || null
+    });
+
+    if (error) {
+      setCopilotNotice({
+        tone: "green",
+        message: "Mensaje preparado. Ejecuta 25_mira_copilot.sql para guardar borradores en Supabase."
+      });
+      return;
+    }
+
+    setCopilotNotice({ tone: "green", message: "Mensaje a manager guardado como borrador." });
+  };
+
+  const createCopilotTaskSuggestion = async (insight: CopilotInsight) => {
+    const supabase = getSupabaseBrowserClient();
+    setCopilotNotice(null);
+
+    if (!supabase || !organization.id || !(insight.greenhouseId || selectedGreenhouseId)) {
+      setCopilotNotice({ tone: "green", message: "Tarea sugerida preparada para revision." });
+      return;
+    }
+
+    const { error } = await supabase.from("copilot_task_suggestions").insert({
+      company_id: organization.id,
+      greenhouse_id: insight.greenhouseId ?? selectedGreenhouseId,
+      suggested_type: "otro",
+      suggested_title: `Seguimiento: ${insight.title}`,
+      suggested_date: localDateKey(),
+      suggested_priority: insight.severity === "critical" || insight.severity === "high" ? "high" : "normal",
+      suggested_instructions: `${insight.detail}\n\nAccion sugerida por Mira Copilot: ${insight.recommendedAction}`,
+      status: "draft",
+      created_by: currentUser.id || null
+    });
+
+    if (error) {
+      setCopilotNotice({
+        tone: "green",
+        message: "Tarea sugerida preparada. Ejecuta 25_mira_copilot.sql para guardar borradores en Supabase."
+      });
+      return;
+    }
+
+    setCopilotNotice({ tone: "green", message: "Tarea sugerida guardada como borrador." });
+  };
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
       <div className="flex min-h-screen">
         <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
         <div className="min-w-0 flex-1 pl-14 lg:pl-0">
-          <Topbar />
+          <Topbar copilotInsightCount={copilotInsights.length} onOpenCopilot={() => setCopilotOpen(true)} />
           <main className="mx-auto w-full max-w-[1500px] px-4 py-5 lg:px-6">
             <div className="mb-4 lg:hidden">
               <p className="text-xs font-medium uppercase text-app-muted">{activeLabel}</p>
               <MiraBrand className="mt-1" markClassName="h-5 w-8" wordClassName="text-lg tracking-[0.34em]" />
             </div>
-            <ActiveSection />
+            {copilotNotice ? <InlineNotice tone={copilotNotice.tone}>{copilotNotice.message}</InlineNotice> : null}
+            <ActiveSection
+              copilotInsights={copilotInsights}
+              onCreateCopilotTask={createCopilotTaskSuggestion}
+              onOpenCopilot={() => setCopilotOpen(true)}
+              onPrepareCopilotMessage={prepareCopilotMessage}
+            />
           </main>
         </div>
       </div>
@@ -1513,6 +1663,19 @@ export function AppShell() {
       {currentUser.role === "manager" ? (
         <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
       ) : null}
+      <MiraCopilotPanel
+        insights={copilotInsights}
+        isRunning={copilotRunning}
+        onClose={() => setCopilotOpen(false)}
+        onCreateTask={createCopilotTaskSuggestion}
+        onOpenOperations={() => {
+          setActiveSection("calendar");
+          setCopilotOpen(false);
+        }}
+        onPrepareMessage={prepareCopilotMessage}
+        onRun={runCopilot}
+        open={copilotOpen}
+      />
     </div>
   );
 }

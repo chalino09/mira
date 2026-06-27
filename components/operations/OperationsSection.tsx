@@ -16,6 +16,7 @@ import {
   Users
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +28,7 @@ import { appErrorMessage } from "@/lib/errors";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
+import type { CopilotInsight } from "@/lib/mira-copilot";
 import type { ApplicationRecord, CropCatalogItem, CropStage, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
 type PlanStatus = "draft" | "published" | "closed";
@@ -1137,7 +1139,15 @@ function CompleteHarvestModal({
   );
 }
 
-export function OperationsSection() {
+export function OperationsSection({
+  copilotInsights = [],
+  onCreateCopilotTask,
+  onPrepareCopilotMessage
+}: {
+  copilotInsights?: CopilotInsight[];
+  onCreateCopilotTask?: (insight: CopilotInsight) => void;
+  onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
+}) {
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const crops = useGreenhouseStore((state) => state.crops);
@@ -1168,6 +1178,7 @@ export function OperationsSection() {
   const [editingTask, setEditingTask] = useState<OperationTaskRow | null>(null);
   const [blockedTask, setBlockedTask] = useState<OperationTaskRow | null>(null);
   const [blockedReason, setBlockedReason] = useState("");
+  const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
 
   const canPlan = currentUser.role === "owner" || currentUser.role === "admin";
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -1720,6 +1731,15 @@ export function OperationsSection() {
                 </Button>
               )}
             </div>
+          ) : null}
+
+          {canPlan ? (
+            <CopilotInlineSuggestions
+              insights={copilotInsights.filter((insight) => !dismissedCopilotIds.includes(insight.id))}
+              onCreateTask={onCreateCopilotTask}
+              onDismiss={(insight) => setDismissedCopilotIds((current) => [...current, insight.id])}
+              onPrepareMessage={onPrepareCopilotMessage}
+            />
           ) : null}
 
           {loading ? (

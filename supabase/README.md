@@ -24,7 +24,10 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 20. `20_nutrition_monitoring_admin_scope.sql`
 21. `21_technical_lab_studies.sql`
 22. `22_cost_categories.sql`
-23. `03_seed_template.sql` solo si quieres datos demo manuales.
+23. `23_multi_crop_foundation.sql`
+24. `24_weather_snapshots.sql`
+25. `25_mira_copilot.sql`
+26. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -74,12 +77,26 @@ Para agregar Laboratorio dentro de Monitoreo con estudios técnicos, parámetros
 
 Para agregar categorías rápidas de costos como refrescos, renta y gasolina, ejecuta `22_cost_categories.sql`.
 
+Para habilitar la base multi-cultivo actualizada, ejecuta `23_multi_crop_foundation.sql`.
+
+Para guardar snapshots climáticos por área productiva, ejecuta `24_weather_snapshots.sql`.
+
+Para activar auditoría, insights y borradores de Mira Copilot, ejecuta `25_mira_copilot.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash
 supabase secrets set OPENAI_API_KEY=sk-proj_...
 supabase secrets set OPENAI_LAB_MODEL=gpt-5.5
 supabase functions deploy lab-extract
+```
+
+Mira Copilot usa IA para generar el pulso operativo con tareas vencidas, bloqueos, clima y alertas. Si no hay llave de OpenAI configurada, la función usa un análisis determinístico con los datos existentes:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-proj_...
+supabase secrets set OPENAI_COPILOT_MODEL=gpt-5.5
+supabase functions deploy mira-copilot
 ```
 
 ## Conectar Telegram
