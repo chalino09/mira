@@ -193,7 +193,7 @@ export function MiraCopilotPanel({
                   type="button"
                   variant="secondary"
                 >
-                  Preparar seguimiento
+                  Crear seguimiento
                 </Button>
               </div>
             ) : null}

@@ -46,6 +46,7 @@ import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { startOfIsoWeek } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import { buildCopilotPulse, localDateKey, managerMessageForInsight, type CopilotInsight } from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
@@ -216,7 +217,15 @@ type CopilotSurfaceProps = {
   onCreateCopilotTask: (insight: CopilotInsight) => void;
   onOpenCopilot: () => void;
   onPrepareCopilotMessage: (insight: CopilotInsight) => void;
+  operationRefreshKey?: number;
 };
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function OverviewSection({
   copilotInsights,
@@ -1504,7 +1513,16 @@ function ActiveSection(props: CopilotSurfaceProps) {
 
   if (activeSection === "overview") return <OverviewSection {...props} />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
-  if (activeSection === "calendar") return <OperationsSection copilotInsights={props.copilotInsights} onCreateCopilotTask={props.onCreateCopilotTask} onPrepareCopilotMessage={props.onPrepareCopilotMessage} />;
+  if (activeSection === "calendar") {
+    return (
+      <OperationsSection
+        copilotInsights={props.copilotInsights}
+        operationRefreshKey={props.operationRefreshKey}
+        onCreateCopilotTask={props.onCreateCopilotTask}
+        onPrepareCopilotMessage={props.onPrepareCopilotMessage}
+      />
+    );
+  }
   if (activeSection === "monitoring") return <MonitoringSection />;
   if (activeSection === "records") return <TechnicalRecordsSection />;
   if (activeSection === "irrigation") return <IrrigationSection />;
@@ -1531,6 +1549,7 @@ export function AppShell() {
   const [copilotRunning, setCopilotRunning] = useState(false);
   const [copilotNotice, setCopilotNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [remoteCopilotInsights, setRemoteCopilotInsights] = useState<CopilotInsight[]>([]);
+  const [operationRefreshKey, setOperationRefreshKey] = useState(0);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
   const localCopilotInsights = useMemo(
     () =>
@@ -1621,36 +1640,83 @@ export function AppShell() {
     setCopilotNotice(null);
 
     if (!supabase || !organization.id) {
-      setCopilotNotice({ tone: "red", message: "No se pudo conectar con Supabase para guardar la tarea sugerida." });
+      setCopilotNotice({ tone: "red", message: "No se pudo conectar con Supabase para crear el seguimiento." });
       return;
     }
 
-    if (!(insight.greenhouseId || selectedGreenhouseId)) {
-      setCopilotNotice({ tone: "red", message: "Selecciona un invernadero para guardar la tarea sugerida." });
+    const targetGreenhouseId = insight.greenhouseId || selectedGreenhouseId;
+    const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === targetGreenhouseId);
+
+    if (!targetGreenhouseId || !targetGreenhouse) {
+      setCopilotNotice({ tone: "red", message: "Selecciona un invernadero para crear el seguimiento." });
       return;
     }
 
-    const { error } = await supabase.from("copilot_task_suggestions").insert({
-      company_id: organization.id,
-      greenhouse_id: insight.greenhouseId ?? selectedGreenhouseId,
-      suggested_type: "otro",
-      suggested_title: `Seguimiento: ${insight.title}`,
-      suggested_date: localDateKey(),
-      suggested_priority: insight.severity === "critical" || insight.severity === "high" ? "high" : "normal",
-      suggested_instructions: `${insight.detail}\n\nAccion sugerida por Mira Copilot: ${insight.recommendedAction}`,
-      status: "draft",
-      created_by: currentUser.id || null
+    if (!targetGreenhouse.managerUserId || targetGreenhouse.manager === "Sin encargado") {
+      setCopilotNotice({ tone: "red", message: "Asigna un encargado activo al invernadero antes de crear el seguimiento." });
+      return;
+    }
+
+    const scheduledDate = localDateKey();
+    const weekStart = dateKey(startOfIsoWeek());
+    const title = `Seguimiento: ${insight.title}`;
+    const instructions = `${insight.detail}\n\nAccion sugerida por Mira Copilot: ${insight.recommendedAction}`;
+
+    const existingResponse = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("company_id", organization.id)
+      .eq("greenhouse_id", targetGreenhouseId)
+      .eq("title", title)
+      .eq("scheduled_date", scheduledDate)
+      .neq("status", "cancelada")
+      .limit(1);
+
+    if (existingResponse.error) {
+      setCopilotNotice({
+        tone: "red",
+        message: appErrorMessage(existingResponse.error, "No se pudo revisar si el seguimiento ya existe.")
+      });
+      return;
+    }
+
+    if (existingResponse.data?.length) {
+      setActiveSection("calendar");
+      setCopilotOpen(false);
+      setOperationRefreshKey((current) => current + 1);
+      setCopilotNotice({ tone: "green", message: "Ese seguimiento ya existe en Operación." });
+      return;
+    }
+
+    const { error } = await supabase.rpc("create_operational_task_with_plan", {
+      target_company_id: organization.id,
+      target_week_start: weekStart,
+      target_greenhouse_id: targetGreenhouseId,
+      target_type: "otro",
+      target_title: title,
+      target_scheduled_date: scheduledDate,
+      target_scheduled_time: null,
+      target_priority: insight.severity === "critical" || insight.severity === "high" ? "high" : "normal",
+      target_instructions: instructions,
+      target_execution_mode: "manager",
+      target_crew_size: null,
+      target_assignee_ids: [targetGreenhouse.managerUserId],
+      target_materials: [],
+      target_technical_plan: {}
     });
 
     if (error) {
       setCopilotNotice({
         tone: "red",
-        message: appErrorMessage(error, "No se pudo guardar la tarea sugerida.")
+        message: appErrorMessage(error, "No se pudo crear el seguimiento en Operación.")
       });
       return;
     }
 
-    setCopilotNotice({ tone: "green", message: "Tarea sugerida guardada como borrador." });
+    setActiveSection("calendar");
+    setCopilotOpen(false);
+    setOperationRefreshKey((current) => current + 1);
+    setCopilotNotice({ tone: "green", message: "Seguimiento creado en Operación." });
   };
 
   return (
@@ -1667,6 +1733,7 @@ export function AppShell() {
             {copilotNotice ? <InlineNotice tone={copilotNotice.tone}>{copilotNotice.message}</InlineNotice> : null}
             <ActiveSection
               copilotInsights={copilotInsights}
+              operationRefreshKey={operationRefreshKey}
               onCreateCopilotTask={createCopilotTaskSuggestion}
               onOpenCopilot={() => setCopilotOpen(true)}
               onPrepareCopilotMessage={prepareCopilotMessage}

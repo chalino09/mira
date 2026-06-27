@@ -1157,10 +1157,12 @@ function CompleteHarvestModal({
 
 export function OperationsSection({
   copilotInsights = [],
+  operationRefreshKey = 0,
   onCreateCopilotTask,
   onPrepareCopilotMessage
 }: {
   copilotInsights?: CopilotInsight[];
+  operationRefreshKey?: number;
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
 }) {
@@ -1285,7 +1287,7 @@ export function OperationsSection({
 
   useEffect(() => {
     loadOperations();
-  }, [loadOperations]);
+  }, [loadOperations, operationRefreshKey]);
 
   const assignmentsForTask = (taskId: string) => assignments.filter((item) => item.task_id === taskId);
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
