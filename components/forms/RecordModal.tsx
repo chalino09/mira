@@ -300,24 +300,41 @@ export function RecordModal() {
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
 
   useEffect(() => {
+    setError("");
     if (modal === "cost") setCostRows([emptyCost()]);
     if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
     if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
   }, [modal]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadManagers = async () => {
-      if (!canAssignGreenhouseManager || !organization.id || (modal !== "greenhouse" && modal !== "editGreenhouse")) return;
+      if (!canAssignGreenhouseManager || !organization.id || (modal !== "greenhouse" && modal !== "editGreenhouse")) {
+        setManagerOptions([]);
+        return;
+      }
 
       const supabase = getSupabaseBrowserClient();
-      if (!supabase) return;
+      if (!supabase) {
+        setManagerOptions([]);
+        setError("No se pudo conectar con Supabase para cargar managers.");
+        return;
+      }
 
-      const { data: members } = await supabase
+      const { data: members, error: membersError } = await supabase
         .from("company_members")
         .select("user_id")
         .eq("company_id", organization.id)
         .eq("role", "manager")
         .eq("status", "active");
+      if (cancelled) return;
+      if (membersError) {
+        setManagerOptions([]);
+        setError(appErrorMessage(membersError, "No se pudieron cargar los managers activos."));
+        return;
+      }
+
       const managerIds = (members ?? [])
         .map((member: any) => member.user_id)
         .filter((id: string | null): id is string => Boolean(id));
@@ -327,10 +344,17 @@ export function RecordModal() {
         return;
       }
 
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id, full_name, email")
         .in("id", managerIds);
+      if (cancelled) return;
+      if (profilesError) {
+        setManagerOptions([]);
+        setError(appErrorMessage(profilesError, "No se pudieron cargar los perfiles de managers."));
+        return;
+      }
+
       const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
 
       setManagerOptions(managerIds.map((id) => {
@@ -341,9 +365,14 @@ export function RecordModal() {
           email: profile?.email ?? ""
         };
       }));
+      setError("");
     };
 
     loadManagers();
+
+    return () => {
+      cancelled = true;
+    };
   }, [canAssignGreenhouseManager, modal, organization.id]);
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);

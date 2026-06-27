@@ -1581,7 +1581,7 @@ export function AppShell() {
     setCopilotNotice(null);
 
     if (!supabase || !organization.id) {
-      setCopilotNotice({ tone: "green", message: "Mensaje preparado localmente para revision." });
+      setCopilotNotice({ tone: "red", message: "No se pudo conectar con Supabase para guardar el borrador." });
       return;
     }
 
@@ -1596,8 +1596,8 @@ export function AppShell() {
 
     if (error) {
       setCopilotNotice({
-        tone: "green",
-        message: "Mensaje preparado. Ejecuta 25_mira_copilot.sql para guardar borradores en Supabase."
+        tone: "red",
+        message: appErrorMessage(error, "No se pudo guardar el mensaje como borrador.")
       });
       return;
     }
@@ -1609,8 +1609,13 @@ export function AppShell() {
     const supabase = getSupabaseBrowserClient();
     setCopilotNotice(null);
 
-    if (!supabase || !organization.id || !(insight.greenhouseId || selectedGreenhouseId)) {
-      setCopilotNotice({ tone: "green", message: "Tarea sugerida preparada para revision." });
+    if (!supabase || !organization.id) {
+      setCopilotNotice({ tone: "red", message: "No se pudo conectar con Supabase para guardar la tarea sugerida." });
+      return;
+    }
+
+    if (!(insight.greenhouseId || selectedGreenhouseId)) {
+      setCopilotNotice({ tone: "red", message: "Selecciona un invernadero para guardar la tarea sugerida." });
       return;
     }
 
@@ -1628,8 +1633,8 @@ export function AppShell() {
 
     if (error) {
       setCopilotNotice({
-        tone: "green",
-        message: "Tarea sugerida preparada. Ejecuta 25_mira_copilot.sql para guardar borradores en Supabase."
+        tone: "red",
+        message: appErrorMessage(error, "No se pudo guardar la tarea sugerida.")
       });
       return;
     }
