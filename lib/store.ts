@@ -56,6 +56,7 @@ type AppState = {
   addApplication: (record: WithOptionalId<ApplicationRecord>) => void;
   addApplicationRecords: (records: WithOptionalId<ApplicationRecord>[]) => void;
   addPest: (record: WithOptionalId<PestAlert>) => void;
+  updatePest: (record: PestAlert) => void;
   addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
   addCost: (record: WithOptionalId<CostRecord>) => void;
   hydrateWorkspace: (data: {
@@ -239,6 +240,10 @@ export const useGreenhouseStore = create<AppState>((set) => ({
         ...state.activities
       ],
       modal: null
+    })),
+  updatePest: (record) =>
+    set((state) => ({
+      pestAlerts: state.pestAlerts.map((alert) => (alert.id === record.id ? record : alert))
     })),
   addHarvest: (record) =>
     set((state) => ({

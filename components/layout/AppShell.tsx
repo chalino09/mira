@@ -43,8 +43,9 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RiskBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { RecordModal } from "@/components/forms/RecordModal";
-import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
+import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { startOfIsoWeek } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
@@ -61,6 +62,7 @@ import type {
   IrrigationRecord,
   NutritionRecord,
   PestAlert,
+  RiskLevel,
   Task
 } from "@/types";
 
@@ -226,6 +228,12 @@ function dateKey(date: Date) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+const riskLevelToDb: Record<RiskLevel, string> = {
+  Baja: "baja",
+  Media: "media",
+  Alta: "alta"
+};
 
 function OverviewSection({
   copilotInsights,
@@ -481,7 +489,152 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
 }
 
 function PestsSection() {
-  const { greenhousePests, openModal } = useFilteredData();
+  const {
+    currentUser,
+    greenhousePests,
+    greenhouses,
+    openModal,
+    organization,
+    setActiveSection,
+    updatePest
+  } = useFilteredData();
+  const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
+  const [editingAlert, setEditingAlert] = useState<PestAlert | null>(null);
+  const [savingAlert, setSavingAlert] = useState(false);
+  const [creatingFollowUpId, setCreatingFollowUpId] = useState<string | null>(null);
+  const canCreateFollowUpTask = currentUser.role !== "manager";
+
+  const handleEditAlert = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingAlert) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setNotice({ tone: "red", message: "No se pudo conectar con Supabase para actualizar la alerta." });
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const updatedAlert: PestAlert = {
+      ...editingAlert,
+      problem: String(form.get("problem") ?? "").trim(),
+      severity: String(form.get("severity") ?? "Baja") as RiskLevel,
+      zone: String(form.get("zone") ?? "").trim(),
+      detectedAt: String(form.get("detectedAt") ?? "").trim(),
+      action: String(form.get("action") ?? "").trim(),
+      followUp: String(form.get("followUp") ?? "").trim()
+    };
+
+    setSavingAlert(true);
+    setNotice(null);
+    const { error } = await supabase
+      .from("pest_alerts")
+      .update({
+        problem: updatedAlert.problem,
+        severity: riskLevelToDb[updatedAlert.severity],
+        affected_zone: updatedAlert.zone,
+        detected_at: updatedAlert.detectedAt,
+        action_taken: updatedAlert.action,
+        follow_up: updatedAlert.followUp
+      })
+      .eq("id", editingAlert.id);
+
+    setSavingAlert(false);
+
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la alerta sanitaria.") });
+      return;
+    }
+
+    updatePest(updatedAlert);
+    setEditingAlert(null);
+    setNotice({ tone: "green", message: "Alerta sanitaria actualizada." });
+  };
+
+  const createFollowUpTask = async (alert: PestAlert) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !organization.id) {
+      setNotice({ tone: "red", message: "No se pudo conectar con Supabase para crear el seguimiento." });
+      return;
+    }
+
+    const greenhouse = greenhouses.find((item) => item.id === alert.greenhouseId);
+    if (!greenhouse) {
+      setNotice({ tone: "red", message: "Selecciona un invernadero valido para crear el seguimiento." });
+      return;
+    }
+
+    if (!greenhouse.managerUserId || greenhouse.manager === "Sin encargado") {
+      setNotice({ tone: "red", message: "Asigna un encargado activo al invernadero antes de crear el seguimiento." });
+      return;
+    }
+
+    const scheduledDate = localDateKey();
+    const weekStart = dateKey(startOfIsoWeek());
+    const title = `Seguimiento sanitario: ${alert.problem}`;
+    const instructions = [
+      `Alerta: ${alert.problem}`,
+      alert.zone ? `Zona: ${alert.zone}` : "",
+      `Incidencia: ${alert.severity}`,
+      alert.action ? `Accion tomada: ${alert.action}` : "",
+      alert.followUp ? `Seguimiento registrado: ${alert.followUp}` : "",
+      "Confirmar avance, evidencia y siguiente accion sanitaria."
+    ].filter(Boolean).join("\n");
+
+    setCreatingFollowUpId(alert.id);
+    setNotice(null);
+
+    const existingResponse = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("company_id", organization.id)
+      .eq("greenhouse_id", alert.greenhouseId)
+      .eq("title", title)
+      .eq("scheduled_date", scheduledDate)
+      .neq("status", "cancelada")
+      .limit(1);
+
+    if (existingResponse.error) {
+      setCreatingFollowUpId(null);
+      setNotice({
+        tone: "red",
+        message: appErrorMessage(existingResponse.error, "No se pudo revisar si el seguimiento ya existe.")
+      });
+      return;
+    }
+
+    if (existingResponse.data?.length) {
+      setCreatingFollowUpId(null);
+      setActiveSection("calendar");
+      return;
+    }
+
+    const { error } = await supabase.rpc("create_operational_task_with_plan", {
+      target_company_id: organization.id,
+      target_week_start: weekStart,
+      target_greenhouse_id: alert.greenhouseId,
+      target_type: "revision_plagas",
+      target_title: title,
+      target_scheduled_date: scheduledDate,
+      target_scheduled_time: null,
+      target_priority: alert.severity === "Alta" ? "high" : "normal",
+      target_instructions: instructions,
+      target_execution_mode: "manager",
+      target_crew_size: null,
+      target_assignee_ids: [greenhouse.managerUserId],
+      target_materials: [],
+      target_technical_plan: {}
+    });
+
+    setCreatingFollowUpId(null);
+
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo crear el seguimiento en Operación.") });
+      return;
+    }
+
+    setActiveSection("calendar");
+  };
 
   return (
     <section>
@@ -490,6 +643,7 @@ function PestsSection() {
         title="Plagas y enfermedades"
         description="Monitoreo sanitario, incidencia, zonas afectadas, acciones tomadas, seguimiento y reaplicación."
       />
+      {notice ? <InlineNotice tone={notice.tone}>{notice.message}</InlineNotice> : null}
       {greenhousePests.length ? (
         <div className="grid gap-0 border-b border-app-border">
           {greenhousePests.map((alert) => (
@@ -502,6 +656,22 @@ function PestsSection() {
                   <h3 className="mt-3 text-3xl font-light tracking-normal text-app-text">{alert.problem}</h3>
                 </div>
                 <RiskBadge level={alert.severity} />
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => setEditingAlert(alert)} type="button" variant="secondary">
+                  Editar seguimiento
+                </Button>
+                {canCreateFollowUpTask ? (
+                  <Button
+                    disabled={creatingFollowUpId === alert.id}
+                    icon={<Plus className="h-4 w-4" />}
+                    onClick={() => createFollowUpTask(alert)}
+                    type="button"
+                    variant="primary"
+                  >
+                    {creatingFollowUpId === alert.id ? "Creando..." : "Crear tarea"}
+                  </Button>
+                ) : null}
               </div>
               <div className="mt-6 grid gap-6 text-sm sm:grid-cols-2">
                 <div className="border-l border-app-border pl-4">
@@ -527,6 +697,40 @@ function PestsSection() {
       ) : (
         <EmptyState icon={AlertTriangle} title="No hay alertas sanitarias para esta área productiva." />
       )}
+      <Modal title="Editar alerta sanitaria" open={Boolean(editingAlert)} onClose={() => setEditingAlert(null)}>
+        {editingAlert ? (
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleEditAlert}>
+            <Field label="Fecha">
+              <TextInput name="detectedAt" type="date" required defaultValue={editingAlert.detectedAt} />
+            </Field>
+            <Field label="Incidencia">
+              <SelectInput name="severity" defaultValue={editingAlert.severity}>
+                {["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Problema">
+              <TextInput name="problem" required defaultValue={editingAlert.problem} />
+            </Field>
+            <Field label="Zona afectada">
+              <TextInput name="zone" defaultValue={editingAlert.zone} />
+            </Field>
+            <Field className="sm:col-span-2" label="Acción tomada">
+              <TextArea name="action" defaultValue={editingAlert.action} />
+            </Field>
+            <Field className="sm:col-span-2" label="Seguimiento / reaplicación">
+              <TextArea name="followUp" defaultValue={editingAlert.followUp} />
+            </Field>
+            <div className="flex justify-end gap-2 border-t border-app-border pt-4 sm:col-span-2">
+              <Button disabled={savingAlert} onClick={() => setEditingAlert(null)} type="button" variant="secondary">
+                Cancelar
+              </Button>
+              <Button disabled={savingAlert} type="submit" variant="primary">
+                {savingAlert ? "Guardando..." : "Guardar cambios"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
     </section>
   );
 }
