@@ -12,6 +12,12 @@ alter table public.pest_alerts
 add constraint pest_alerts_case_status_check
 check (case_status in ('open', 'review_required', 'in_management', 'under_watch', 'sanitary_close'));
 
+do $$ begin
+  alter table public.pest_alerts
+  add constraint pest_alerts_id_company_unique unique (id, company_id);
+exception when duplicate_object then null;
+end $$;
+
 create table if not exists public.pest_alert_updates (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,

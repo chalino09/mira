@@ -154,6 +154,7 @@ constraint_expected(conname) as (
     ('copilot_messages_id_company_unique'),
     ('copilot_memory_id_company_unique'),
     ('copilot_decisions_id_company_unique'),
+    ('pest_alerts_id_company_unique'),
     ('pest_alert_updates_id_company_unique'),
     ('tasks_weekly_plan_company_fk'),
     ('cost_records_greenhouse_company_fk'),
