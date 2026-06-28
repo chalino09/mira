@@ -52,6 +52,7 @@ supabase/30_function_grant_hardening.sql
 supabase/31_operation_completion_result_ids.sql
 supabase/32_owner_only_role_management.sql
 supabase/33_mira_copilot_memory_chat.sql
+supabase/34_pest_alert_followup_history.sql
 ```
 
 4. Levanta la app:

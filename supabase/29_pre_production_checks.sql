@@ -43,6 +43,7 @@ rls_expected(table_name) as (
     ('nutrition_records'),
     ('application_records'),
     ('pest_alerts'),
+    ('pest_alert_updates'),
     ('harvest_records'),
     ('cost_records'),
     ('weekly_plans'),
@@ -153,6 +154,7 @@ constraint_expected(conname) as (
     ('copilot_messages_id_company_unique'),
     ('copilot_memory_id_company_unique'),
     ('copilot_decisions_id_company_unique'),
+    ('pest_alert_updates_id_company_unique'),
     ('tasks_weekly_plan_company_fk'),
     ('cost_records_greenhouse_company_fk'),
     ('tasks_sector_greenhouse_company_fk'),
@@ -183,7 +185,9 @@ constraint_expected(conname) as (
     ('copilot_memory_greenhouse_company_fk'),
     ('copilot_decisions_conversation_company_fk'),
     ('copilot_decisions_message_company_fk'),
-    ('copilot_decisions_insight_company_fk')
+    ('copilot_decisions_insight_company_fk'),
+    ('pest_alert_updates_alert_company_fk'),
+    ('pest_alert_updates_greenhouse_company_fk')
 ),
 constraint_checks as (
   select
@@ -226,6 +230,7 @@ policy_expected(schemaname, tablename, policyname, cmd) as (
     ('public', 'copilot_messages', 'copilot_messages_select_managerial', 'SELECT'),
     ('public', 'copilot_memory', 'copilot_memory_select_managerial', 'SELECT'),
     ('public', 'copilot_decisions', 'copilot_decisions_select_managerial', 'SELECT'),
+    ('public', 'pest_alert_updates', 'pest_alert_updates_select_scoped', 'SELECT'),
     ('storage', 'objects', 'company_assets_select_member', 'SELECT'),
     ('storage', 'objects', 'company_assets_insert_writer', 'INSERT'),
     ('storage', 'objects', 'company_assets_update_writer', 'UPDATE'),

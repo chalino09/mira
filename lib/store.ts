@@ -15,6 +15,7 @@ import type {
   NutritionRecord,
   Organization,
   PestAlert,
+  PestAlertUpdate,
   SectionId,
   Task
 } from "@/types";
@@ -57,6 +58,7 @@ type AppState = {
   addApplicationRecords: (records: WithOptionalId<ApplicationRecord>[]) => void;
   addPest: (record: WithOptionalId<PestAlert>) => void;
   updatePest: (record: PestAlert) => void;
+  addPestUpdate: (alertId: string, update: WithOptionalId<PestAlertUpdate>, patch?: Partial<PestAlert>) => void;
   addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
   addCost: (record: WithOptionalId<CostRecord>) => void;
   hydrateWorkspace: (data: {
@@ -244,6 +246,28 @@ export const useGreenhouseStore = create<AppState>((set) => ({
   updatePest: (record) =>
     set((state) => ({
       pestAlerts: state.pestAlerts.map((alert) => (alert.id === record.id ? record : alert))
+    })),
+  addPestUpdate: (alertId, update, patch = {}) =>
+    set((state) => ({
+      pestAlerts: state.pestAlerts.map((alert) =>
+        alert.id === alertId
+          ? {
+              ...alert,
+              ...patch,
+              updates: [{ ...update, id: update.id ?? makeId("pest-update") }, ...(alert.updates ?? [])]
+            }
+          : alert
+      ),
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: update.greenhouseId,
+          title: "Seguimiento sanitario agregado",
+          detail: `${update.status} · ${update.severity}`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ]
     })),
   addHarvest: (record) =>
     set((state) => ({

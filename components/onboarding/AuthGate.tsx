@@ -96,6 +96,33 @@ function mapRiskLevel(level?: string | null): RiskLevel {
   return "Baja";
 }
 
+function mapPestCaseStatus(status?: string | null) {
+  if (status === "review_required") return "Revisión requerida";
+  if (status === "in_management") return "En manejo";
+  if (status === "under_watch") return "Bajo vigilancia";
+  if (status === "sanitary_close") return "Cierre sanitario";
+  return "Abierta";
+}
+
+function mapPestUpdateStatus(status?: string | null) {
+  if (status === "under_observation") return "En observación";
+  if (status === "treatment_applied") return "Tratamiento aplicado";
+  if (status === "under_watch") return "Bajo vigilancia";
+  if (status === "no_progress") return "Sin avance";
+  if (status === "visible_improvement") return "Mejoría visible";
+  if (status === "sanitary_close") return "Cierre sanitario";
+  return "Revisión requerida";
+}
+
+function mapPestActionType(action?: string | null) {
+  if (action === "sanitary_pruning") return "Poda/deshoje sanitario";
+  if (action === "application") return "Aplicación";
+  if (action === "cleaning") return "Limpieza";
+  if (action === "zone_isolation") return "Aislamiento de zona";
+  if (action === "other") return "Otro";
+  return "Revisión";
+}
+
 function mapCrops(rows: any[] | null | undefined): CropCatalogItem[] {
   return (rows ?? []).map((row) => ({
     id: row.id,
@@ -957,6 +984,7 @@ export function AuthGate() {
         nutritionResponse,
         applicationResponse,
         pestResponse,
+        pestUpdatesResponse,
         harvestResponse,
         costResponse
       ] = await Promise.all([
@@ -981,6 +1009,10 @@ export function AuthGate() {
           : supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
         ).order("detected_at", { ascending: false }),
         (canSeeAllGreenhouses
+          ? supabase.from("pest_alert_updates").select("*").eq("company_id", membership.company_id)
+          : supabase.from("pest_alert_updates").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
+        ).order("created_at", { ascending: false }),
+        (canSeeAllGreenhouses
           ? supabase.from("harvest_records").select("*").eq("company_id", membership.company_id)
           : supabase.from("harvest_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
         ).order("occurred_at", { ascending: false }),
@@ -995,6 +1027,9 @@ export function AuthGate() {
       throwInitialLoadError(nutritionResponse.error, "No se pudieron cargar las nutriciones.");
       throwInitialLoadError(applicationResponse.error, "No se pudieron cargar las aplicaciones.");
       throwInitialLoadError(pestResponse.error, "No se pudieron cargar las alertas sanitarias.");
+      if (pestUpdatesResponse.error && !["42P01", "PGRST205"].includes(pestUpdatesResponse.error.code ?? "")) {
+        throwInitialLoadError(pestUpdatesResponse.error, "No se pudo cargar el historial sanitario.");
+      }
       throwInitialLoadError(harvestResponse.error, "No se pudieron cargar las cosechas.");
       throwInitialLoadError(costResponse.error, "No se pudieron cargar los costos.");
 
@@ -1003,6 +1038,7 @@ export function AuthGate() {
       const nutritionRows = nutritionResponse.data;
       const applicationRows = applicationResponse.data;
       const pestRows = pestResponse.data;
+      const pestUpdateRows = pestUpdatesResponse.error ? [] : pestUpdatesResponse.data;
       const harvestRows = harvestResponse.data;
       const costRows = costResponse.data;
 
@@ -1093,17 +1129,28 @@ export function AuthGate() {
       const pestPhotoPaths = (pestRows ?? [])
         .map((record: any) => String(record.photo_storage_path ?? "").trim())
         .filter(Boolean);
+      const pestUpdatePhotoPaths = (pestUpdateRows ?? [])
+        .map((record: any) => String(record.photo_storage_path ?? "").trim())
+        .filter(Boolean);
       let pestPhotoUrls = new Map<string, string>();
-      if (pestPhotoPaths.length) {
+      const allPestPhotoPaths = [...pestPhotoPaths, ...pestUpdatePhotoPaths];
+      if (allPestPhotoPaths.length) {
         try {
           pestPhotoUrls = await createPrivateCompanyFileUrls({
             bucket: "pest-photos",
-            paths: pestPhotoPaths,
+            paths: allPestPhotoPaths,
             supabase
           });
         } catch (error) {
           throw new Error(appErrorMessage(error, "No se pudieron cargar las fotos de plagas."));
         }
+      }
+
+      const pestUpdatesByAlert = new Map<string, any[]>();
+      for (const update of pestUpdateRows ?? []) {
+        const current = pestUpdatesByAlert.get(update.pest_alert_id) ?? [];
+        current.push(update);
+        pestUpdatesByAlert.set(update.pest_alert_id, current);
       }
 
       const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
@@ -1115,10 +1162,24 @@ export function AuthGate() {
         detectedAt: record.detected_at,
         action: record.action_taken ?? "",
         followUp: record.follow_up ?? "",
+        caseStatus: mapPestCaseStatus(record.case_status),
         photoStoragePath: record.photo_storage_path ?? undefined,
         photoUrl: record.photo_storage_path
           ? pestPhotoUrls.get(record.photo_storage_path) ?? undefined
-          : record.photo_url ?? undefined
+          : record.photo_url ?? undefined,
+        updates: (pestUpdatesByAlert.get(record.id) ?? []).map((update: any) => ({
+          id: update.id,
+          alertId: update.pest_alert_id,
+          greenhouseId: update.greenhouse_id,
+          status: mapPestUpdateStatus(update.update_status),
+          severity: mapRiskLevel(update.severity),
+          actionType: mapPestActionType(update.action_type),
+          notes: update.notes ?? "",
+          nextReviewDate: update.next_review_date ?? undefined,
+          photoStoragePath: update.photo_storage_path ?? undefined,
+          photoUrl: update.photo_storage_path ? pestPhotoUrls.get(update.photo_storage_path) ?? undefined : undefined,
+          createdAt: update.created_at
+        }))
       }));
 
       const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({

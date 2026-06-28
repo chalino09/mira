@@ -179,8 +179,43 @@ export type PestAlert = {
   detectedAt: string;
   action: string;
   followUp: string;
+  caseStatus?: PestCaseStatus;
   photoStoragePath?: string;
   photoUrl?: string;
+  updates?: PestAlertUpdate[];
+};
+
+export type PestCaseStatus = "Abierta" | "Revisión requerida" | "En manejo" | "Bajo vigilancia" | "Cierre sanitario";
+
+export type PestUpdateStatus =
+  | "Revisión requerida"
+  | "En observación"
+  | "Tratamiento aplicado"
+  | "Bajo vigilancia"
+  | "Sin avance"
+  | "Mejoría visible"
+  | "Cierre sanitario";
+
+export type PestActionType =
+  | "Revisión"
+  | "Poda/deshoje sanitario"
+  | "Aplicación"
+  | "Limpieza"
+  | "Aislamiento de zona"
+  | "Otro";
+
+export type PestAlertUpdate = {
+  id: string;
+  alertId: string;
+  greenhouseId: string;
+  status: PestUpdateStatus;
+  severity: RiskLevel;
+  actionType: PestActionType;
+  notes: string;
+  nextReviewDate?: string;
+  photoStoragePath?: string;
+  photoUrl?: string;
+  createdAt: string;
 };
 
 export type HarvestRecord = {

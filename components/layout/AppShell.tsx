@@ -59,7 +59,7 @@ import {
 } from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { uploadCompanyAsset } from "@/lib/storage";
+import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFile } from "@/lib/storage";
 import { cn, formatCurrency, formatDate, formatNumber, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
@@ -69,6 +69,9 @@ import type {
   IrrigationRecord,
   NutritionRecord,
   PestAlert,
+  PestActionType,
+  PestCaseStatus,
+  PestUpdateStatus,
   RiskLevel,
   Task
 } from "@/types";
@@ -241,6 +244,37 @@ const riskLevelToDb: Record<RiskLevel, string> = {
   Media: "media",
   Alta: "alta"
 };
+
+const pestCaseStatusToDb: Record<PestCaseStatus, string> = {
+  Abierta: "open",
+  "Revisión requerida": "review_required",
+  "En manejo": "in_management",
+  "Bajo vigilancia": "under_watch",
+  "Cierre sanitario": "sanitary_close"
+};
+
+const pestUpdateStatusToDb: Record<PestUpdateStatus, string> = {
+  "Revisión requerida": "review_required",
+  "En observación": "under_observation",
+  "Tratamiento aplicado": "treatment_applied",
+  "Bajo vigilancia": "under_watch",
+  "Sin avance": "no_progress",
+  "Mejoría visible": "visible_improvement",
+  "Cierre sanitario": "sanitary_close"
+};
+
+const pestActionTypeToDb: Record<PestActionType, string> = {
+  Revisión: "review",
+  "Poda/deshoje sanitario": "sanitary_pruning",
+  Aplicación: "application",
+  Limpieza: "cleaning",
+  "Aislamiento de zona": "zone_isolation",
+  Otro: "other"
+};
+
+const pestCaseStatuses = Object.keys(pestCaseStatusToDb) as PestCaseStatus[];
+const pestUpdateStatuses = Object.keys(pestUpdateStatusToDb) as PestUpdateStatus[];
+const pestActionTypes = Object.keys(pestActionTypeToDb) as PestActionType[];
 
 function OverviewSection({
   copilotInsights,
@@ -497,13 +531,18 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
 
 function PestsSection() {
   const {
+    addPestUpdate,
+    currentUser,
     greenhousePests,
     openModal,
+    organization,
     updatePest
   } = useFilteredData();
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [editingAlert, setEditingAlert] = useState<PestAlert | null>(null);
+  const [followingAlert, setFollowingAlert] = useState<PestAlert | null>(null);
   const [savingAlert, setSavingAlert] = useState(false);
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
 
   const handleEditAlert = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -523,7 +562,8 @@ function PestsSection() {
       zone: String(form.get("zone") ?? "").trim(),
       detectedAt: String(form.get("detectedAt") ?? "").trim(),
       action: String(form.get("action") ?? "").trim(),
-      followUp: String(form.get("followUp") ?? "").trim()
+      followUp: String(form.get("followUp") ?? "").trim(),
+      caseStatus: String(form.get("caseStatus") ?? "Abierta") as PestCaseStatus
     };
 
     setSavingAlert(true);
@@ -536,7 +576,9 @@ function PestsSection() {
         affected_zone: updatedAlert.zone,
         detected_at: updatedAlert.detectedAt,
         action_taken: updatedAlert.action,
-        follow_up: updatedAlert.followUp
+        follow_up: updatedAlert.followUp,
+        case_status: pestCaseStatusToDb[updatedAlert.caseStatus ?? "Abierta"],
+        is_resolved: updatedAlert.caseStatus === "Cierre sanitario"
       })
       .eq("id", editingAlert.id);
 
@@ -552,6 +594,115 @@ function PestsSection() {
     setNotice({ tone: "green", message: "Alerta sanitaria actualizada." });
   };
 
+  const handleAddFollowUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!followingAlert) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setNotice({ tone: "red", message: "No se pudo conectar con Supabase para guardar el seguimiento." });
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const status = String(form.get("status") ?? "Revisión requerida") as PestUpdateStatus;
+    const nextCaseStatus = String(form.get("caseStatus") ?? followingAlert.caseStatus ?? "Abierta") as PestCaseStatus;
+    const severity = String(form.get("severity") ?? followingAlert.severity) as RiskLevel;
+    const actionType = String(form.get("actionType") ?? "Revisión") as PestActionType;
+    const notes = String(form.get("notes") ?? "").trim();
+    const nextReviewDate = String(form.get("nextReviewDate") ?? "").trim();
+    const photo = form.get("photo");
+    let photoStoragePath: string | undefined;
+    let photoUrl: string | undefined;
+
+    setSavingFollowUp(true);
+    setNotice(null);
+
+    try {
+      if (photo instanceof File && photo.size > 0) {
+        photoStoragePath = await uploadPrivateCompanyFile({
+          bucket: "pest-photos",
+          companyId: organization.id,
+          file: photo,
+          supabase,
+          type: "pest-followup"
+        });
+        photoUrl = await createPrivateCompanyFileUrl({
+          bucket: "pest-photos",
+          path: photoStoragePath,
+          supabase
+        });
+      }
+
+      const { data, error: insertError } = await supabase
+        .from("pest_alert_updates")
+        .insert({
+          company_id: organization.id,
+          pest_alert_id: followingAlert.id,
+          greenhouse_id: followingAlert.greenhouseId,
+          update_status: pestUpdateStatusToDb[status],
+          severity: riskLevelToDb[severity],
+          action_type: pestActionTypeToDb[actionType],
+          notes,
+          next_review_date: nextReviewDate || null,
+          photo_storage_path: photoStoragePath ?? null,
+          created_by: currentUser.id
+        })
+        .select("id, created_at")
+        .single();
+      if (insertError) throw insertError;
+
+      const followUpText = [
+        `Estado: ${status}`,
+        nextReviewDate ? `Próxima revisión: ${nextReviewDate}` : "",
+        notes
+      ].filter(Boolean).join("\n");
+
+      const { error: alertError } = await supabase
+        .from("pest_alerts")
+        .update({
+          severity: riskLevelToDb[severity],
+          follow_up: followUpText,
+          case_status: pestCaseStatusToDb[nextCaseStatus],
+          is_resolved: nextCaseStatus === "Cierre sanitario"
+        })
+        .eq("id", followingAlert.id);
+      if (alertError) throw alertError;
+
+      addPestUpdate(
+        followingAlert.id,
+        {
+          id: data?.id,
+          alertId: followingAlert.id,
+          greenhouseId: followingAlert.greenhouseId,
+          status,
+          severity,
+          actionType,
+          notes,
+          nextReviewDate: nextReviewDate || undefined,
+          photoStoragePath,
+          photoUrl,
+          createdAt: data?.created_at ?? new Date().toISOString()
+        },
+        {
+          severity,
+          followUp: followUpText,
+          caseStatus: nextCaseStatus
+        }
+      );
+
+      setFollowingAlert(null);
+      setNotice({ tone: "green", message: "Seguimiento sanitario agregado." });
+    } catch (caught) {
+      setNotice({
+        tone: "red",
+        message: appErrorMessage(caught, "No se pudo guardar el seguimiento. Confirma que ejecutaste el SQL 34.")
+      });
+    } finally {
+      setSavingFollowUp(false);
+    }
+  };
+
   return (
     <section>
       <SectionHeader
@@ -561,41 +712,100 @@ function PestsSection() {
       />
       {notice ? <InlineNotice tone={notice.tone}>{notice.message}</InlineNotice> : null}
       {greenhousePests.length ? (
-        <div className="grid gap-0 border-b border-app-border">
+        <div className="grid gap-6">
           {greenhousePests.map((alert) => (
-            <article key={alert.id} className="border-t border-app-border py-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <article key={alert.id} className="border border-app-border bg-white">
+              <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_220px]">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
-                    {alert.zone} · detectado {formatDate(alert.detectedAt)}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
+                      Detectado {formatDate(alert.detectedAt)}
+                    </p>
+                    {alert.zone ? <span className="text-xs text-app-muted">{alert.zone}</span> : null}
+                  </div>
                   <h3 className="mt-3 text-3xl font-light tracking-normal text-app-text">{alert.problem}</h3>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <StatusBadge tone={alert.caseStatus === "Cierre sanitario" ? "green" : "neutral"}>
+                      {alert.caseStatus ?? "Abierta"}
+                    </StatusBadge>
+                    <RiskBadge level={alert.severity} />
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <Button icon={<Plus className="h-4 w-4" />} onClick={() => setFollowingAlert(alert)} type="button" variant="secondary">
+                      Agregar seguimiento
+                    </Button>
+                    <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => setEditingAlert(alert)} type="button" variant="secondary">
+                      Editar alerta
+                    </Button>
+                  </div>
                 </div>
-                <RiskBadge level={alert.severity} />
-              </div>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => setEditingAlert(alert)} type="button" variant="secondary">
-                  Editar seguimiento
-                </Button>
-              </div>
-              <div className="mt-6 grid gap-6 text-sm sm:grid-cols-2">
-                <div className="border-l border-app-border pl-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Acción tomada</p>
-                  <p className="mt-1 text-app-muted">{alert.action}</p>
-                </div>
-                <div className="border-l border-app-border pl-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Seguimiento / reaplicación</p>
-                  <p className="mt-1 text-app-muted">{alert.followUp}</p>
+                <div className="grid gap-3 text-sm">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Acción tomada</p>
+                    <p className="mt-1 text-app-muted">{alert.action || "Sin acción registrada"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Seguimiento actual</p>
+                    <p className="mt-1 whitespace-pre-line text-app-muted">{alert.followUp || "Sin seguimiento registrado"}</p>
+                  </div>
                 </div>
               </div>
               {alert.photoUrl ? (
                 <div
                   aria-label={`Evidencia de ${alert.problem}`}
-                  className="mt-5 h-72 w-full rounded-lg border border-app-border bg-cover bg-center"
+                  className="h-80 w-full border-y border-app-border bg-cover bg-center md:h-[420px]"
                   role="img"
                   style={{ backgroundImage: `url(${alert.photoUrl})` }}
                 />
               ) : null}
+              <div className="p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Historial sanitario</p>
+                <div className="mt-3 flex snap-x gap-3 overflow-x-auto pb-2">
+                  {(alert.updates ?? []).map((update) => (
+                    <article className="w-[280px] shrink-0 snap-start border border-app-border bg-app-sidebar" key={update.id}>
+                      {update.photoUrl ? (
+                        <div
+                          aria-label={`Evidencia de seguimiento ${update.status}`}
+                          className="h-32 w-full border-b border-app-border bg-cover bg-center"
+                          role="img"
+                          style={{ backgroundImage: `url(${update.photoUrl})` }}
+                        />
+                      ) : null}
+                      <div className="p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                              {formatDate(update.createdAt)}
+                            </p>
+                            <p className="mt-1 text-sm font-medium text-app-text">{update.status}</p>
+                          </div>
+                          <RiskBadge level={update.severity} />
+                        </div>
+                        <p className="mt-3 text-xs font-medium text-app-muted">{update.actionType}</p>
+                        {update.notes ? <p className="mt-2 line-clamp-3 text-sm leading-5 text-app-muted">{update.notes}</p> : null}
+                        {update.nextReviewDate ? (
+                          <p className="mt-3 text-xs text-app-muted">Próxima revisión: {formatDate(update.nextReviewDate)}</p>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                  <article className="w-[280px] shrink-0 snap-start border border-app-border bg-white">
+                    {alert.photoUrl ? (
+                      <div
+                        aria-label={`Evidencia inicial de ${alert.problem}`}
+                        className="h-32 w-full border-b border-app-border bg-cover bg-center"
+                        role="img"
+                        style={{ backgroundImage: `url(${alert.photoUrl})` }}
+                      />
+                    ) : null}
+                    <div className="p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{formatDate(alert.detectedAt)}</p>
+                      <p className="mt-1 text-sm font-medium text-app-text">Detección inicial</p>
+                      <p className="mt-2 line-clamp-3 text-sm leading-5 text-app-muted">{alert.action || alert.followUp || "Se abrió el caso sanitario."}</p>
+                    </div>
+                  </article>
+                </div>
+              </div>
             </article>
           ))}
         </div>
@@ -611,6 +821,11 @@ function PestsSection() {
             <Field label="Incidencia">
               <SelectInput name="severity" defaultValue={editingAlert.severity}>
                 {["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Estado del caso">
+              <SelectInput name="caseStatus" defaultValue={editingAlert.caseStatus ?? "Abierta"}>
+                {pestCaseStatuses.map((status) => <option key={status}>{status}</option>)}
               </SelectInput>
             </Field>
             <Field label="Problema">
@@ -631,6 +846,54 @@ function PestsSection() {
               </Button>
               <Button disabled={savingAlert} type="submit" variant="primary">
                 {savingAlert ? "Guardando..." : "Guardar cambios"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+      <Modal title="Agregar seguimiento sanitario" open={Boolean(followingAlert)} onClose={() => setFollowingAlert(null)}>
+        {followingAlert ? (
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleAddFollowUp}>
+            <Field label="Estado del seguimiento">
+              <SelectInput name="status" defaultValue="Revisión requerida">
+                {pestUpdateStatuses.map((status) => <option key={status}>{status}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Estado del caso">
+              <SelectInput name="caseStatus" defaultValue={followingAlert.caseStatus ?? "Abierta"}>
+                {pestCaseStatuses.map((status) => <option key={status}>{status}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Incidencia actual">
+              <SelectInput name="severity" defaultValue={followingAlert.severity}>
+                {["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Acción realizada">
+              <SelectInput name="actionType" defaultValue="Revisión">
+                {pestActionTypes.map((action) => <option key={action}>{action}</option>)}
+              </SelectInput>
+            </Field>
+            <Field label="Próxima revisión">
+              <TextInput name="nextReviewDate" type="date" />
+            </Field>
+            <Field label="Evidencia">
+              <input
+                accept="image/*"
+                className="w-full rounded-lg border border-app-border px-3 py-2 text-sm"
+                name="photo"
+                type="file"
+              />
+            </Field>
+            <Field className="sm:col-span-2" label="Comentario técnico">
+              <TextArea name="notes" placeholder="Qué cambió, qué se aplicó o qué falta confirmar." />
+            </Field>
+            <div className="flex justify-end gap-2 border-t border-app-border pt-4 sm:col-span-2">
+              <Button disabled={savingFollowUp} onClick={() => setFollowingAlert(null)} type="button" variant="secondary">
+                Cancelar
+              </Button>
+              <Button disabled={savingFollowUp} type="submit" variant="primary">
+                {savingFollowUp ? "Guardando..." : "Guardar seguimiento"}
               </Button>
             </div>
           </form>

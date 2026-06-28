@@ -23,11 +23,12 @@ Validar antes de produccion:
 7. Si el diagnostico marca `operational rpc returns` en `review`, corre `supabase/31_operation_completion_result_ids.sql` y repite el diagnostico.
 8. Si el diagnostico marca `member role hardening` en `review`, corre `supabase/32_owner_only_role_management.sql` y repite el diagnostico.
 9. Si vas a habilitar chat y memoria de Mira, corre `supabase/33_mira_copilot_memory_chat.sql` y repite el diagnostico.
-10. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
+10. Si vas a habilitar historial sanitario por alerta, corre `supabase/34_pest_alert_followup_history.sql` y repite el diagnostico.
+11. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
 
 ## Orden de SQL
 
-En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/33_mira_copilot_memory_chat.sql` en orden.
+En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/34_pest_alert_followup_history.sql` en orden.
 
 Si el proyecto ya tiene los SQL aplicados, no repitas todo por costumbre. Aplica solo los archivos nuevos que falten y despues corre:
 
@@ -59,6 +60,12 @@ Para habilitar conversaciones y memoria de Mira, aplica despues:
 
 ```text
 supabase/33_mira_copilot_memory_chat.sql
+```
+
+Para habilitar historial por alerta sanitaria, aplica despues:
+
+```text
+supabase/34_pest_alert_followup_history.sql
 ```
 
 ## Deploy de funciones
@@ -130,8 +137,9 @@ Manager activo:
 1. Inicia sesion y confirma que solo ve su invernadero asignado.
 2. Registra riego, nutricion, aplicacion, cosecha y alerta sanitaria.
 3. Sube una foto sanitaria y confirma que se muestra despues de refrescar.
-4. Vincula Telegram y responde una tarea asignada.
-5. Confirma que no ve costos, laboratorio, monitoreo nutrimental administrativo ni Copilot.
+4. Agrega seguimiento a una alerta sanitaria y confirma que aparece en el historial.
+5. Vincula Telegram y responde una tarea asignada.
+6. Confirma que no ve costos, laboratorio, monitoreo nutrimental administrativo ni Copilot.
 
 Manager desactivado:
 

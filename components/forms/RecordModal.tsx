@@ -705,6 +705,7 @@ export function RecordModal() {
         detectedAt: String(form.get("detectedAt")),
         action: String(form.get("action")),
         followUp: pestFollowUpText(form),
+        caseStatus: "Abierta" as const,
         photoStoragePath,
         photoUrl
       };
