@@ -70,7 +70,11 @@ rls_expected(table_name) as (
     ('copilot_runs'),
     ('copilot_insights'),
     ('copilot_task_suggestions'),
-    ('copilot_manager_messages')
+    ('copilot_manager_messages'),
+    ('copilot_conversations'),
+    ('copilot_messages'),
+    ('copilot_memory'),
+    ('copilot_decisions')
 ),
 rls_checks as (
   select
@@ -145,6 +149,10 @@ constraint_expected(conname) as (
     ('task_materials_id_company_unique'),
     ('copilot_runs_id_company_unique'),
     ('copilot_insights_id_company_unique'),
+    ('copilot_conversations_id_company_unique'),
+    ('copilot_messages_id_company_unique'),
+    ('copilot_memory_id_company_unique'),
+    ('copilot_decisions_id_company_unique'),
     ('tasks_weekly_plan_company_fk'),
     ('cost_records_greenhouse_company_fk'),
     ('tasks_sector_greenhouse_company_fk'),
@@ -169,7 +177,13 @@ constraint_expected(conname) as (
     ('copilot_task_suggestions_approved_task_company_fk'),
     ('copilot_manager_messages_greenhouse_company_fk'),
     ('copilot_manager_messages_task_company_fk'),
-    ('copilot_manager_messages_insight_company_fk')
+    ('copilot_manager_messages_insight_company_fk'),
+    ('copilot_conversations_greenhouse_company_fk'),
+    ('copilot_messages_conversation_company_fk'),
+    ('copilot_memory_greenhouse_company_fk'),
+    ('copilot_decisions_conversation_company_fk'),
+    ('copilot_decisions_message_company_fk'),
+    ('copilot_decisions_insight_company_fk')
 ),
 constraint_checks as (
   select
@@ -208,6 +222,10 @@ policy_expected(schemaname, tablename, policyname, cmd) as (
     ('public', 'copilot_insights', 'copilot_insights_select_managerial', 'SELECT'),
     ('public', 'copilot_task_suggestions', 'copilot_task_suggestions_select_managerial', 'SELECT'),
     ('public', 'copilot_manager_messages', 'copilot_manager_messages_select_managerial', 'SELECT'),
+    ('public', 'copilot_conversations', 'copilot_conversations_select_managerial', 'SELECT'),
+    ('public', 'copilot_messages', 'copilot_messages_select_managerial', 'SELECT'),
+    ('public', 'copilot_memory', 'copilot_memory_select_managerial', 'SELECT'),
+    ('public', 'copilot_decisions', 'copilot_decisions_select_managerial', 'SELECT'),
     ('storage', 'objects', 'company_assets_select_member', 'SELECT'),
     ('storage', 'objects', 'company_assets_insert_writer', 'INSERT'),
     ('storage', 'objects', 'company_assets_update_writer', 'UPDATE'),

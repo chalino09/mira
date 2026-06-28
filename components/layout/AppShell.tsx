@@ -49,7 +49,14 @@ import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { startOfIsoWeek } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
-import { buildCopilotPulse, localDateKey, managerMessageForInsight, type CopilotInsight } from "@/lib/mira-copilot";
+import {
+  buildCopilotPulse,
+  localDateKey,
+  managerMessageForInsight,
+  type CopilotChatMessage,
+  type CopilotInsight,
+  type CopilotSuggestedAction
+} from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadCompanyAsset } from "@/lib/storage";
@@ -1651,6 +1658,8 @@ export function AppShell() {
   const [copilotRunning, setCopilotRunning] = useState(false);
   const [copilotNotice, setCopilotNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [remoteCopilotInsights, setRemoteCopilotInsights] = useState<CopilotInsight[]>([]);
+  const [copilotConversationId, setCopilotConversationId] = useState<string | null>(null);
+  const [copilotChatMessages, setCopilotChatMessages] = useState<CopilotChatMessage[]>([]);
   const [operationRefreshKey, setOperationRefreshKey] = useState(0);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
   const localCopilotInsights = useMemo(
@@ -1677,6 +1686,35 @@ export function AppShell() {
       recommendedAction: row.recommended_action ?? "Revisar antes de actuar.",
       evidence: Array.isArray(row.evidence) ? row.evidence : []
     }));
+
+  const mapChatEvidence = (rows: any[] = []) =>
+    rows.map((row) => ({
+      label: row.label ?? "Evidencia",
+      value: row.value ?? ""
+    })).filter((row) => row.value);
+
+  const mapSuggestedActions = (rows: any[] = []): CopilotSuggestedAction[] =>
+    rows.map((row, index) => ({
+      id: row.id ?? `chat-action-${index}`,
+      kind: row.kind ?? "review",
+      title: row.title ?? "Accion sugerida",
+      detail: row.detail ?? "Revisar evidencia antes de actuar.",
+      severity: row.severity ?? "medium",
+      recommendedAction: row.recommended_action ?? row.recommendedAction ?? null,
+      sourceType: row.source_type ?? row.sourceType ?? "operation",
+      sourceId: row.source_id ?? row.sourceId ?? null,
+      greenhouseId: row.greenhouse_id ?? row.greenhouseId ?? null,
+      evidence: mapChatEvidence(row.evidence ?? [])
+    }));
+
+  const mapChatMessage = (row: any): CopilotChatMessage => ({
+    id: row.id ?? `chat-${Date.now()}`,
+    role: row.role ?? "assistant",
+    content: row.content ?? "",
+    evidence: mapChatEvidence(row.evidence ?? []),
+    suggestedActions: mapSuggestedActions(row.suggested_actions ?? row.suggestedActions ?? []),
+    source: row.metadata?.source ?? row.source
+  });
 
   const runCopilot = async () => {
     if (!organization.id) return;
@@ -1705,6 +1743,62 @@ export function AppShell() {
     } finally {
       setCopilotRunning(false);
     }
+  };
+
+  const sendCopilotMessage = async (message: string) => {
+    if (!organization.id) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setCopilotNotice({ tone: "red", message: "No se pudo conectar con Supabase para conversar con Mira." });
+      return;
+    }
+
+    const userMessage: CopilotChatMessage = {
+      id: `local-user-${Date.now()}`,
+      role: "user",
+      content: message,
+      evidence: [],
+      suggestedActions: []
+    };
+
+    setCopilotChatMessages((current) => [...current, userMessage]);
+    setCopilotRunning(true);
+    setCopilotNotice(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("mira-chat", {
+        body: {
+          company_id: organization.id,
+          greenhouse_id: selectedGreenhouseId || null,
+          conversation_id: copilotConversationId,
+          message
+        }
+      });
+      if (error) throw error;
+      if (data?.conversation_id) setCopilotConversationId(data.conversation_id);
+      const assistantMessage = mapChatMessage(data?.message ?? {});
+      setCopilotChatMessages((current) => [...current, assistantMessage]);
+      setCopilotNotice({
+        tone: "green",
+        message: data?.source === "openai" ? "Mira respondio con contexto operativo." : "Mira respondio con lectura local."
+      });
+    } catch (caught) {
+      setCopilotNotice({
+        tone: "red",
+        message: appErrorMessage(caught, "No se pudo conversar con Mira. El pulso local sigue disponible.")
+      });
+    } finally {
+      setCopilotRunning(false);
+    }
+  };
+
+  const dismissCopilotChatAction = (actionId: string) => {
+    setCopilotChatMessages((current) =>
+      current.map((message) => ({
+        ...message,
+        suggestedActions: message.suggestedActions.filter((action) => action.id !== actionId)
+      }))
+    );
   };
 
   const prepareCopilotMessage = async (insight: CopilotInsight) => {
@@ -1849,16 +1943,19 @@ export function AppShell() {
         <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
       ) : null}
       <MiraCopilotPanel
+        chatMessages={copilotChatMessages}
         insights={copilotInsights}
         isRunning={copilotRunning}
         onClose={() => setCopilotOpen(false)}
         onCreateTask={createCopilotTaskSuggestion}
+        onDismissChatAction={dismissCopilotChatAction}
         onOpenOperations={() => {
           setActiveSection("calendar");
           setCopilotOpen(false);
         }}
         onPrepareMessage={prepareCopilotMessage}
         onRun={runCopilot}
+        onSendMessage={sendCopilotMessage}
         open={copilotOpen}
       />
     </div>

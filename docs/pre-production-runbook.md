@@ -22,11 +22,12 @@ Validar antes de produccion:
 6. Si el diagnostico marca helpers con `anon_execute = true`, corre `supabase/30_function_grant_hardening.sql` y repite el diagnostico.
 7. Si el diagnostico marca `operational rpc returns` en `review`, corre `supabase/31_operation_completion_result_ids.sql` y repite el diagnostico.
 8. Si el diagnostico marca `member role hardening` en `review`, corre `supabase/32_owner_only_role_management.sql` y repite el diagnostico.
-9. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
+9. Si vas a habilitar chat y memoria de Mira, corre `supabase/33_mira_copilot_memory_chat.sql` y repite el diagnostico.
+10. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
 
 ## Orden de SQL
 
-En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/32_owner_only_role_management.sql` en orden.
+En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/33_mira_copilot_memory_chat.sql` en orden.
 
 Si el proyecto ya tiene los SQL aplicados, no repitas todo por costumbre. Aplica solo los archivos nuevos que falten y despues corre:
 
@@ -54,6 +55,12 @@ Si muestra `member role hardening` en `review`, aplica:
 supabase/32_owner_only_role_management.sql
 ```
 
+Para habilitar conversaciones y memoria de Mira, aplica despues:
+
+```text
+supabase/33_mira_copilot_memory_chat.sql
+```
+
 ## Deploy de funciones
 
 Configura secretos en Supabase, nunca en variables `NEXT_PUBLIC_`:
@@ -78,6 +85,7 @@ Despliega:
 
 ```bash
 supabase functions deploy mira-copilot
+supabase functions deploy mira-chat
 supabase functions deploy lab-extract
 supabase functions deploy telegram-dispatch
 supabase functions deploy telegram-link
@@ -114,7 +122,8 @@ Owner/admin:
 3. Crea un plan semanal y publica.
 4. Sube un archivo de laboratorio y ejecuta extraccion.
 5. Ejecuta Mira Copilot para la empresa y para un invernadero.
-6. Confirma que puede ver adjuntos privados mediante URLs firmadas.
+6. Pregunta algo en el chat de Mira y confirma que guarda conversacion, evidencia y acciones sugeridas.
+7. Confirma que puede ver adjuntos privados mediante URLs firmadas.
 
 Manager activo:
 

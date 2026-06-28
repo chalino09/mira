@@ -34,7 +34,8 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 30. `30_function_grant_hardening.sql` si el diagnostico marca helpers con `anon_execute = true`.
 31. `31_operation_completion_result_ids.sql`
 32. `32_owner_only_role_management.sql`
-33. `03_seed_template.sql` solo si quieres datos demo manuales.
+33. `33_mira_copilot_memory_chat.sql`
+34. `03_seed_template.sql` solo si quieres datos demo manuales.
 
 Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
 
@@ -104,6 +105,8 @@ Para que los cierres de riego, nutricion, aplicacion y cosecha devuelvan los IDs
 
 Para que solo owners puedan crear/cambiar owners o admins, ejecuta `32_owner_only_role_management.sql` despues de `31_operation_completion_result_ids.sql`.
 
+Para agregar memoria operativa, conversaciones y decisiones de Mira Copilot, ejecuta `33_mira_copilot_memory_chat.sql` despues de `32_owner_only_role_management.sql` y vuelve a correr el diagnostico.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash
@@ -118,6 +121,7 @@ Mira Copilot usa IA para generar el pulso operativo con tareas vencidas, bloqueo
 supabase secrets set OPENAI_API_KEY=sk-proj_...
 supabase secrets set OPENAI_COPILOT_MODEL=gpt-5.5
 supabase functions deploy mira-copilot
+supabase functions deploy mira-chat
 ```
 
 ## Conectar Telegram

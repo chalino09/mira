@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, type FormEvent } from "react";
 import { ActivitySquare, Command, Eye, MessageCircle, Plus, Send, Sparkles, X } from "lucide-react";
 import { PortalMark } from "@/components/brand/MiraBrand";
 import { Button } from "@/components/ui/Button";
@@ -7,12 +8,21 @@ import {
   copilotSeverityClass,
   copilotSeverityLabel,
   buildCopilotBrief,
+  insightFromSuggestedAction,
   managerMessageForInsight,
+  type CopilotChatMessage,
   type CopilotInsight
 } from "@/lib/mira-copilot";
 import { cn } from "@/lib/utils";
 
 type CopilotAction = (insight: CopilotInsight) => void;
+
+const thinkingMessages = [
+  "Leyendo la operacion...",
+  "Buscando memoria relevante...",
+  "Cruzando senales del invernadero...",
+  "Preparando una respuesta corta..."
+];
 
 function SeverityPill({ severity, dark = false }: { severity: CopilotInsight["severity"]; dark?: boolean }) {
   return (
@@ -61,6 +71,21 @@ function BriefEvidenceList({
   );
 }
 
+function MiraThinkingBubble({ message }: { message: string }) {
+  return (
+    <article className="mr-8 rounded-lg border border-[#294231] bg-[#102016] px-3 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">Mira</p>
+      <div className="mt-3 flex items-center gap-3">
+        <span className="relative flex h-8 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
+          <span className="absolute inset-0 rounded-xl bg-[#B7E0C1]/10 blur-md" />
+          <PortalMark animated className="relative h-5 w-9 text-[#B7E0C1]" />
+        </span>
+        <span className="text-sm leading-6 text-white/65">{message}</span>
+      </div>
+    </article>
+  );
+}
+
 export function MiraCopilotCommand({
   insightCount,
   onOpen
@@ -95,24 +120,46 @@ export function MiraCopilotCommand({
 }
 
 export function MiraCopilotPanel({
+  chatMessages = [],
   insights,
   isRunning,
   onClose,
   onCreateTask,
+  onDismissChatAction,
   onOpenOperations,
   onPrepareMessage,
   onRun,
+  onSendMessage,
   open
 }: {
+  chatMessages?: CopilotChatMessage[];
   insights: CopilotInsight[];
   isRunning?: boolean;
   onClose: () => void;
   onCreateTask?: CopilotAction;
+  onDismissChatAction?: (actionId: string) => void;
   onOpenOperations?: () => void;
   onPrepareMessage?: CopilotAction;
   onRun?: () => void;
+  onSendMessage?: (message: string) => Promise<void> | void;
   open: boolean;
 }) {
+  const [draft, setDraft] = useState("");
+  const [thinkingIndex, setThinkingIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setThinkingIndex(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setThinkingIndex((current) => (current + 1) % thinkingMessages.length);
+    }, 1800);
+
+    return () => window.clearInterval(timer);
+  }, [isRunning]);
+
   if (!open) return null;
 
   const brief = buildCopilotBrief(insights);
@@ -120,6 +167,19 @@ export function MiraCopilotPanel({
   const supportingInsights = insights
     .filter((insight) => insight.id !== primary?.id && insight.id !== "copilot-clear")
     .slice(0, 3);
+  const visibleChatMessages = chatMessages.slice(-6);
+  const hasChat = visibleChatMessages.length > 0;
+
+  const submitCommand = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) {
+      onRun?.();
+      return;
+    }
+    setDraft("");
+    await onSendMessage?.(text);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm">
@@ -152,54 +212,142 @@ export function MiraCopilotPanel({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <section className="border-b border-white/10 pb-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Lectura de Mira</p>
-                <p className="mt-2 text-sm text-white/65">{brief.title}</p>
+          {!hasChat ? (
+            <>
+              <section className="border-b border-white/10 pb-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Lectura de Mira</p>
+                    <p className="mt-2 text-sm text-white/65">{brief.title}</p>
+                  </div>
+                  <SeverityPill dark severity={brief.severity} />
+                </div>
+              </section>
+
+              <article className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] px-4 py-4">
+                <p className="text-base leading-7 text-white">{brief.summary}</p>
+                <p className="mt-4 text-sm leading-6 text-[#B7E0C1]">{brief.recommendation}</p>
+                <p className="mt-3 text-xs leading-5 text-white/45">{brief.actionHint}</p>
+
+                <details className="group mt-4">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50 transition hover:text-white">
+                    <Eye className="h-3.5 w-3.5" />
+                    Ver evidencia
+                  </summary>
+                  <BriefEvidenceList dark evidence={brief.evidence} />
+                </details>
+
+                {primary ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
+                      icon={<MessageCircle className="h-3.5 w-3.5" />}
+                      onClick={() => onPrepareMessage?.(primary)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Preparar mensaje
+                    </Button>
+                    <Button
+                      className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
+                      icon={<Plus className="h-3.5 w-3.5" />}
+                      onClick={() => onCreateTask?.(primary)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Crear seguimiento
+                    </Button>
+                  </div>
+                ) : null}
+              </article>
+            </>
+          ) : null}
+
+          {visibleChatMessages.length ? (
+            <section className={cn("border-white/10", hasChat ? "border-t pt-4" : "mt-5 border-t pt-4")}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Conversacion</p>
+              <div className="mt-3 grid gap-3">
+                {visibleChatMessages.map((message) => (
+                  <article
+                    className={cn(
+                      "rounded-lg border px-3 py-3",
+                      message.role === "user"
+                        ? "ml-8 border-white/10 bg-white/[0.04]"
+                        : "mr-8 border-[#294231] bg-[#102016]"
+                    )}
+                    key={message.id}
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                      {message.role === "user" ? "Tu" : "Mira"}
+                      {message.source === "deterministic" ? " · Local" : ""}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-white/75">{message.content}</p>
+
+                    {message.evidence.length ? (
+                      <details className="group mt-3">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45 transition hover:text-white">
+                          <Eye className="h-3.5 w-3.5" />
+                          Ver evidencia
+                        </summary>
+                        <BriefEvidenceList dark evidence={message.evidence.slice(0, 5)} />
+                      </details>
+                    ) : null}
+
+                    {message.suggestedActions.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {message.suggestedActions.map((action) => {
+                          const insight = insightFromSuggestedAction(action);
+                          if (action.kind === "message") {
+                            return (
+                              <Button
+                                className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
+                                icon={<MessageCircle className="h-3.5 w-3.5" />}
+                                key={action.id}
+                                onClick={() => onPrepareMessage?.(insight)}
+                                type="button"
+                                variant="secondary"
+                              >
+                                Preparar mensaje
+                              </Button>
+                            );
+                          }
+                          if (action.kind === "task") {
+                            return (
+                              <Button
+                                className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
+                                icon={<Plus className="h-3.5 w-3.5" />}
+                                key={action.id}
+                                onClick={() => onCreateTask?.(insight)}
+                                type="button"
+                                variant="secondary"
+                              >
+                                Crear seguimiento
+                              </Button>
+                            );
+                          }
+                          return (
+                            <Button
+                              className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
+                              icon={<X className="h-3.5 w-3.5" />}
+                              key={action.id}
+                              onClick={() => onDismissChatAction?.(action.id)}
+                              type="button"
+                              variant="secondary"
+                            >
+                              Descartar
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+                {isRunning ? <MiraThinkingBubble message={thinkingMessages[thinkingIndex]} /> : null}
               </div>
-              <SeverityPill dark severity={brief.severity} />
-            </div>
-          </section>
+            </section>
+          ) : null}
 
-          <article className="mt-4 rounded-lg border border-white/10 bg-white/[0.035] px-4 py-4">
-            <p className="text-base leading-7 text-white">{brief.summary}</p>
-            <p className="mt-4 text-sm leading-6 text-[#B7E0C1]">{brief.recommendation}</p>
-            <p className="mt-3 text-xs leading-5 text-white/45">{brief.actionHint}</p>
-
-            <details className="group mt-4">
-              <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50 transition hover:text-white">
-                <Eye className="h-3.5 w-3.5" />
-                Ver evidencia
-              </summary>
-              <BriefEvidenceList dark evidence={brief.evidence} />
-            </details>
-
-            {primary ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
-                  icon={<MessageCircle className="h-3.5 w-3.5" />}
-                  onClick={() => onPrepareMessage?.(primary)}
-                  type="button"
-                  variant="secondary"
-                >
-                  Preparar mensaje
-                </Button>
-                <Button
-                  className="h-8 rounded-lg border-white/10 bg-white/[0.06] px-2 text-xs text-white hover:bg-white/10"
-                  icon={<Plus className="h-3.5 w-3.5" />}
-                  onClick={() => onCreateTask?.(primary)}
-                  type="button"
-                  variant="secondary"
-                >
-                  Crear seguimiento
-                </Button>
-              </div>
-            ) : null}
-          </article>
-
-          {supportingInsights.length ? (
+          {!hasChat && supportingInsights.length ? (
             <section className="mt-5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Tambien vi</p>
               <div className="mt-3 grid gap-2">
@@ -215,22 +363,23 @@ export function MiraCopilotPanel({
         </div>
 
         <footer className="border-t border-white/10 px-5 py-4">
-          <div className="flex items-center gap-2 border border-white/10 bg-white/[0.04] px-3 py-2">
+          <form className="flex items-center gap-2 border border-white/10 bg-white/[0.04] px-3 py-2" onSubmit={submitCommand}>
             <Command className="h-4 w-4 shrink-0 text-[#B7E0C1]" />
             <input
               className="h-9 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              onChange={(event) => setDraft(event.target.value)}
               placeholder="Pregunta por pendientes, clima o seguimiento"
+              value={draft}
             />
             <button
               aria-label="Analizar con Mira Copilot"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#B7E0C1] text-[#0D0D0D] transition hover:bg-white"
               disabled={isRunning}
-              onClick={onRun}
-              type="button"
+              type="submit"
             >
               {isRunning ? <ActivitySquare className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
             </button>
-          </div>
+          </form>
           {onOpenOperations ? (
             <button
               className="mt-3 flex w-full items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/50 transition hover:text-white"
@@ -261,15 +410,18 @@ export function CopilotPulseBand({
   return (
     <section className="border-y border-[#17251D] bg-[#0D0D0D] px-4 py-4 text-white">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <PortalMark animated className="mt-1 h-5 w-9 shrink-0 text-[#B7E0C1]" />
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="relative mt-1 flex h-8 w-11 shrink-0 items-center justify-center">
+            <span className="absolute inset-0 rounded-xl bg-[#B7E0C1]/10 blur-md" />
+            <PortalMark animated className="relative h-5 w-9 text-[#B7E0C1]" />
+          </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">Mira Copilot</p>
               <SeverityPill dark severity={brief.severity} />
             </div>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-white/68">{brief.summary}</p>
-            <p className="mt-1 text-xs leading-5 text-[#B7E0C1]">{brief.recommendation}</p>
+            <p className="mt-2 max-w-4xl text-sm font-medium leading-6 text-white/78">{brief.summary}</p>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-[#B7E0C1]">{brief.recommendation}</p>
           </div>
         </div>
         <Button

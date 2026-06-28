@@ -29,6 +29,28 @@ export type CopilotBrief = {
   evidence: CopilotEvidence[];
 };
 
+export type CopilotSuggestedAction = {
+  id: string;
+  kind: "message" | "task" | "review" | "dismissal";
+  title: string;
+  detail: string;
+  severity: CopilotSeverity;
+  recommendedAction?: string | null;
+  sourceType: CopilotInsight["sourceType"];
+  sourceId?: string | null;
+  greenhouseId?: string | null;
+  evidence: CopilotEvidence[];
+};
+
+export type CopilotChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  evidence: CopilotEvidence[];
+  suggestedActions: CopilotSuggestedAction[];
+  source?: "openai" | "deterministic";
+};
+
 type OperationLikeTask = {
   id: string;
   greenhouseId?: string;
@@ -138,6 +160,15 @@ function naturalList(items: string[]) {
   return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
 }
 
+function pestProblemLabel(problem: string) {
+  const text = problem.trim();
+  return !text || text.toLowerCase() === "desconocido" ? "Alerta sanitaria sin clasificar" : text;
+}
+
+function cleanCopilotText(text: string) {
+  return text.replace(/\bDesconocido\b/g, "alerta sanitaria sin clasificar");
+}
+
 function strongestSeverity(insights: CopilotInsight[]): CopilotSeverity {
   if (insights.some((insight) => insight.severity === "critical")) return "critical";
   if (insights.some((insight) => insight.severity === "high")) return "high";
@@ -162,36 +193,22 @@ export function buildCopilotBrief(insights: CopilotInsight[]): CopilotBrief {
     };
   }
 
-  const operationCount = actionable.filter((insight) => insight.sourceType === "operation").length;
-  const technicalSources = actionable
-    .filter((insight) => insight.sourceType !== "operation")
-    .map((insight) => {
-      if (insight.sourceType === "weather") return "clima";
-      if (insight.sourceType === "lab") return "laboratorio";
-      if (insight.sourceType === "nutrition") return "nutrición";
-      if (insight.sourceType === "costs") return "costos";
-      return insight.sourceType;
-    });
-  const uniqueTechnicalSources = Array.from(new Set(technicalSources));
-  const topicSummary = [
-    operationCount ? `${operationCount} tema${operationCount === 1 ? "" : "s"} operativo${operationCount === 1 ? "" : "s"}` : "",
-    uniqueTechnicalSources.length ? naturalList(uniqueTechnicalSources) : ""
-  ].filter(Boolean);
-
-  const intro =
-    actionable.length === 1
-      ? "Leí la información disponible y encontré un punto que conviene atender."
-      : `Leí la información disponible y encontré ${actionable.length} puntos que conviene priorizar.`;
-  const context = topicSummary.length ? ` Incluye ${naturalList(topicSummary)}.` : "";
   const priority = primary
-    ? ` La prioridad es: ${primary.detail}`
-    : " La prioridad es confirmar que no haya pendientes críticos sin cierre.";
+    ? cleanCopilotText(primary.detail)
+    : "Confirma que no haya pendientes críticos sin cierre.";
+  const countLine = actionable.length === 1
+    ? "Hay un tema para revisar hoy."
+    : `Hay ${actionable.length} temas para revisar hoy.`;
+  const summary = `${countLine} La prioridad es ${priority}`;
+  const recommendation = cleanCopilotText(
+    primary?.recommendedAction || "Confirma avance, evidencia y responsable antes de crear otro seguimiento."
+  );
 
   return {
-    title: "Recomendación de Mira",
-    summary: `${intro}${context}${priority}`,
-    recommendation: primary?.recommendedAction || "Recomiendo confirmar el avance con el responsable y dejar seguimiento listo si no se cierra hoy.",
-    actionHint: "Puedo preparar un mensaje o un seguimiento para aprobación, sin ejecutar nada por mi cuenta.",
+    title: "Prioridad de Mira",
+    summary,
+    recommendation,
+    actionHint: "Puedo preparar mensaje o seguimiento para aprobación.",
     severity,
     primaryInsight: primary,
     evidence: actionable.flatMap((insight) => insight.evidence.slice(0, 2)).slice(0, 5)
@@ -272,7 +289,7 @@ export function buildCopilotPulse({
         sourceId: alert.id,
         greenhouseId: alert.greenhouseId,
         title: "Alerta sanitaria pendiente",
-        detail: `${alert.problem} en ${alert.zone || greenhouseName(greenhouses, alert.greenhouseId)}.`,
+        detail: `${pestProblemLabel(alert.problem)} en ${alert.zone || greenhouseName(greenhouses, alert.greenhouseId)}.`,
         severity: alert.severity === "Alta" ? "high" : "medium",
         recommendedAction: "Confirmar seguimiento y programar revision si no existe tarea.",
         evidence: [
@@ -305,4 +322,18 @@ export function buildCopilotPulse({
 export function managerMessageForInsight(insight: CopilotInsight) {
   const activity = insight.evidence.find((entry) => entry.label === "Actividad")?.value ?? insight.title;
   return `Mira Copilot detecto pendiente: ${activity}. ${insight.detail} Puedes confirmar avance o motivo del bloqueo?`;
+}
+
+export function insightFromSuggestedAction(action: CopilotSuggestedAction): CopilotInsight {
+  return {
+    id: action.id,
+    sourceType: action.sourceType,
+    sourceId: action.sourceId ?? null,
+    greenhouseId: action.greenhouseId ?? null,
+    title: action.title,
+    detail: action.detail,
+    severity: action.severity,
+    recommendedAction: action.recommendedAction || action.detail,
+    evidence: action.evidence
+  };
 }
