@@ -4,8 +4,11 @@ type ErrorLike = {
 };
 
 const knownMessages: Record<string, string> = {
-  "Invalid login credentials": "Email o password incorrectos.",
+  "Invalid login credentials": "Correo o contraseña incorrectos.",
   "Email not confirmed": "Confirma el correo antes de entrar.",
+  "User already registered": "Ese correo ya tiene cuenta. Entra con tu contraseña.",
+  "A user with this email address has already been registered": "Ese correo ya tiene cuenta. Entra con tu contraseña.",
+  "Password should be at least 6 characters": "Usa una contraseña más larga.",
   missing_supabase_client: "No se pudo conectar con Supabase.",
   not_authenticated: "Tu sesión expiró. Vuelve a iniciar sesión.",
   not_allowed: "Tu rol no permite hacer este cambio.",

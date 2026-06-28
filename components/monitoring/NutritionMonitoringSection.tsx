@@ -13,6 +13,7 @@ import {
   YAxis
 } from "recharts";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -862,7 +863,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
               </SelectInput>
             </Field>
             <Field label="Fecha de muestra">
-              <TextInput value={sampleDate} onChange={(event) => setSampleDate(event.target.value)} type="date" />
+              <DatePickerInput value={sampleDate} onChange={(event) => setSampleDate(event.target.value)} />
             </Field>
           </div>
 
@@ -1003,10 +1004,10 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
             </div>
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
               <Field label="Desde">
-                <TextInput value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" />
+                <DatePickerInput value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
               </Field>
               <Field label="Hasta">
-                <TextInput value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" />
+                <DatePickerInput value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
               </Field>
             </div>
             {historyError ? (

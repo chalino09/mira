@@ -1,4 +1,4 @@
-import type { CropCatalogItem, CropStageCatalog, Greenhouse, NutrientKey } from "@/types";
+import type { CropCatalogItem, CropStage, CropStageCatalog, Greenhouse, NutrientKey } from "@/types";
 
 export const INITIAL_CROP_ID = "7b81d4df-08fd-4f50-9eb8-2db1f3a7b1f1";
 
@@ -27,6 +27,25 @@ export const NUTRIENT_COLORS: Record<NutrientKey, string> = {
 
 export function isNutrientKey(value: string): value is NutrientKey {
   return NUTRIENT_KEYS.includes(value as NutrientKey);
+}
+
+export const CROP_STAGE_TO_DB: Record<CropStage, string> = {
+  Vegetativo: "vegetativo",
+  Floración: "floracion",
+  Cuajado: "cuajado",
+  Producción: "produccion"
+};
+
+export function cropStageFromDdt(ddt: number): CropStage {
+  const safeDdt = Math.max(0, Math.trunc(ddt || 0));
+
+  if (safeDdt < 43) return "Vegetativo";
+  if (safeDdt < 78) return "Floración";
+  return "Producción";
+}
+
+export function cropStageToDbValue(stage: CropStage) {
+  return CROP_STAGE_TO_DB[stage];
 }
 
 export function stagesForCrop(cropId?: string | null, cropStages: CropStageCatalog[] = []) {

@@ -55,7 +55,12 @@ supabase/33_mira_copilot_memory_chat.sql
 supabase/34_pest_alert_followup_history.sql
 ```
 
-4. Levanta la app:
+4. Crea usuarios desde la app:
+
+- Si alguien entra sin invitación, puede crear su cuenta y completar el onboarding para crear su empresa como `owner`.
+- Si alguien fue invitado, debe crear cuenta o entrar con el mismo correo invitado; Mira acepta la invitación automáticamente al iniciar sesión.
+
+5. Levanta la app:
 
 ```bash
 npm run dev

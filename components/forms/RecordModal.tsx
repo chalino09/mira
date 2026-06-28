@@ -4,10 +4,11 @@ import { Minus, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
-import { INITIAL_CROP_ID, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -16,7 +17,6 @@ import { cn, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
-  CropStage,
   Greenhouse,
   NutritionRecord,
   RiskLevel,
@@ -30,6 +30,13 @@ function todayInputValue() {
 function daysSince(date: string) {
   if (!date) return 0;
   return Math.max(0, Math.floor((Date.now() - new Date(`${date}T12:00:00`).getTime()) / 86400000));
+}
+
+function daysBetween(startDate?: string | null, endDate?: string | null) {
+  if (!startDate) return 0;
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = endDate ? new Date(`${endDate}T12:00:00`) : new Date();
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000));
 }
 
 function optionalNumber(value: FormDataEntryValue | null) {
@@ -93,13 +100,6 @@ const taskTypeToDb: Record<TaskType, string> = {
   Mantenimiento: "mantenimiento",
   "Preparación de ciclo": "otro",
   Otra: "otro"
-};
-
-const cropStageToDb: Record<CropStage, string> = {
-  Vegetativo: "vegetativo",
-  Floración: "floracion",
-  Cuajado: "cuajado",
-  Producción: "produccion"
 };
 
 const riskLevelToDb: Record<RiskLevel, string> = {
@@ -198,7 +198,7 @@ const modalCopy = {
   editGreenhouse: {
     title: "Editar área productiva",
     kicker: "Infraestructura",
-    note: "Actualiza variedad, etapa, plantas y datos base del cultivo."
+    note: "Actualiza variedad, trasplante, plantas y datos base del cultivo."
   },
   task: {
     title: "Nueva tarea",
@@ -423,6 +423,8 @@ export function RecordModal() {
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
     const managerUserId = String(form.get("managerUserId") ?? "").trim() || null;
     const cropId = String(form.get("cropId") ?? defaultCropId).trim() || null;
+    const transplantDate = String(form.get("transplantDate"));
+    const surfaceM2 = requiredNumber(form.get("surfaceM2"));
 
     return {
       name: String(form.get("name")),
@@ -430,21 +432,22 @@ export function RecordModal() {
       latitude: optionalNumber(form.get("latitude")),
       longitude: optionalNumber(form.get("longitude")),
       locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
-      surface: `${requiredNumber(form.get("surfaceM2")).toLocaleString("es-MX")} m2`,
+      surfaceM2,
+      surface: surfaceM2 ? `${surfaceM2.toLocaleString("es-MX")} m2` : "Sin superficie",
       budgetAmount: optionalNumber(form.get("budgetAmount")),
       cropId,
       variety: String(form.get("variety") ?? "").trim(),
-      transplantDate: String(form.get("transplantDate")),
+      transplantDate,
       plants: requiredNumber(form.get("plants")),
       stemCount: Number(form.get("stemCount")) === 1 || Number(form.get("stemCount")) === 2
         ? Number(form.get("stemCount")) as 1 | 2
         : null,
       isGrafted: String(form.get("isGrafted") ?? "") === "" ? null : String(form.get("isGrafted")) === "true",
-      stage: String(form.get("stage")) as CropStage,
+      stage: cropStageFromDdt(daysSince(transplantDate)),
       managerUserId,
       manager: managerNameFor(managerUserId),
       beds: requiredNumber(form.get("beds")),
-      daysSinceTransplant: daysSince(String(form.get("transplantDate"))),
+      daysSinceTransplant: daysSince(transplantDate),
       healthStatus: "Baja",
       temperature: 0,
       humidity: 0,
@@ -458,7 +461,7 @@ export function RecordModal() {
     latitude: greenhouse.latitude,
     longitude: greenhouse.longitude,
     location_accuracy_m: greenhouse.locationAccuracyM,
-    surface_m2: requiredNumber(form.get("surfaceM2")),
+    surface_m2: greenhouse.surfaceM2,
     budget_amount: greenhouse.budgetAmount,
     crop_id: greenhouse.cropId,
     crop_variety: greenhouse.variety,
@@ -468,7 +471,7 @@ export function RecordModal() {
     stem_count: greenhouse.stemCount,
     is_grafted: greenhouse.isGrafted,
     beds_count: greenhouse.beds,
-    crop_stage: cropStageToDb[greenhouse.stage],
+    crop_stage: cropStageToDbValue(greenhouse.stage),
     manager_user_id: greenhouse.managerUserId,
     health_status: riskLevelToDb[greenhouse.healthStatus]
   });
@@ -590,15 +593,19 @@ export function RecordModal() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     save(async () => {
+      const greenhouseId = String(form.get("greenhouseId"));
+      const occurredAt = String(form.get("date"));
+      const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === greenhouseId);
+      const stage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, occurredAt));
       const records = nutritionProducts.map((product) => ({
-        greenhouseId: String(form.get("greenhouseId")),
-        date: String(form.get("date")),
+        greenhouseId,
+        date: occurredAt,
         product: product.product,
         dose: product.dose,
         method: String(form.get("method")) as NutritionRecord["method"],
         ph: Number(form.get("ph")),
         ec: Number(form.get("ec")),
-        stage: String(form.get("stage")) as CropStage,
+        stage,
         objective: String(form.get("objective")) as NutritionRecord["objective"],
         notes: String(form.get("notes"))
       }));
@@ -613,7 +620,7 @@ export function RecordModal() {
           ph: record.ph,
           ec: record.ec,
           occurred_at: record.date,
-          crop_stage: cropStageToDb[record.stage],
+          crop_stage: cropStageToDbValue(record.stage),
           objective: nutritionObjectiveToDb[record.objective],
           notes: record.notes,
           responsible_user_id: currentUser.id,
@@ -846,7 +853,7 @@ export function RecordModal() {
             </SelectInput>
           </Field>
           <Field label="Fecha de trasplante">
-            <TextInput name="transplantDate" type="date" />
+            <DatePickerInput max={todayInputValue()} name="transplantDate" />
           </Field>
           <Field label="Plantas">
             <FormattedNumberInput name="plants" defaultValue={0} />
@@ -901,7 +908,7 @@ export function RecordModal() {
           <Field label="Superficie m2">
             <FormattedNumberInput
               name="surfaceM2"
-              defaultValue={parseNumericInput(selectedGreenhouse.surface) ?? 0}
+              defaultValue={selectedGreenhouse.surfaceM2 ?? 0}
             />
           </Field>
           <Field label="Cultivo">
@@ -934,7 +941,7 @@ export function RecordModal() {
             <BudgetInput defaultValue={selectedGreenhouse.budgetAmount ?? ""} />
           </Field>
           <Field label="Fecha de trasplante">
-            <TextInput name="transplantDate" type="date" defaultValue={selectedGreenhouse.transplantDate} />
+            <DatePickerInput max={todayInputValue()} name="transplantDate" defaultValue={selectedGreenhouse.transplantDate} />
           </Field>
           <Field label="Plantas">
             <FormattedNumberInput name="plants" defaultValue={selectedGreenhouse.plants} />
@@ -988,10 +995,10 @@ export function RecordModal() {
             <TextInput name="title" required placeholder="Revisión sector norte" />
           </Field>
           <Field label="Fecha">
-            <TextInput name="date" type="date" required defaultValue={todayInputValue()} />
+            <DatePickerInput name="date" required defaultValue={todayInputValue()} />
           </Field>
           <Field label="Hora">
-            <TextInput name="time" type="time" />
+            <TimePickerInput name="time" />
           </Field>
         </FormShell>
       ) : null}
@@ -999,7 +1006,7 @@ export function RecordModal() {
       {modal === "irrigation" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Duración min"><TextInput name="durationMin" type="number" required defaultValue={0} /></Field>
           <Field label="Litros estimados"><TextInput name="liters" type="number" required defaultValue={0} /></Field>
           <Field label="Sector o válvula"><TextInput name="sector" placeholder="Válvula A1" /></Field>
@@ -1012,7 +1019,7 @@ export function RecordModal() {
       {modal === "nutrition" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
@@ -1042,7 +1049,6 @@ export function RecordModal() {
           </section>
           <Field label="Método"><SelectInput name="method" defaultValue="Fertirriego">{["Fertirriego", "Foliar", "Drench"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Objetivo"><SelectInput name="objective" defaultValue="Engorde">{["Raíz", "Floración", "Cuajado", "Engorde", "Calidad"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
-          <Field label="Etapa"><SelectInput name="stage" defaultValue="Producción">{["Vegetativo", "Floración", "Cuajado", "Producción"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={0} /></Field>
           <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={0} /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
@@ -1052,7 +1058,7 @@ export function RecordModal() {
       {modal === "application" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
@@ -1086,7 +1092,7 @@ export function RecordModal() {
       {modal === "pest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handlePest}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="detectedAt" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="detectedAt" required defaultValue={todayInputValue()} /></Field>
           <Field label="Problema"><TextInput name="problem" required placeholder="Mosquita blanca" /></Field>
           <Field label="Incidencia"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Zona afectada"><TextInput name="zone" placeholder="Camas 10-12" /></Field>
@@ -1097,8 +1103,8 @@ export function RecordModal() {
               {pestFollowUpStatuses.map((status) => <option key={status}>{status}</option>)}
             </SelectInput>
           </Field>
-          <Field label="Fecha de revisión"><TextInput name="reviewDate" type="date" /></Field>
-          <Field label="Fecha de reaplicación"><TextInput name="reapplicationDate" type="date" /></Field>
+          <Field label="Fecha de revisión"><DatePickerInput name="reviewDate" /></Field>
+          <Field label="Fecha de reaplicación"><DatePickerInput name="reapplicationDate" /></Field>
           <Field label="Seguimiento"><TextArea name="followUp" placeholder="Resultado observado, población, daño o producto sugerido para reaplicar." /></Field>
         </FormShell>
       ) : null}
@@ -1106,7 +1112,7 @@ export function RecordModal() {
       {modal === "harvest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Kg cosechados"><TextInput name="kilograms" type="number" required defaultValue={0} /></Field>
           <Field label="Primera"><TextInput name="firstQuality" type="number" defaultValue={0} /></Field>
           <Field label="Segunda"><TextInput name="secondQuality" type="number" defaultValue={0} /></Field>
@@ -1120,7 +1126,7 @@ export function RecordModal() {
       {modal === "cost" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
-          <Field label="Fecha"><TextInput name="date" type="date" required defaultValue={todayInputValue()} /></Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Gastos</p>

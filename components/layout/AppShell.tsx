@@ -38,6 +38,7 @@ import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { OverviewHero } from "@/components/overview/OverviewHero";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -816,7 +817,7 @@ function PestsSection() {
         {editingAlert ? (
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleEditAlert}>
             <Field label="Fecha">
-              <TextInput name="detectedAt" type="date" required defaultValue={editingAlert.detectedAt} />
+              <DatePickerInput name="detectedAt" required defaultValue={editingAlert.detectedAt} />
             </Field>
             <Field label="Incidencia">
               <SelectInput name="severity" defaultValue={editingAlert.severity}>
@@ -875,7 +876,7 @@ function PestsSection() {
               </SelectInput>
             </Field>
             <Field label="Próxima revisión">
-              <TextInput name="nextReviewDate" type="date" />
+              <DatePickerInput name="nextReviewDate" />
             </Field>
             <Field label="Evidencia">
               <input
@@ -1170,7 +1171,7 @@ function getUniqueProducts(applications: ApplicationRecord[], nutrition: Nutriti
 
 function greenhouseSurfaceTotal(greenhouses: Greenhouse[]) {
   return greenhouses.reduce((sum, greenhouse) => {
-    return sum + (parseNumericInput(greenhouse.surface) ?? 0);
+    return sum + (greenhouse.surfaceM2 ?? 0);
   }, 0);
 }
 
@@ -1423,7 +1424,7 @@ function SettingsSection() {
       if (error) throw error;
 
       formElement.reset();
-      setMembersNotice("Invitación guardada. Crea ese usuario en Supabase Auth si todavía no existe.");
+      setMembersNotice("Invitación guardada. Pide al usuario crear su cuenta con este mismo correo.");
       await loadMembers();
     } catch (caught) {
       setMembersNotice(appErrorMessage(caught, "No se pudo invitar al usuario."));

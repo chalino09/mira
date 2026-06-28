@@ -18,6 +18,7 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
+import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -25,11 +26,12 @@ import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
-import { greenhouseDisplayName } from "@/lib/crop-ddt";
+import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import type { CopilotInsight } from "@/lib/mira-copilot";
-import type { ApplicationRecord, CropCatalogItem, CropStage, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
+import type { ApplicationRecord, CropCatalogItem, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
 type PlanStatus = "draft" | "published" | "closed";
 type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -143,7 +145,6 @@ type NutritionExecutionDraft = {
 type NutritionExecutionPayload = {
   date: string;
   method: NutritionRecord["method"];
-  stage: CropStage;
   objective: NutritionRecord["objective"];
   ph: number | null;
   ec: number | null;
@@ -274,13 +275,6 @@ const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
   Drench: "drench"
 };
 
-const cropStageToDb: Record<CropStage, string> = {
-  Vegetativo: "vegetativo",
-  Floración: "floracion",
-  Cuajado: "cuajado",
-  Producción: "produccion"
-};
-
 const nutritionObjectiveToDb: Record<NutritionRecord["objective"], string> = {
   Raíz: "raiz",
   Floración: "floracion",
@@ -298,6 +292,13 @@ function dateKey(date: Date) {
 
 function dateFromKey(value: string) {
   return new Date(`${value}T12:00:00`);
+}
+
+function daysBetween(startDate?: string | null, endDate?: string | null) {
+  if (!startDate) return 0;
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = endDate ? new Date(`${endDate}T12:00:00`) : new Date();
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000));
 }
 
 function weekLabel(weekStart: Date) {
@@ -457,10 +458,12 @@ function ActivityFormModal({
   const [materialRows, setMaterialRows] = useState<MaterialDraft[]>([emptyMaterial()]);
   const [activityType, setActivityType] = useState("fertirriego");
   const [technicalPlan, setTechnicalPlan] = useState<TechnicalPlan>({});
+  const [scheduledDate, setScheduledDate] = useState("");
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (!open) return;
+    setScheduledDate(task?.scheduled_date ?? dateKey(weekDays[0]));
     setAssigneeIds(task ? assignments.filter((item) => item.task_id === task.id).map((item) => item.user_id) : []);
     const taskMaterials = task
       ? materials
@@ -477,7 +480,7 @@ function ActivityFormModal({
     setActivityType(task?.type === "otro" && task.technical_plan?.cycleWorkType ? "preparacion_ciclo" : task?.type ?? "fertirriego");
     setTechnicalPlan(task?.technical_plan ?? {});
     setFormError("");
-  }, [assignments, materials, open, task]);
+  }, [assignments, materials, open, task, weekDays]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -493,7 +496,7 @@ function ActivityFormModal({
       greenhouseId: String(form.get("greenhouseId")),
       type: dbActivityType,
       title: String(form.get("title")),
-      scheduledDate: String(form.get("scheduledDate")),
+      scheduledDate,
       scheduledTime: String(form.get("scheduledTime") ?? ""),
       priority: String(form.get("priority")) as TaskPriority,
       instructions: String(form.get("instructions") ?? ""),
@@ -533,14 +536,35 @@ function ActivityFormModal({
             <TextInput name="title" defaultValue={task?.title ?? ""} placeholder="Fertirriego matutino Hectárea 1" required />
           </Field>
           <Field label="Día">
-            <SelectInput name="scheduledDate" defaultValue={task?.scheduled_date ?? dateKey(weekDays[0])}>
-              {weekDays.map((date) => (
-                <option key={dateKey(date)} value={dateKey(date)}>{dayLabel(date)}</option>
-              ))}
-            </SelectInput>
+            <input name="scheduledDate" type="hidden" value={scheduledDate} />
+            <div className="grid grid-cols-7 gap-1.5">
+              {weekDays.map((date) => {
+                const key = dateKey(date);
+                const selected = key === scheduledDate;
+
+                return (
+                  <button
+                    className={cn(
+                      "grid h-12 place-items-center rounded-lg border px-1 text-center transition",
+                      selected
+                        ? "border-app-green bg-app-green text-white"
+                        : "border-app-border bg-white text-app-text hover:bg-app-sidebar"
+                    )}
+                    key={key}
+                    onClick={() => setScheduledDate(key)}
+                    type="button"
+                  >
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                      {new Intl.DateTimeFormat("es-MX", { weekday: "short" }).format(date).replace(".", "")}
+                    </span>
+                    <span className="text-sm font-semibold">{date.getDate()}</span>
+                  </button>
+                );
+              })}
+            </div>
           </Field>
           <Field label="Hora">
-            <TextInput name="scheduledTime" type="time" defaultValue={task?.scheduled_time?.slice(0, 5) ?? ""} />
+            <TimePickerInput name="scheduledTime" defaultValue={task?.scheduled_time?.slice(0, 5) ?? ""} />
           </Field>
           <Field label="Prioridad">
             <SelectInput name="priority" defaultValue={task?.priority ?? "normal"}>
@@ -859,7 +883,7 @@ function CompleteApplicationModal({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real de aplicación">
-            <TextInput onChange={(event) => setOccurredAt(event.target.value)} required type="date" value={occurredAt} />
+            <DatePickerInput onChange={(event) => setOccurredAt(event.target.value)} required value={occurredAt} />
           </Field>
           <Field label="Área aplicada">
             <TextInput onChange={(event) => setAppliedArea(event.target.value)} placeholder="Área completa o sección 1" value={appliedArea} />
@@ -926,16 +950,14 @@ function CompleteApplicationModal({
                   </SelectInput>
                 </Field>
                 <Field label="Fecha de revisión">
-                  <TextInput
+                  <DatePickerInput
                     onChange={(event) => updateApplication(index, { reviewDate: event.target.value })}
-                    type="date"
                     value={application.reviewDate}
                   />
                 </Field>
                 <Field label="Fecha de reaplicación">
-                  <TextInput
+                  <DatePickerInput
                     onChange={(event) => updateApplication(index, { reapplicationDate: event.target.value })}
-                    type="date"
                     value={application.reapplicationDate}
                   />
                 </Field>
@@ -994,7 +1016,7 @@ function CompleteIrrigationModal({
       <form className="grid gap-5" key={task?.id ?? "irrigation-completion"} onSubmit={handleSubmit}>
         <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <Field label="Duración min"><TextInput min={1} name="durationMin" required type="number" defaultValue={task?.technical_plan?.plannedDurationMin ?? ""} /></Field>
           <Field label="Litros estimados"><TextInput min={0.01} name="liters" required step="0.01" type="number" defaultValue={task?.technical_plan?.plannedLiters ?? ""} /></Field>
           <Field label="Sector o válvula"><TextInput name="sector" defaultValue={task?.technical_plan?.sector ?? ""} /></Field>
@@ -1015,7 +1037,6 @@ function CompleteNutritionModal({
   task,
   materials,
   greenhouseName,
-  defaultStage,
   saving,
   onClose,
   onSave
@@ -1023,7 +1044,6 @@ function CompleteNutritionModal({
   task: OperationTaskRow | null;
   materials: MaterialRow[];
   greenhouseName: string;
-  defaultStage: CropStage;
   saving: boolean;
   onClose: () => void;
   onSave: (payload: NutritionExecutionPayload) => Promise<void>;
@@ -1045,7 +1065,6 @@ function CompleteNutritionModal({
     await onSave({
       date: String(form.get("date")),
       method: String(form.get("method")) as NutritionRecord["method"],
-      stage: String(form.get("stage")) as CropStage,
       objective: String(form.get("objective")) as NutritionRecord["objective"],
       ph: optionalFormNumber(form.get("ph")),
       ec: optionalFormNumber(form.get("ec")),
@@ -1059,14 +1078,11 @@ function CompleteNutritionModal({
       <form className="grid gap-5" key={task?.id ?? "nutrition-completion"} onSubmit={handleSubmit}>
         <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <Field label="Método">
             <SelectInput name="method" defaultValue={task?.technical_plan?.method ?? "Fertirriego"}>
               {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
             </SelectInput>
-          </Field>
-          <Field label="Etapa">
-            <SelectInput name="stage" defaultValue={defaultStage}>{Object.keys(cropStageToDb).map((stage) => <option key={stage}>{stage}</option>)}</SelectInput>
           </Field>
           <Field label="Objetivo">
             <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Calidad"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
@@ -1137,7 +1153,7 @@ function CompleteHarvestModal({
           {task?.title} · {greenhouseName}{task?.technical_plan?.harvestZone ? ` · ${task.technical_plan.harvestZone}` : ""}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Fecha real"><TextInput name="date" required type="date" defaultValue={dateKey(new Date())} /></Field>
+          <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <Field label="Kilogramos totales"><TextInput min={0.01} name="kilograms" required step="0.01" type="number" /></Field>
           <Field label="Primera calidad"><TextInput min={0} name="firstQuality" step="0.01" type="number" defaultValue={0} /></Field>
           <Field label="Segunda calidad"><TextInput min={0} name="secondQuality" step="0.01" type="number" defaultValue={0} /></Field>
@@ -1546,11 +1562,13 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
+    const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === nutritionTask.greenhouse_id);
+    const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, payload.date));
     const { data, error } = await supabase.rpc("complete_nutrition_task", {
       target_task_id: nutritionTask.id,
       target_occurred_at: payload.date,
       target_method: nutritionMethodToDb[payload.method],
-      target_crop_stage: cropStageToDb[payload.stage],
+      target_crop_stage: cropStageToDbValue(cropStage),
       target_objective: nutritionObjectiveToDb[payload.objective],
       target_ph: payload.ph,
       target_ec: payload.ec,
@@ -1573,7 +1591,7 @@ export function OperationsSection({
       method: payload.method,
       ph: payload.ph ?? 0,
       ec: payload.ec ?? 0,
-      stage: payload.stage,
+      stage: cropStage,
       objective: payload.objective,
       notes: payload.notes
     }));
@@ -1908,7 +1926,6 @@ export function OperationsSection({
       />
 
       <CompleteNutritionModal
-        defaultStage={greenhouses.find((greenhouse) => greenhouse.id === nutritionTask?.greenhouse_id)?.stage ?? "Producción"}
         greenhouseName={nutritionTask ? greenhouseName(nutritionTask.greenhouse_id) : ""}
         materials={nutritionTask ? materialsForTask(nutritionTask.id) : []}
         onClose={() => setNutritionTask(null)}

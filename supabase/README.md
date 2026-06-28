@@ -38,7 +38,7 @@ Ejecuta estos archivos en Supabase SQL Editor en este orden:
 34. `34_pest_alert_followup_history.sql`
 35. `03_seed_template.sql` solo si quieres datos demo manuales.
 
-Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra con el usuario de Supabase Auth y completa la pantalla de onboarding.
+Si quieres que la empresa, nombre de usuario y primer invernadero se creen desde la app, ejecuta `03_onboarding_rpc.sql` y no ejecutes `03_seed_template.sql`. Entra a Mira, crea tu cuenta desde la pantalla de acceso y completa el onboarding.
 
 Roles disponibles:
 
@@ -46,7 +46,7 @@ Roles disponibles:
 - `admin`: administrador operativo. Puede ver, crear, editar, borrar y administrar miembros.
 - `manager`: encargado. Puede ver y capturar registros solo del invernadero donde esté asignado como responsable.
 
-Nota: primero crea los usuarios desde Supabase Auth. Después usa sus `auth.users.id` en `03_seed_template.sql`.
+Nota: no necesitas crear usuarios manualmente desde Supabase Auth para operar la app. Los usuarios nuevos crean su cuenta desde Mira; si fueron invitados, deben usar el mismo correo para que `accept_company_invites()` active su membresía.
 
 Si ya ejecutaste `02_rls_policies.sql` antes de agregar onboarding, puedes volver a ejecutarlo sin problema.
 

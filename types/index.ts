@@ -91,6 +91,7 @@ export type Greenhouse = {
   latitude: number | null;
   longitude: number | null;
   locationAccuracyM: number | null;
+  surfaceM2: number | null;
   surface: string;
   budgetAmount: number | null;
   cropId: string | null;

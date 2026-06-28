@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn, formatNumericInput } from "@/lib/utils";
 
@@ -42,7 +42,12 @@ export function FormattedNumberInput({
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode" | "defaultValue"> & {
   defaultValue?: number | string | null;
 }) {
-  const [value, setValue] = useState(defaultValue == null ? "" : formatNumericInput(defaultValue));
+  const formattedDefaultValue = defaultValue == null ? "" : formatNumericInput(defaultValue);
+  const [value, setValue] = useState(formattedDefaultValue);
+
+  useEffect(() => {
+    setValue(formattedDefaultValue);
+  }, [formattedDefaultValue]);
 
   return (
     <input

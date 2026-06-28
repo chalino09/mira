@@ -7,10 +7,11 @@ import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { Button } from "@/components/ui/Button";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
-import { INITIAL_CROP_ID, isNutrientKey } from "@/lib/crop-ddt";
+import { getCropDdtStatus, INITIAL_CROP_ID, isNutrientKey } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import type {
   NutritionAnalyteKey,
@@ -55,7 +56,6 @@ type OnboardingForm = {
   latitude: number | null;
   longitude: number | null;
   locationAccuracyM: number | null;
-  stage: CropStage;
   transplantDate: string;
   surfaceM2: number | null;
   budgetAmount: number | null;
@@ -63,13 +63,6 @@ type OnboardingForm = {
   stemCount: 1 | 2 | null;
   isGrafted: boolean | null;
   beds: number;
-};
-
-const onboardingStageToDb: Record<CropStage, string> = {
-  Vegetativo: "vegetativo",
-  Floración: "floracion",
-  Cuajado: "cuajado",
-  Producción: "produccion"
 };
 
 const DEFAULT_CROP_OPTIONS: CropCatalogItem[] = [
@@ -268,6 +261,30 @@ function daysSince(date?: string | null) {
   return Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000));
 }
 
+function dbCropStageFromTransplant(
+  cropId: string,
+  transplantDate: string,
+  cropStages: CropStageCatalog[]
+) {
+  const ddtStatus = getCropDdtStatus(cropId, transplantDate, daysSince(transplantDate), cropStages);
+  const stageText = `${ddtStatus.stage?.label ?? ""} ${ddtStatus.stage?.name ?? ""}`.toLowerCase();
+
+  if (stageText.includes("vegetativo") || stageText.includes("establecimiento")) return "vegetativo";
+  if (stageText.includes("cuajado") && !stageText.includes("flor")) return "cuajado";
+  if (stageText.includes("flor")) return "floracion";
+  if (stageText.includes("cosecha") || stageText.includes("engorde")) return "produccion";
+
+  if (ddtStatus.stage) {
+    if (ddtStatus.stage.number <= 2) return "vegetativo";
+    if (ddtStatus.stage.number === 3) return "floracion";
+    return "produccion";
+  }
+
+  if (ddtStatus.ddt < 43) return "vegetativo";
+  if (ddtStatus.ddt < 78) return "floracion";
+  return "produccion";
+}
+
 function optionalNumber(value: FormDataEntryValue | null) {
   return parseNumericInput(String(value ?? ""));
 }
@@ -409,21 +426,66 @@ function AccessPausedScreen({ message, onSignOut }: { message: string; onSignOut
 }
 
 function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendingConfirmation, setResendingConfirmation] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setNotice("");
+    setPendingConfirmationEmail("");
     setLoading(true);
 
     const supabase = getSupabaseBrowserClient();
     const form = new FormData(event.currentTarget);
-    const email = String(form.get("email"));
+    const email = String(form.get("email") ?? "").trim().toLowerCase();
     const password = String(form.get("password"));
+    const fullName = String(form.get("fullName") ?? "").trim();
     if (!supabase) {
       setLoading(false);
       setError("No se pudo conectar con Supabase.");
+      return;
+    }
+
+    if (mode === "sign-up") {
+      if (fullName.length < 2) {
+        setLoading(false);
+        setError("Escribe tu nombre completo.");
+        return;
+      }
+
+      if (password.length < 8) {
+        setLoading(false);
+        setError("Usa una contraseña de al menos 8 caracteres.");
+        return;
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName },
+          emailRedirectTo: window.location.origin
+        }
+      });
+
+      setLoading(false);
+      if (signUpError) {
+        setError(appErrorMessage(signUpError, "No se pudo crear la cuenta."));
+        return;
+      }
+
+      if (data.session) {
+        onSignedIn();
+        return;
+      }
+
+      setPendingConfirmationEmail(email);
+      setNotice("Cuenta creada. Revisa tu correo para confirmar el acceso y luego entra con tu contraseña.");
       return;
     }
 
@@ -437,13 +499,44 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
     onSignedIn();
   };
 
+  const resendConfirmation = async () => {
+    if (!pendingConfirmationEmail) return;
+
+    setError("");
+    setNotice("");
+    setResendingConfirmation(true);
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setResendingConfirmation(false);
+      setError("No se pudo conectar con Supabase.");
+      return;
+    }
+
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: pendingConfirmationEmail,
+      options: {
+        emailRedirectTo: window.location.origin
+      }
+    });
+
+    setResendingConfirmation(false);
+    if (resendError) {
+      setError(appErrorMessage(resendError, "No se pudo reenviar el correo."));
+      return;
+    }
+
+    setNotice("Correo reenviado. Revisa entrada, spam o correo no deseado.");
+  };
+
   return (
     <AuthCard kicker="mira" title="Accede al sistema operativo de tus cultivos.">
       <form className="px-4" onSubmit={handleSubmit}>
         <div className="mb-8 flex items-start justify-between gap-6 border-b border-app-border pb-6">
           <div>
             <h2 className="text-3xl font-light tracking-normal text-app-text">
-              Entra a tu espacio
+              {mode === "sign-in" ? "Entra a tu espacio" : "Crea tu acceso"}
             </h2>
           </div>
           <span className="whitespace-nowrap pt-1 font-mono text-[11px] uppercase tracking-[0.16em] text-app-green">
@@ -451,7 +544,19 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
           </span>
         </div>
         <div className="grid gap-5">
-        <Field label="Email">
+        {mode === "sign-up" ? (
+          <Field label="Nombre completo">
+            <TextInput
+              autoComplete="name"
+              className="rounded-lg bg-app-background"
+              maxLength={120}
+              name="fullName"
+              placeholder="Nombre y apellidos"
+              required
+            />
+          </Field>
+        ) : null}
+        <Field label="Correo">
           <TextInput
             autoComplete="email"
             className="rounded-lg bg-app-background"
@@ -461,9 +566,9 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
             type="email"
           />
         </Field>
-        <Field label="Password">
+        <Field label="Contraseña">
           <TextInput
-            autoComplete="current-password"
+            autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
             className="rounded-lg bg-app-background"
             name="password"
             placeholder="Tu contraseña"
@@ -472,8 +577,33 @@ function SignInScreen({ onSignedIn }: { onSignedIn: () => void }) {
           />
         </Field>
         {error ? <p className="text-sm text-[#8A2E2E]">{error}</p> : null}
+        {notice ? <p className="text-sm leading-6 text-app-muted">{notice}</p> : null}
+        {pendingConfirmationEmail ? (
+          <Button
+            className="h-11 rounded-lg"
+            disabled={resendingConfirmation}
+            onClick={resendConfirmation}
+            type="button"
+            variant="ghost"
+          >
+            {resendingConfirmation ? "Reenviando..." : "Reenviar correo"}
+          </Button>
+        ) : null}
         <Button className="mt-2 h-11 rounded-lg" disabled={loading} type="submit" variant="primary">
-          {loading ? "Entrando..." : "Entrar"}
+          {loading ? (mode === "sign-in" ? "Entrando..." : "Creando...") : mode === "sign-in" ? "Entrar" : "Crear cuenta"}
+        </Button>
+        <Button
+          className="h-11 rounded-lg"
+          disabled={loading}
+          onClick={() => {
+            setMode((currentMode) => (currentMode === "sign-in" ? "sign-up" : "sign-in"));
+            setError("");
+            setNotice("");
+            setPendingConfirmationEmail("");
+          }}
+          type="button"
+        >
+          {mode === "sign-in" ? "Crear cuenta" : "Ya tengo cuenta"}
         </Button>
         </div>
       </form>
@@ -573,7 +703,9 @@ function OnboardingScreen({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [cropOptions, setCropOptions] = useState<CropCatalogItem[]>(DEFAULT_CROP_OPTIONS);
+  const [cropStageOptions, setCropStageOptions] = useState<CropStageCatalog[]>([]);
   const [selectedCropId, setSelectedCropId] = useState(INITIAL_CROP_ID);
+  const [transplantDate, setTransplantDate] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -582,15 +714,23 @@ function OnboardingScreen({
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
 
-      const { data } = await supabase
-        .from("crops")
-        .select("id, slug, name, scientific_name, default_cycle_days, is_active")
-        .eq("is_active", true)
-        .order("name", { ascending: true });
+      const [cropsResponse, stagesResponse] = await Promise.all([
+        supabase
+          .from("crops")
+          .select("id, slug, name, scientific_name, default_cycle_days, is_active")
+          .eq("is_active", true)
+          .order("name", { ascending: true }),
+        supabase
+          .from("crop_stages")
+          .select("id, crop_id, stage_number, stage_label, stage_name, ddt_start, ddt_end, duration_days")
+          .eq("is_active", true)
+          .order("stage_number", { ascending: true })
+      ]);
 
       if (!cancelled) {
-        const mapped = mapCrops(data);
+        const mapped = mapCrops(cropsResponse.data);
         setCropOptions(mapped.length ? mapped : DEFAULT_CROP_OPTIONS);
+        setCropStageOptions(mapCropStages(stagesResponse.data, []));
       }
     }
 
@@ -618,7 +758,6 @@ function OnboardingScreen({
       latitude: optionalNumber(form.get("latitude")),
       longitude: optionalNumber(form.get("longitude")),
       locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
-      stage: String(form.get("stage") ?? "Producción") as CropStage,
       transplantDate: String(form.get("transplantDate") ?? ""),
       surfaceM2: optionalNumber(form.get("surfaceM2")),
       budgetAmount: optionalNumber(form.get("budgetAmount")),
@@ -630,6 +769,12 @@ function OnboardingScreen({
       beds: optionalInteger(form.get("beds"))
     };
 
+    if (!values.transplantDate) {
+      setLoading(false);
+      setError("Selecciona la fecha de trasplante para calcular DDT.");
+      return;
+    }
+
     const { error: onboardingError } = await supabase.rpc("create_initial_workspace_with_coordinates", {
       full_name: values.fullName,
       company_name: values.companyName,
@@ -638,7 +783,7 @@ function OnboardingScreen({
       tomato_variety: values.cropId === INITIAL_CROP_ID ? values.variety : null,
       crop_variety: values.variety,
       initial_crop_id: values.cropId,
-      initial_crop_stage: onboardingStageToDb[values.stage],
+      initial_crop_stage: dbCropStageFromTransplant(values.cropId, values.transplantDate, cropStageOptions),
       initial_transplant_date: values.transplantDate || null,
       initial_surface_m2: values.surfaceM2,
       initial_budget_amount: values.budgetAmount,
@@ -663,6 +808,10 @@ function OnboardingScreen({
   const today = new Date().toISOString().slice(0, 10);
   const selectedCrop = cropOptions.find((crop) => crop.id === selectedCropId) ?? cropOptions[0];
   const varietyOptions = cropVarietyOptionsForSlug(selectedCrop?.slug);
+  const ddtStatus = getCropDdtStatus(selectedCropId, transplantDate, daysSince(transplantDate), cropStageOptions);
+  const ddtStageLabel = transplantDate
+    ? `${ddtStatus.ddt} DDT · ${ddtStatus.stage ? ddtStatus.label : ddtStatus.detail}`
+    : "Selecciona trasplante";
 
   return (
     <AuthCard kicker="Primer acceso" title="Configura tu empresa y primera área productiva.">
@@ -737,15 +886,20 @@ function OnboardingScreen({
               </SelectInput>
             </Field>
             <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
-            <Field label="Etapa">
-              <SelectInput className="rounded-lg bg-app-background" name="stage" defaultValue="Producción">
-                {["Vegetativo", "Floración", "Cuajado", "Producción"].map((stage) => (
-                  <option key={stage}>{stage}</option>
-                ))}
-              </SelectInput>
-            </Field>
             <Field label="Trasplante">
-              <TextInput className="rounded-lg bg-app-background" max={today} name="transplantDate" type="date" />
+              <DatePickerInput
+                className="rounded-lg bg-app-background"
+                max={today}
+                name="transplantDate"
+                onChange={(event) => setTransplantDate(event.target.value)}
+                required
+                value={transplantDate}
+              />
+            </Field>
+            <Field label="Etapa por DDT">
+              <div className="flex h-11 items-center rounded-lg border border-app-border bg-app-sidebar px-3 text-sm font-medium text-app-text">
+                {ddtStageLabel}
+              </div>
             </Field>
             <Field label="Superficie m2">
               <FormattedNumberInput className="rounded-lg bg-app-background" name="surfaceM2" placeholder="1,000" />
@@ -1044,6 +1198,7 @@ export function AuthGate() {
 
       const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
         const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
+        const surfaceM2 = greenhouse.surface_m2 == null ? null : Number(greenhouse.surface_m2);
 
         return {
           id: greenhouse.id,
@@ -1052,7 +1207,8 @@ export function AuthGate() {
           latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
           longitude: greenhouse.longitude == null ? null : Number(greenhouse.longitude),
           locationAccuracyM: greenhouse.location_accuracy_m == null ? null : Number(greenhouse.location_accuracy_m),
-          surface: greenhouse.surface_m2 ? `${Number(greenhouse.surface_m2).toLocaleString("es-MX")} m2` : "Sin superficie",
+          surfaceM2,
+          surface: surfaceM2 ? `${surfaceM2.toLocaleString("es-MX")} m2` : "Sin superficie",
           budgetAmount: greenhouse.budget_amount == null ? null : Number(greenhouse.budget_amount),
           cropId: greenhouse.crop_id ?? null,
           variety: greenhouse.crop_variety ?? greenhouse.tomato_variety ?? "",

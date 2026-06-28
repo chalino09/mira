@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, FileText, FlaskConical, Plus, Save, Sprout, Trash2, Upload, WandSparkles } from "lucide-react";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -654,7 +655,7 @@ export function TechnicalLabSection() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <Field label="Fecha de muestra">
-                <TextInput value={sampleDate} onChange={(event) => setSampleDate(event.target.value)} type="date" />
+                <DatePickerInput value={sampleDate} onChange={(event) => setSampleDate(event.target.value)} />
               </Field>
               <Field label="Tipo esperado">
                 <SelectInput value={studyType} onChange={(event) => handleStudyTypeChange(event.target.value as LabStudyType)}>
@@ -711,10 +712,10 @@ export function TechnicalLabSection() {
               </SelectInput>
             </Field>
             <Field label="Desde">
-              <TextInput value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" />
+              <DatePickerInput value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
             </Field>
             <Field label="Hasta">
-              <TextInput value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" />
+              <DatePickerInput value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
             </Field>
           </div>
 
