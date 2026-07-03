@@ -1990,11 +1990,6 @@ function SettingsSection() {
                 </div>
                 {staffNotice ? <p className="mt-4 text-sm text-app-muted">{staffNotice}</p> : null}
               </div>
-              <div className="mt-6 border-t border-app-border pt-5">
-                <SettingRow label="Owner" value="Configura todo" detail="Empresa, usuarios, registros y ajustes" />
-                <SettingRow label="Admin" value="Opera y configura" detail="Sin cambios críticos de propiedad" />
-                <SettingRow label="Manager" value="Captura operación" detail="Riego, nutrición, aplicaciones y cosecha" />
-              </div>
             </aside>
           </div>
         </SettingsPanel>
