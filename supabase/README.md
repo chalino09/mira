@@ -110,6 +110,8 @@ Para agregar memoria operativa, conversaciones y decisiones de Mira Copilot, eje
 
 Para convertir alertas sanitarias en expedientes con historial de seguimiento, ejecuta `34_pest_alert_followup_history.sql` despues de `33_mira_copilot_memory_chat.sql`.
 
+Para registrar encargados internos sin correo ni acceso y asignarlos a invernaderos o actividades, ejecuta `35_internal_staff.sql` despues de `34_pest_alert_followup_history.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

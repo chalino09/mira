@@ -68,6 +68,12 @@ type AssignmentRow = {
   user_id: string;
 };
 
+type StaffAssignmentRow = {
+  id: string;
+  task_id: string;
+  staff_id: string;
+};
+
 type MaterialRow = {
   id: string;
   task_id: string;
@@ -82,6 +88,12 @@ type ManagerOption = {
   id: string;
   name: string;
   email: string;
+};
+
+type StaffOption = {
+  id: string;
+  name: string;
+  detail: string;
 };
 
 type OperationGreenhouseOption = {
@@ -165,6 +177,7 @@ type ActivityPayload = {
   executionMode: ExecutionMode;
   crewSize: number | null;
   assigneeIds: string[];
+  staffAssigneeIds: string[];
   materials: MaterialDraft[];
   technicalPlan: TechnicalPlan;
 };
@@ -438,8 +451,10 @@ function ActivityFormModal({
   greenhouses,
   crops,
   managers,
+  staff,
   task,
   assignments,
+  staffAssignments,
   materials
 }: {
   open: boolean;
@@ -447,24 +462,41 @@ function ActivityFormModal({
   onSave: (payload: ActivityPayload) => Promise<void>;
   saving: boolean;
   weekDays: Date[];
-  greenhouses: Array<Pick<Greenhouse, "id" | "name" | "cropId">>;
+  greenhouses: Array<Pick<Greenhouse, "id" | "name" | "cropId" | "managerUserId" | "managerStaffId">>;
   crops: CropCatalogItem[];
   managers: ManagerOption[];
+  staff: StaffOption[];
   task: OperationTaskRow | null;
   assignments: AssignmentRow[];
+  staffAssignments: StaffAssignmentRow[];
   materials: MaterialRow[];
 }) {
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [staffAssigneeIds, setStaffAssigneeIds] = useState<string[]>([]);
   const [materialRows, setMaterialRows] = useState<MaterialDraft[]>([emptyMaterial()]);
   const [activityType, setActivityType] = useState("fertirriego");
   const [technicalPlan, setTechnicalPlan] = useState<TechnicalPlan>({});
   const [scheduledDate, setScheduledDate] = useState("");
+  const [selectedGreenhouseId, setSelectedGreenhouseId] = useState("");
   const [formError, setFormError] = useState("");
+
+  const applyGreenhouseDefaultAssignee = useCallback((greenhouseId: string) => {
+    const greenhouse = greenhouses.find((item) => item.id === greenhouseId);
+    setAssigneeIds(greenhouse?.managerUserId ? [greenhouse.managerUserId] : []);
+    setStaffAssigneeIds(greenhouse?.managerStaffId ? [greenhouse.managerStaffId] : []);
+  }, [greenhouses]);
 
   useEffect(() => {
     if (!open) return;
+    const defaultGreenhouseId = task?.greenhouse_id ?? greenhouses[0]?.id ?? "";
     setScheduledDate(task?.scheduled_date ?? dateKey(weekDays[0]));
-    setAssigneeIds(task ? assignments.filter((item) => item.task_id === task.id).map((item) => item.user_id) : []);
+    setSelectedGreenhouseId(defaultGreenhouseId);
+    if (task) {
+      setAssigneeIds(assignments.filter((item) => item.task_id === task.id).map((item) => item.user_id));
+      setStaffAssigneeIds(staffAssignments.filter((item) => item.task_id === task.id).map((item) => item.staff_id));
+    } else {
+      applyGreenhouseDefaultAssignee(defaultGreenhouseId);
+    }
     const taskMaterials = task
       ? materials
           .filter((item) => item.task_id === task.id)
@@ -480,12 +512,12 @@ function ActivityFormModal({
     setActivityType(task?.type === "otro" && task.technical_plan?.cycleWorkType ? "preparacion_ciclo" : task?.type ?? "fertirriego");
     setTechnicalPlan(task?.technical_plan ?? {});
     setFormError("");
-  }, [assignments, materials, open, task, weekDays]);
+  }, [applyGreenhouseDefaultAssignee, assignments, greenhouses, materials, open, staffAssignments, task, weekDays]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
-    if (!assigneeIds.length) {
+    if (!assigneeIds.length && !staffAssigneeIds.length) {
       setFormError("Selecciona al menos un encargado.");
       return;
     }
@@ -493,7 +525,7 @@ function ActivityFormModal({
     const form = new FormData(event.currentTarget);
     const dbActivityType = activityType === "preparacion_ciclo" ? "otro" : activityType;
     await onSave({
-      greenhouseId: String(form.get("greenhouseId")),
+      greenhouseId: selectedGreenhouseId,
       type: dbActivityType,
       title: String(form.get("title")),
       scheduledDate,
@@ -503,6 +535,7 @@ function ActivityFormModal({
       executionMode: String(form.get("executionMode")) as ExecutionMode,
       crewSize: String(form.get("crewSize") ?? "").trim() ? Number(form.get("crewSize")) : null,
       assigneeIds,
+      staffAssigneeIds,
       materials: ["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType)
         ? materialRows.filter((item) => item.productName.trim())
         : [],
@@ -519,7 +552,15 @@ function ActivityFormModal({
       <form className="grid gap-6" key={task?.id ?? "new-operation"} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Área productiva">
-            <SelectInput name="greenhouseId" defaultValue={task?.greenhouse_id ?? greenhouses[0]?.id} required>
+            <SelectInput
+              name="greenhouseId"
+              onChange={(event) => {
+                setSelectedGreenhouseId(event.target.value);
+                if (!task) applyGreenhouseDefaultAssignee(event.target.value);
+              }}
+              value={selectedGreenhouseId}
+              required
+            >
               {greenhouses.map((greenhouse) => (
                 <option key={greenhouse.id} value={greenhouse.id}>{greenhouseDisplayName(greenhouse, crops)}</option>
               ))}
@@ -729,7 +770,29 @@ function ActivityFormModal({
                 </label>
               );
             })}
-            {!managers.length ? <p className="text-sm text-app-muted">No hay managers activos para asignar.</p> : null}
+            {!managers.length && !staff.length ? <p className="text-sm text-app-muted">No hay managers activos para asignar.</p> : null}
+            {staff.map((person) => {
+              const checked = staffAssigneeIds.includes(person.id);
+              return (
+                <label
+                  key={person.id}
+                  className="flex min-h-12 cursor-pointer items-center gap-3 border border-app-border bg-white px-3 py-2"
+                >
+                  <input
+                    checked={checked}
+                    className="h-4 w-4 accent-app-green"
+                    onChange={() => setStaffAssigneeIds((current) =>
+                      checked ? current.filter((id) => id !== person.id) : [...current, person.id]
+                    )}
+                    type="checkbox"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-app-text">{person.name}</span>
+                    <span className="block truncate text-xs text-app-muted">{person.detail}</span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </section>
 
@@ -798,7 +861,7 @@ function ActivityFormModal({
         {formError ? <p className="text-sm text-[#8A2E2E]" role="alert">{formError}</p> : null}
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
           <Button onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !managers.length} type="submit" variant="primary">
+          <Button disabled={saving || (!managers.length && !staff.length)} type="submit" variant="primary">
             {saving ? "Guardando..." : task ? "Guardar cambios" : "Agregar actividad"}
           </Button>
         </div>
@@ -1194,8 +1257,10 @@ export function OperationsSection({
   const [plan, setPlan] = useState<WeeklyPlanRow | null>(null);
   const [tasks, setTasks] = useState<OperationTaskRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [staffAssignments, setStaffAssignments] = useState<StaffAssignmentRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [managers, setManagers] = useState<ManagerOption[]>([]);
+  const [staff, setStaff] = useState<StaffOption[]>([]);
   const [operationGreenhouses, setOperationGreenhouses] = useState<OperationGreenhouseOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1226,7 +1291,7 @@ export function OperationsSection({
 
     setLoading(true);
     setSetupRequired(false);
-    const [planResponse, tasksResponse, membersResponse] = await Promise.all([
+    const [planResponse, tasksResponse, membersResponse, staffResponse] = await Promise.all([
       supabase
         .from("weekly_plans")
         .select("id, week_start, status, published_at")
@@ -1246,10 +1311,17 @@ export function OperationsSection({
         .select("user_id")
         .eq("company_id", organization.id)
         .eq("role", "manager")
+        .eq("status", "active"),
+      supabase
+        .from("company_staff")
+        .select("id, full_name, phone")
+        .eq("company_id", organization.id)
+        .eq("role", "manager")
         .eq("status", "active")
+        .order("full_name", { ascending: true })
     ]);
 
-    const baseError = planResponse.error ?? tasksResponse.error ?? membersResponse.error;
+    const baseError = planResponse.error ?? tasksResponse.error ?? membersResponse.error ?? staffResponse.error;
     if (baseError) {
       setSetupRequired(isOperationsSetupError(baseError));
       setNotice({ tone: "red", message: appErrorMessage(baseError, "No se pudo cargar la operación semanal.") });
@@ -1264,9 +1336,12 @@ export function OperationsSection({
       .map((member: any) => member.user_id)
       .filter((id: string | null): id is string => Boolean(id));
 
-    const [assignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length
+        ? supabase.from("task_staff_assignments").select("id, task_id, staff_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
         ? supabase.from("task_materials").select("id, task_id, product_name, dose, unit, mixing_order, notes").in("task_id", taskIds)
@@ -1279,7 +1354,7 @@ export function OperationsSection({
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1288,6 +1363,7 @@ export function OperationsSection({
     setPlan((planResponse.data as WeeklyPlanRow | null) ?? null);
     setTasks(taskRows);
     setAssignments((assignmentsResponse.data ?? []) as AssignmentRow[]);
+    setStaffAssignments((staffAssignmentsResponse.data ?? []) as StaffAssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
     setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
@@ -1298,6 +1374,11 @@ export function OperationsSection({
         email: profile?.email ?? ""
       };
     }));
+    setStaff((staffResponse.data ?? []).map((person: any) => ({
+      id: person.id,
+      name: person.full_name,
+      detail: person.phone ?? "Sin cuenta"
+    })));
     setLoading(false);
   }, [organization.id, weekEndKey, weekStartKey]);
 
@@ -1306,8 +1387,10 @@ export function OperationsSection({
   }, [loadOperations, operationRefreshKey]);
 
   const assignmentsForTask = (taskId: string) => assignments.filter((item) => item.task_id === taskId);
+  const staffAssignmentsForTask = (taskId: string) => staffAssignments.filter((item) => item.task_id === taskId);
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
   const managerName = (userId: string) => managers.find((manager) => manager.id === userId)?.name ?? "Encargado";
+  const staffName = (staffId: string) => staff.find((person) => person.id === staffId)?.name ?? "Encargado";
   const greenhouseName = (greenhouseId: string) =>
     (greenhouses.find((item) => item.id === greenhouseId)
       ? greenhouseDisplayName(greenhouses.find((item) => item.id === greenhouseId)!, crops)
@@ -1321,7 +1404,7 @@ export function OperationsSection({
     setSaving(true);
     setNotice(null);
     try {
-      const rpcName = editingTask ? "update_operational_task_with_plan" : "create_operational_task_with_plan";
+      const rpcName = editingTask ? "update_operational_task_with_staff" : "create_operational_task_with_staff";
       const rpcPayload = editingTask
         ? {
             target_task_id: editingTask.id,
@@ -1335,6 +1418,7 @@ export function OperationsSection({
             target_execution_mode: payload.executionMode,
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
+            target_staff_assignee_ids: payload.staffAssigneeIds,
             target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
             target_technical_plan: payload.technicalPlan
           }
@@ -1351,6 +1435,7 @@ export function OperationsSection({
             target_execution_mode: payload.executionMode,
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
+            target_staff_assignee_ids: payload.staffAssigneeIds,
             target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
             target_technical_plan: payload.technicalPlan
           };
@@ -1654,7 +1739,9 @@ export function OperationsSection({
   const completedCount = tasks.filter((task) => task.status === "completada").length;
   const blockedCount = tasks.filter((task) => task.status === "bloqueada").length;
   const todayCount = tasks.filter((task) => task.scheduled_date === todayKey && task.status !== "completada").length;
-  const unassignedCount = tasks.filter((task) => !assignmentsForTask(task.id).length).length;
+  const unassignedCount = tasks.filter((task) =>
+    !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
+  ).length;
 
   const openNewActivity = () => {
     setEditingTask(null);
@@ -1800,8 +1887,13 @@ export function OperationsSection({
                     <div className="mt-4 grid gap-3">
                       {dayTasks.map((task) => {
                         const taskAssignments = assignmentsForTask(task.id);
+                        const taskStaffAssignments = staffAssignmentsForTask(task.id);
                         const taskMaterials = materialsForTask(task.id);
                         const planSummary = technicalPlanSummary(task);
+                        const assignedNames = [
+                          ...taskAssignments.map((assignment) => managerName(assignment.user_id)),
+                          ...taskStaffAssignments.map((assignment) => staffName(assignment.staff_id))
+                        ];
                         return (
                           <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
                             <div className="grid min-w-0 gap-2">
@@ -1816,9 +1908,9 @@ export function OperationsSection({
                             <p className="mt-1 break-words text-xs leading-5 text-app-muted">
                               {greenhouseName(task.greenhouse_id)} · {executionLabels[task.execution_mode]}
                             </p>
-                            {taskAssignments.length ? (
+                            {assignedNames.length ? (
                               <p className="mt-2 break-words text-xs leading-5 text-app-muted">
-                                {taskAssignments.map((assignment) => managerName(assignment.user_id)).join(", ")}
+                                {assignedNames.join(", ")}
                               </p>
                             ) : <p className="mt-2 text-xs text-[#8A2E2E]">Sin encargado</p>}
                             {task.instructions ? <p className="mt-3 break-words text-xs leading-5 text-app-text">{task.instructions}</p> : null}
@@ -1904,6 +1996,8 @@ export function OperationsSection({
         onSave={saveActivity}
         open={activityModalOpen}
         saving={saving}
+        staff={staff}
+        staffAssignments={staffAssignments}
         task={editingTask}
         weekDays={weekDays}
       />

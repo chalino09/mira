@@ -102,6 +102,7 @@ export type Greenhouse = {
   isGrafted: boolean | null;
   stage: CropStage;
   managerUserId: string | null;
+  managerStaffId: string | null;
   manager: string;
   beds: number;
   daysSinceTransplant: number;

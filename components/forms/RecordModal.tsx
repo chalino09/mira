@@ -57,6 +57,7 @@ type ManagerOption = {
   id: string;
   name: string;
   email: string;
+  source: "user" | "staff";
 };
 
 function emptyCost(): CostDraft {
@@ -329,32 +330,41 @@ export function RecordModal() {
         return;
       }
 
-      const { data: members, error: membersError } = await supabase
-        .from("company_members")
-        .select("user_id")
-        .eq("company_id", organization.id)
-        .eq("role", "manager")
-        .eq("status", "active");
+      const [membersResponse, staffResponse] = await Promise.all([
+        supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", organization.id)
+          .eq("role", "manager")
+          .eq("status", "active"),
+        supabase
+          .from("company_staff")
+          .select("id, full_name, phone")
+          .eq("company_id", organization.id)
+          .eq("role", "manager")
+          .eq("status", "active")
+          .order("full_name", { ascending: true })
+      ]);
       if (cancelled) return;
-      if (membersError) {
+      if (membersResponse.error) {
         setManagerOptions([]);
-        setError(appErrorMessage(membersError, "No se pudieron cargar los managers activos."));
+        setError(appErrorMessage(membersResponse.error, "No se pudieron cargar los managers activos."));
+        return;
+      }
+      if (staffResponse.error) {
+        setManagerOptions([]);
+        setError(appErrorMessage(staffResponse.error, "No se pudieron cargar los encargados internos."));
         return;
       }
 
-      const managerIds = (members ?? [])
+      const managerIds = (membersResponse.data ?? [])
         .map((member: any) => member.user_id)
         .filter((id: string | null): id is string => Boolean(id));
-
-      if (!managerIds.length) {
-        setManagerOptions([]);
-        return;
-      }
 
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id, full_name, email")
-        .in("id", managerIds);
+        .in("id", managerIds.length ? managerIds : ["00000000-0000-0000-0000-000000000000"]);
       if (cancelled) return;
       if (profilesError) {
         setManagerOptions([]);
@@ -363,15 +373,23 @@ export function RecordModal() {
       }
 
       const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
-
-      setManagerOptions(managerIds.map((id) => {
+      const userOptions = managerIds.map((id) => {
         const profile = profileMap.get(id);
         return {
           id,
           name: profile?.full_name ?? profile?.email?.split("@")[0] ?? "Encargado",
-          email: profile?.email ?? ""
+          email: profile?.email ?? "",
+          source: "user" as const
         };
+      });
+      const staffOptions = (staffResponse.data ?? []).map((staff: any) => ({
+        id: staff.id,
+        name: staff.full_name,
+        email: staff.phone ?? "Sin cuenta",
+        source: "staff" as const
       }));
+
+      setManagerOptions([...userOptions, ...staffOptions]);
       setError("");
     };
 
@@ -416,12 +434,23 @@ export function RecordModal() {
     }
   }, [defaultCropId, modal]);
 
-  const managerNameFor = (managerUserId: string | null) =>
-    managerOptions.find((manager) => manager.id === managerUserId)?.name
+  const managerValueFor = (manager: ManagerOption) => `${manager.source}:${manager.id}`;
+  const selectedManagerValueFor = (greenhouse?: Greenhouse) => {
+    if (greenhouse?.managerUserId) return `user:${greenhouse.managerUserId}`;
+    if (greenhouse?.managerStaffId) return `staff:${greenhouse.managerStaffId}`;
+    return managerOptions[0] ? managerValueFor(managerOptions[0]) : "";
+  };
+  const managerNameFor = (managerUserId: string | null, managerStaffId: string | null) =>
+    managerOptions.find((manager) =>
+      (manager.source === "user" && manager.id === managerUserId)
+      || (manager.source === "staff" && manager.id === managerStaffId)
+    )?.name
     ?? (managerUserId === currentUser.id ? currentUser.fullName : "Sin encargado");
 
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
-    const managerUserId = String(form.get("managerUserId") ?? "").trim() || null;
+    const managerValue = String(form.get("managerRef") ?? "").trim();
+    const managerUserId = managerValue.startsWith("user:") ? managerValue.replace("user:", "") : null;
+    const managerStaffId = managerValue.startsWith("staff:") ? managerValue.replace("staff:", "") : null;
     const cropId = String(form.get("cropId") ?? defaultCropId).trim() || null;
     const transplantDate = String(form.get("transplantDate"));
     const surfaceM2 = requiredNumber(form.get("surfaceM2"));
@@ -445,7 +474,8 @@ export function RecordModal() {
       isGrafted: String(form.get("isGrafted") ?? "") === "" ? null : String(form.get("isGrafted")) === "true",
       stage: cropStageFromDdt(daysSince(transplantDate)),
       managerUserId,
-      manager: managerNameFor(managerUserId),
+      managerStaffId,
+      manager: managerNameFor(managerUserId, managerStaffId),
       beds: requiredNumber(form.get("beds")),
       daysSinceTransplant: daysSince(transplantDate),
       healthStatus: "Baja",
@@ -473,6 +503,7 @@ export function RecordModal() {
     beds_count: greenhouse.beds,
     crop_stage: cropStageToDbValue(greenhouse.stage),
     manager_user_id: greenhouse.managerUserId,
+    manager_staff_id: greenhouse.managerStaffId,
     health_status: riskLevelToDb[greenhouse.healthStatus]
   });
 
@@ -877,15 +908,15 @@ export function RecordModal() {
           </Field>
           {canAssignGreenhouseManager ? (
             <Field label="Encargado">
-              <SelectInput name="managerUserId" defaultValue={managerOptions[0]?.id ?? ""} required>
+              <SelectInput name="managerRef" defaultValue={managerOptions[0] ? managerValueFor(managerOptions[0]) : ""} required>
                 {managerOptions.length ? (
                   managerOptions.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
+                    <option key={`${manager.source}-${manager.id}`} value={managerValueFor(manager)}>
                       {manager.name}
                     </option>
                   ))
                 ) : (
-                  <option value="">No hay managers activos</option>
+                  <option value="">No hay encargados activos</option>
                 )}
               </SelectInput>
             </Field>
@@ -965,15 +996,15 @@ export function RecordModal() {
           </Field>
           {canAssignGreenhouseManager ? (
             <Field label="Encargado">
-              <SelectInput name="managerUserId" defaultValue={selectedGreenhouse.managerUserId ?? ""} required>
+              <SelectInput name="managerRef" defaultValue={selectedManagerValueFor(selectedGreenhouse)} required>
                 {managerOptions.length ? (
                   managerOptions.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
+                    <option key={`${manager.source}-${manager.id}`} value={managerValueFor(manager)}>
                       {manager.name}
                     </option>
                   ))
                 ) : (
-                  <option value="">No hay managers activos</option>
+                  <option value="">No hay encargados activos</option>
                 )}
               </SelectInput>
             </Field>

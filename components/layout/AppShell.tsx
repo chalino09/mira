@@ -61,7 +61,7 @@ import {
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFile } from "@/lib/storage";
-import { cn, formatCurrency, formatDate, formatNumber, parseNumericInput } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatNumber, formatPersonName, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
@@ -1190,6 +1190,13 @@ type CompanyMember = {
   createdAt: string;
 };
 
+type CompanyStaff = {
+  id: string;
+  fullName: string;
+  phone: string;
+  status: "active" | "disabled";
+};
+
 const roleLabels: Record<MemberRole, string> = {
   owner: "Owner",
   admin: "Admin",
@@ -1269,6 +1276,12 @@ function SettingsSection() {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
   const [isInvitingMember, setIsInvitingMember] = useState(false);
+  const [companyStaff, setCompanyStaff] = useState<CompanyStaff[]>([]);
+  const [staffNotice, setStaffNotice] = useState("");
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [unitSettings, setUnitSettings] = useState({
     surface: "m2 / ha",
     water: "L",
@@ -1336,6 +1349,37 @@ function SettingsSection() {
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  const loadStaff = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !organization.id) return;
+
+    setIsLoadingStaff(true);
+    const { data, error } = await supabase
+      .from("company_staff")
+      .select("id, full_name, phone, status")
+      .eq("company_id", organization.id)
+      .eq("role", "manager")
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      setStaffNotice(appErrorMessage(error, "No se pudieron cargar los encargados internos."));
+      setIsLoadingStaff(false);
+      return;
+    }
+
+    setCompanyStaff((data ?? []).map((person: any) => ({
+      id: person.id,
+      fullName: person.full_name,
+      phone: person.phone ?? "",
+      status: person.status
+    })));
+    setIsLoadingStaff(false);
+  }, [organization.id]);
+
+  useEffect(() => {
+    loadStaff();
+  }, [loadStaff]);
 
   const editGreenhouse = (greenhouseId: string) => {
     setSelectedGreenhouseId(greenhouseId);
@@ -1430,6 +1474,126 @@ function SettingsSection() {
       setMembersNotice(appErrorMessage(caught, "No se pudo invitar al usuario."));
     } finally {
       setIsInvitingMember(false);
+    }
+  };
+
+  const handleAddStaff = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStaffNotice("");
+    setIsSavingStaff(true);
+
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const fullName = formatPersonName(String(form.get("staffName") ?? ""));
+    const phone = String(form.get("staffPhone") ?? "").trim();
+
+    try {
+      if (!canManageUsers) {
+        throw new Error("Tu rol no permite administrar encargados.");
+      }
+      if (!fullName) {
+        throw new Error("Escribe el nombre del encargado.");
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase || !organization.id) {
+        throw new Error("No se pudo conectar con Supabase.");
+      }
+
+      const { error } = await supabase.from("company_staff").insert({
+        company_id: organization.id,
+        full_name: fullName,
+        phone: phone || null,
+        role: "manager",
+        status: "active",
+        created_by: currentUser.id
+      });
+
+      if (error) throw error;
+
+      formElement.reset();
+      setStaffNotice("Encargado interno guardado.");
+      await loadStaff();
+    } catch (caught) {
+      setStaffNotice(appErrorMessage(caught, "No se pudo guardar el encargado interno."));
+    } finally {
+      setIsSavingStaff(false);
+    }
+  };
+
+  const updateStaffStatus = async (person: CompanyStaff, status: CompanyStaff["status"]) => {
+    setStaffNotice("");
+    setSavingStaffId(person.id);
+
+    try {
+      if (!canManageUsers) {
+        throw new Error("Tu rol no permite administrar encargados.");
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("No se pudo conectar con Supabase.");
+      }
+
+      const { error } = await supabase
+        .from("company_staff")
+        .update({ status })
+        .eq("id", person.id)
+        .eq("company_id", organization.id);
+
+      if (error) throw error;
+
+      setStaffNotice("Encargado interno actualizado.");
+      await loadStaff();
+    } catch (caught) {
+      setStaffNotice(appErrorMessage(caught, "No se pudo actualizar el encargado interno."));
+    } finally {
+      setSavingStaffId(null);
+    }
+  };
+
+  const handleEditStaff = async (event: FormEvent<HTMLFormElement>, person: CompanyStaff) => {
+    event.preventDefault();
+    setStaffNotice("");
+    setSavingStaffId(person.id);
+
+    const form = new FormData(event.currentTarget);
+    const fullName = formatPersonName(String(form.get("editStaffName") ?? ""));
+    const phone = String(form.get("editStaffPhone") ?? "").trim();
+    const status = String(form.get("editStaffStatus") ?? person.status) as CompanyStaff["status"];
+
+    try {
+      if (!canManageUsers) {
+        throw new Error("Tu rol no permite administrar encargados.");
+      }
+      if (!fullName) {
+        throw new Error("Escribe el nombre del encargado.");
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("No se pudo conectar con Supabase.");
+      }
+
+      const { error } = await supabase
+        .from("company_staff")
+        .update({
+          full_name: fullName,
+          phone: phone || null,
+          status
+        })
+        .eq("id", person.id)
+        .eq("company_id", organization.id);
+
+      if (error) throw error;
+
+      setEditingStaffId(null);
+      setStaffNotice("Encargado interno actualizado.");
+      await loadStaff();
+    } catch (caught) {
+      setStaffNotice(appErrorMessage(caught, "No se pudo actualizar el encargado interno."));
+    } finally {
+      setSavingStaffId(null);
     }
   };
 
@@ -1709,6 +1873,123 @@ function SettingsSection() {
                   {isInvitingMember ? "Invitando..." : "Guardar invitación"}
                 </Button>
               </form>
+              <div className="mt-6 border-t border-app-border pt-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
+                  Encargados internos
+                </p>
+                <form className="mt-5 grid gap-4" onSubmit={handleAddStaff}>
+                  <Field label="Nombre">
+                    <TextInput
+                      disabled={!canManageUsers || isSavingStaff}
+                      name="staffName"
+                      placeholder="Nombre del encargado"
+                      required
+                    />
+                  </Field>
+                  <Field label="Teléfono opcional">
+                    <TextInput
+                      disabled={!canManageUsers || isSavingStaff}
+                      name="staffPhone"
+                      placeholder="Opcional"
+                    />
+                  </Field>
+                  <Button disabled={!canManageUsers || isSavingStaff} icon={<Plus className="h-4 w-4" />} type="submit" variant="secondary">
+                    {isSavingStaff ? "Guardando..." : "Guardar encargado"}
+                  </Button>
+                </form>
+                <div className="mt-5 border-b border-app-border">
+                  {isLoadingStaff ? (
+                    <SettingRow label="Cargando" value="Consultando encargados" detail="Un momento." />
+                  ) : companyStaff.length ? (
+                    companyStaff.map((person) => (
+                      <div key={person.id} className="border-t border-app-border py-3">
+                        {editingStaffId === person.id ? (
+                          <form className="grid gap-3" onSubmit={(event) => handleEditStaff(event, person)}>
+                            <Field label="Nombre">
+                              <TextInput
+                                defaultValue={person.fullName}
+                                disabled={!canManageUsers || savingStaffId === person.id}
+                                name="editStaffName"
+                                required
+                              />
+                            </Field>
+                            <Field label="Teléfono opcional">
+                              <TextInput
+                                defaultValue={person.phone}
+                                disabled={!canManageUsers || savingStaffId === person.id}
+                                name="editStaffPhone"
+                                placeholder="Opcional"
+                              />
+                            </Field>
+                            <Field label="Estado">
+                              <SelectInput
+                                defaultValue={person.status}
+                                disabled={!canManageUsers || savingStaffId === person.id}
+                                name="editStaffStatus"
+                              >
+                                <option value="active">Activo</option>
+                                <option value="disabled">Desactivado</option>
+                              </SelectInput>
+                            </Field>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <Button
+                                disabled={savingStaffId === person.id}
+                                type="submit"
+                                variant="primary"
+                              >
+                                {savingStaffId === person.id ? "Guardando..." : "Guardar"}
+                              </Button>
+                              <Button
+                                disabled={savingStaffId === person.id}
+                                onClick={() => setEditingStaffId(null)}
+                                type="button"
+                                variant="secondary"
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="grid gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-medium text-app-text">{person.fullName}</p>
+                                <StatusBadge tone={person.status === "active" ? "green" : "red"}>
+                                  {person.status === "active" ? "Activo" : "Desactivado"}
+                                </StatusBadge>
+                              </div>
+                              <p className="mt-1 truncate text-xs text-app-muted">{person.phone || "Sin cuenta"}</p>
+                            </div>
+                            <div className="grid gap-2">
+                              <SelectInput
+                                aria-label={`Estado de ${person.fullName}`}
+                                disabled={!canManageUsers || savingStaffId === person.id}
+                                value={person.status}
+                                onChange={(event) => updateStaffStatus(person, event.target.value as CompanyStaff["status"])}
+                              >
+                                <option value="active">Activo</option>
+                                <option value="disabled">Desactivado</option>
+                              </SelectInput>
+                              <Button
+                                disabled={!canManageUsers || savingStaffId === person.id}
+                                icon={<Edit3 className="h-4 w-4" />}
+                                onClick={() => setEditingStaffId(person.id)}
+                                type="button"
+                                variant="ghost"
+                              >
+                                Editar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="border-t border-app-border py-4 text-sm text-app-muted">Aún no hay encargados internos.</p>
+                  )}
+                </div>
+                {staffNotice ? <p className="mt-4 text-sm text-app-muted">{staffNotice}</p> : null}
+              </div>
               <div className="mt-6 border-t border-app-border pt-5">
                 <SettingRow label="Owner" value="Configura todo" detail="Empresa, usuarios, registros y ajustes" />
                 <SettingRow label="Admin" value="Opera y configura" detail="Sin cambios críticos de propiedad" />
@@ -2112,7 +2393,7 @@ export function AppShell() {
       return;
     }
 
-    if (!targetGreenhouse.managerUserId || targetGreenhouse.manager === "Sin encargado") {
+    if ((!targetGreenhouse.managerUserId && !targetGreenhouse.managerStaffId) || targetGreenhouse.manager === "Sin encargado") {
       setCopilotNotice({ tone: "red", message: "Asigna un encargado activo al invernadero antes de crear el seguimiento." });
       return;
     }
@@ -2148,7 +2429,7 @@ export function AppShell() {
       return;
     }
 
-    const { error } = await supabase.rpc("create_operational_task_with_plan", {
+    const { error } = await supabase.rpc("create_operational_task_with_staff", {
       target_company_id: organization.id,
       target_week_start: weekStart,
       target_greenhouse_id: targetGreenhouseId,
@@ -2160,7 +2441,8 @@ export function AppShell() {
       target_instructions: instructions,
       target_execution_mode: "manager",
       target_crew_size: null,
-      target_assignee_ids: [targetGreenhouse.managerUserId],
+      target_assignee_ids: targetGreenhouse.managerUserId ? [targetGreenhouse.managerUserId] : [],
+      target_staff_assignee_ids: targetGreenhouse.managerStaffId ? [targetGreenhouse.managerStaffId] : [],
       target_materials: [],
       target_technical_plan: {}
     });

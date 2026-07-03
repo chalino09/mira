@@ -1113,6 +1113,9 @@ export function AuthGate() {
       const managerUserIds = Array.from(
         new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_user_id).filter(Boolean))
       );
+      const managerStaffIds = Array.from(
+        new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_staff_id).filter(Boolean))
+      );
       const managerMembersResponse = managerUserIds.length
         ? await supabase
           .from("company_members")
@@ -1130,7 +1133,17 @@ export function AuthGate() {
         : { data: [], error: null };
       throwInitialLoadError(managerProfilesResponse.error, "No se pudieron cargar los perfiles de managers.");
 
+      const managerStaffResponse = managerStaffIds.length
+        ? await supabase
+          .from("company_staff")
+          .select("id, full_name")
+          .eq("company_id", membership.company_id)
+          .in("id", managerStaffIds)
+        : { data: [], error: null };
+      throwInitialLoadError(managerStaffResponse.error, "No se pudieron cargar los encargados internos.");
+
       const managerProfileMap = new Map((managerProfilesResponse.data ?? []).map((manager: any) => [manager.id, manager]));
+      const managerStaffMap = new Map((managerStaffResponse.data ?? []).map((staff: any) => [staff.id, staff]));
 
       const [
         tasksResponse,
@@ -1198,6 +1211,7 @@ export function AuthGate() {
 
       const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
         const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
+        const managerStaff = greenhouse.manager_staff_id ? managerStaffMap.get(greenhouse.manager_staff_id) : null;
         const surfaceM2 = greenhouse.surface_m2 == null ? null : Number(greenhouse.surface_m2);
 
         return {
@@ -1218,7 +1232,8 @@ export function AuthGate() {
           isGrafted: greenhouse.is_grafted == null ? null : Boolean(greenhouse.is_grafted),
           stage: mapCropStage(greenhouse.crop_stage),
           managerUserId: greenhouse.manager_user_id ?? null,
-          manager: managerProfile?.full_name ?? managerProfile?.email ?? "Sin encargado",
+          managerStaffId: greenhouse.manager_staff_id ?? null,
+          manager: managerProfile?.full_name ?? managerProfile?.email ?? managerStaff?.full_name ?? "Sin encargado",
           beds: greenhouse.beds_count ?? 0,
           daysSinceTransplant: daysSince(greenhouse.transplant_date),
           healthStatus: mapRiskLevel(greenhouse.health_status),

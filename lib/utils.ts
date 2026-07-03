@@ -75,6 +75,18 @@ export function formatDate(value?: string | null) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+export function formatPersonName(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((part) => {
+      const [first = "", ...rest] = Array.from(part);
+      return `${first.toLocaleUpperCase("es-MX")}${rest.join("").toLocaleLowerCase("es-MX")}`;
+    })
+    .join(" ");
+}
+
 export function todayLabel() {
   return new Intl.DateTimeFormat("es-MX", {
     weekday: "long",
