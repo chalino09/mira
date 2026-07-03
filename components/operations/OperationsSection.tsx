@@ -77,7 +77,9 @@ type StaffAssignmentRow = {
 type MaterialRow = {
   id: string;
   task_id: string;
+  product_id: string | null;
   product_name: string;
+  composition: string | null;
   dose: string | null;
   unit: string | null;
   mixing_order: number | null;
@@ -102,10 +104,18 @@ type OperationGreenhouseOption = {
 };
 
 type MaterialDraft = {
+  productId: string;
   productName: string;
+  composition: string;
   dose: string;
   unit: string;
   notes: string;
+};
+
+type ProductOption = {
+  id: string;
+  name: string;
+  composition: string | null;
 };
 
 type TechnicalPlan = {
@@ -372,7 +382,102 @@ function rpcRecordIds(data: unknown) {
 }
 
 function emptyMaterial(): MaterialDraft {
-  return { productName: "", dose: "", unit: "", notes: "" };
+  return { productId: "", productName: "", composition: "", dose: "", unit: "", notes: "" };
+}
+
+function normalizedProductName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-MX");
+}
+
+function ProductCombobox({
+  material,
+  products,
+  onChange,
+  index
+}: {
+  material: MaterialDraft;
+  products: ProductOption[];
+  onChange: (patch: Partial<MaterialDraft>) => void;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = normalizedProductName(material.productName);
+  const exactMatch = products.find((product) => normalizedProductName(product.name) === query);
+  const matches = query
+    ? products
+        .filter((product) => normalizedProductName(product.name).includes(query))
+        .slice(0, 8)
+    : products.slice(0, 8);
+
+  const selectProduct = (product: ProductOption) => {
+    onChange({
+      productId: product.id,
+      productName: product.name,
+      composition: product.composition ?? ""
+    });
+    setOpen(false);
+  };
+
+  const useManualProduct = () => {
+    onChange({ productId: "", composition: "" });
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <TextInput
+        aria-label={`Producto ${index + 1}`}
+        onBlur={() => setOpen(false)}
+        onChange={(event) => {
+          const nextName = event.target.value;
+          const nextMatch = products.find((product) => normalizedProductName(product.name) === normalizedProductName(nextName));
+          onChange({
+            productId: nextMatch?.id ?? "",
+            productName: nextName,
+            composition: nextMatch?.composition ?? ""
+          });
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="Buscar producto"
+        value={material.productName}
+      />
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-auto border border-app-border bg-white shadow-lg">
+          {matches.map((product) => (
+            <button
+              className="block w-full px-3 py-2 text-left hover:bg-app-sidebar"
+              key={product.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectProduct(product)}
+              type="button"
+            >
+              <span className="block truncate text-sm font-medium text-app-text">{product.name}</span>
+              {product.composition ? (
+                <span className="block truncate text-xs text-app-muted">{product.composition}</span>
+              ) : null}
+            </button>
+          ))}
+          {material.productName.trim() && !exactMatch ? (
+            <button
+              className="block w-full border-t border-app-border px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={useManualProduct}
+              type="button"
+            >
+              Agregar otro: {material.productName.trim()}
+            </button>
+          ) : null}
+          {!matches.length && !material.productName.trim() ? (
+            <p className="px-3 py-2 text-sm text-app-muted">Escribe para buscar o agregar otro.</p>
+          ) : null}
+        </div>
+      ) : null}
+      {material.composition ? (
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-app-muted">{material.composition}</p>
+      ) : null}
+    </div>
+  );
 }
 
 function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan {
@@ -452,6 +557,7 @@ function ActivityFormModal({
   crops,
   managers,
   staff,
+  productOptions,
   task,
   assignments,
   staffAssignments,
@@ -466,6 +572,7 @@ function ActivityFormModal({
   crops: CropCatalogItem[];
   managers: ManagerOption[];
   staff: StaffOption[];
+  productOptions: ProductOption[];
   task: OperationTaskRow | null;
   assignments: AssignmentRow[];
   staffAssignments: StaffAssignmentRow[];
@@ -502,7 +609,9 @@ function ActivityFormModal({
           .filter((item) => item.task_id === task.id)
           .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
           .map((item) => ({
+            productId: item.product_id ?? "",
             productName: item.product_name,
+            composition: item.composition ?? "",
             dose: item.dose ?? "",
             unit: item.unit ?? "",
             notes: item.notes ?? ""
@@ -816,13 +925,13 @@ function ActivityFormModal({
           <div className="mt-4 grid gap-3">
             {materialRows.map((material, index) => (
               <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_0.55fr_auto]">
-                <TextInput
-                  aria-label={`Producto ${index + 1}`}
-                  onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, productName: event.target.value } : item
+                <ProductCombobox
+                  index={index}
+                  material={material}
+                  products={productOptions}
+                  onChange={(patch) => setMaterialRows((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, ...patch } : item
                   ))}
-                  placeholder="Producto"
-                  value={material.productName}
                 />
                 <TextInput
                   aria-label={`Dosis ${index + 1}`}
@@ -912,7 +1021,7 @@ function CompleteApplicationModal({
           productName: material.product_name,
           dose: [material.dose, material.unit].filter(Boolean).join(" "),
           category: "",
-          composition: "",
+          composition: material.composition ?? "",
           safetyInterval: "",
           reentryInterval: "",
           effectiveness: "Pendiente de revisión",
@@ -1261,6 +1370,7 @@ export function OperationsSection({
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [managers, setManagers] = useState<ManagerOption[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [operationGreenhouses, setOperationGreenhouses] = useState<OperationGreenhouseOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1291,7 +1401,7 @@ export function OperationsSection({
 
     setLoading(true);
     setSetupRequired(false);
-    const [planResponse, tasksResponse, membersResponse, staffResponse] = await Promise.all([
+    const [planResponse, tasksResponse, membersResponse, staffResponse, productsResponse] = await Promise.all([
       supabase
         .from("weekly_plans")
         .select("id, week_start, status, published_at")
@@ -1318,10 +1428,15 @@ export function OperationsSection({
         .eq("company_id", organization.id)
         .eq("role", "manager")
         .eq("status", "active")
-        .order("full_name", { ascending: true })
+        .order("full_name", { ascending: true }),
+      supabase
+        .from("products")
+        .select("id, name, composition")
+        .eq("company_id", organization.id)
+        .order("name", { ascending: true })
     ]);
 
-    const baseError = planResponse.error ?? tasksResponse.error ?? membersResponse.error ?? staffResponse.error;
+    const baseError = planResponse.error ?? tasksResponse.error ?? membersResponse.error ?? staffResponse.error ?? productsResponse.error;
     if (baseError) {
       setSetupRequired(isOperationsSetupError(baseError));
       setNotice({ tone: "red", message: appErrorMessage(baseError, "No se pudo cargar la operación semanal.") });
@@ -1344,7 +1459,7 @@ export function OperationsSection({
         ? supabase.from("task_staff_assignments").select("id, task_id, staff_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
-        ? supabase.from("task_materials").select("id, task_id, product_name, dose, unit, mixing_order, notes").in("task_id", taskIds)
+        ? supabase.from("task_materials").select("id, task_id, product_id, product_name, composition, dose, unit, mixing_order, notes").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
       managerIds.length
         ? supabase.from("profiles").select("id, full_name, email").in("id", managerIds)
@@ -1365,6 +1480,7 @@ export function OperationsSection({
     setAssignments((assignmentsResponse.data ?? []) as AssignmentRow[]);
     setStaffAssignments((staffAssignmentsResponse.data ?? []) as StaffAssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
+    setProductOptions((productsResponse.data ?? []) as ProductOption[]);
     setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
       const profile = profileMap.get(id);
@@ -1397,6 +1513,63 @@ export function OperationsSection({
       : operationGreenhouses.find((item) => item.id === greenhouseId)?.name) ??
     "Área productiva";
 
+  const ensureMaterialProducts = async (supabase: ReturnType<typeof getSupabaseBrowserClient>, draftMaterials: MaterialDraft[]) => {
+    if (!supabase || !organization.id) return draftMaterials;
+
+    const addedProducts: ProductOption[] = [];
+    const resolvedMaterials: MaterialDraft[] = [];
+
+    for (const material of draftMaterials) {
+      const productName = material.productName.trim();
+      if (!productName || material.productId) {
+        resolvedMaterials.push(material);
+        continue;
+      }
+
+      const existingProduct = [...productOptions, ...addedProducts]
+        .find((product) => normalizedProductName(product.name) === normalizedProductName(productName));
+      if (existingProduct) {
+        resolvedMaterials.push({
+          ...material,
+          productId: existingProduct.id,
+          productName: existingProduct.name,
+          composition: existingProduct.composition ?? ""
+        });
+        continue;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .insert({
+          company_id: organization.id,
+          name: productName,
+          composition: material.composition.trim() || null
+        })
+        .select("id, name, composition")
+        .single();
+
+      if (error || !data) {
+        resolvedMaterials.push(material);
+        continue;
+      }
+
+      const newProduct = data as ProductOption;
+      addedProducts.push(newProduct);
+      resolvedMaterials.push({
+        ...material,
+        productId: newProduct.id,
+        productName: newProduct.name,
+        composition: newProduct.composition ?? ""
+      });
+    }
+
+    if (addedProducts.length) {
+      setProductOptions((current) => [...current, ...addedProducts].sort((a, b) => a.name.localeCompare(b.name, "es-MX")));
+    }
+
+    return resolvedMaterials;
+  };
+
   const saveActivity = async (payload: ActivityPayload) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
@@ -1404,6 +1577,7 @@ export function OperationsSection({
     setSaving(true);
     setNotice(null);
     try {
+      const resolvedMaterials = await ensureMaterialProducts(supabase, payload.materials);
       const rpcName = editingTask ? "update_operational_task_with_staff" : "create_operational_task_with_staff";
       const rpcPayload = editingTask
         ? {
@@ -1419,7 +1593,7 @@ export function OperationsSection({
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
             target_staff_assignee_ids: payload.staffAssigneeIds,
-            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
+            target_materials: resolvedMaterials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
             target_technical_plan: payload.technicalPlan
           }
         : {
@@ -1436,7 +1610,7 @@ export function OperationsSection({
             target_crew_size: payload.crewSize,
             target_assignee_ids: payload.assigneeIds,
             target_staff_assignee_ids: payload.staffAssigneeIds,
-            target_materials: payload.materials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
+            target_materials: resolvedMaterials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
             target_technical_plan: payload.technicalPlan
           };
       const { error } = await supabase.rpc(rpcName, rpcPayload);
@@ -1995,6 +2169,7 @@ export function OperationsSection({
         onClose={() => { setActivityModalOpen(false); setEditingTask(null); }}
         onSave={saveActivity}
         open={activityModalOpen}
+        productOptions={productOptions}
         saving={saving}
         staff={staff}
         staffAssignments={staffAssignments}

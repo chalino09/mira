@@ -55,6 +55,9 @@ create table if not exists public.task_staff_assignments (
     references public.company_staff(id, company_id)
 );
 
+alter table public.task_materials
+add column if not exists composition text;
+
 alter table public.company_staff enable row level security;
 alter table public.task_staff_assignments enable row level security;
 
@@ -244,7 +247,9 @@ begin
   insert into public.task_materials (
     company_id,
     task_id,
+    product_id,
     product_name,
+    composition,
     dose,
     unit,
     mixing_order,
@@ -253,13 +258,18 @@ begin
   select
     target_company_id,
     new_task_id,
-    trim(material->>'productName'),
+    product.id,
+    trim(coalesce(nullif(material->>'productName', ''), product.name)),
+    coalesce(nullif(trim(material->>'composition'), ''), product.composition),
     nullif(trim(material->>'dose'), ''),
     nullif(trim(material->>'unit'), ''),
     coalesce((material->>'mixingOrder')::integer, material_index::integer),
     nullif(trim(material->>'notes'), '')
   from jsonb_array_elements(target_materials) with ordinality as items(material, material_index)
-  where nullif(trim(material->>'productName'), '') is not null;
+  left join public.products product
+    on product.id = nullif(material->>'productId', '')::uuid
+    and product.company_id = target_company_id
+  where nullif(trim(coalesce(nullif(material->>'productName', ''), product.name)), '') is not null;
 
   insert into public.task_updates (
     company_id,
@@ -401,7 +411,9 @@ begin
   insert into public.task_materials (
     company_id,
     task_id,
+    product_id,
     product_name,
+    composition,
     dose,
     unit,
     mixing_order,
@@ -410,13 +422,18 @@ begin
   select
     target_company_id,
     target_task_id,
-    trim(material->>'productName'),
+    product.id,
+    trim(coalesce(nullif(material->>'productName', ''), product.name)),
+    coalesce(nullif(trim(material->>'composition'), ''), product.composition),
     nullif(trim(material->>'dose'), ''),
     nullif(trim(material->>'unit'), ''),
     coalesce((material->>'mixingOrder')::integer, material_index::integer),
     nullif(trim(material->>'notes'), '')
   from jsonb_array_elements(target_materials) with ordinality as items(material, material_index)
-  where nullif(trim(material->>'productName'), '') is not null;
+  left join public.products product
+    on product.id = nullif(material->>'productId', '')::uuid
+    and product.company_id = target_company_id
+  where nullif(trim(coalesce(nullif(material->>'productName', ''), product.name)), '') is not null;
 
   insert into public.task_updates (company_id, task_id, actor_user_id, update_type, note)
   values (target_company_id, target_task_id, auth.uid(), 'comment', 'Actividad actualizada');

@@ -64,8 +64,20 @@ function emptyCost(): CostDraft {
   return { category: "Agroinsumos", amount: "", notes: "" };
 }
 
-type NutritionProductDraft = { product: string; dose: string };
+type ProductOption = {
+  id: string;
+  name: string;
+  composition: string | null;
+};
+
+type NutritionProductDraft = {
+  productId: string;
+  product: string;
+  dose: string;
+};
+
 type ApplicationProductDraft = {
+  productId: string;
   category: ApplicationRecord["category"];
   product: string;
   composition: string;
@@ -73,11 +85,98 @@ type ApplicationProductDraft = {
 };
 
 function emptyNutritionProduct(): NutritionProductDraft {
-  return { product: "", dose: "" };
+  return { productId: "", product: "", dose: "" };
 }
 
 function emptyApplicationProduct(): ApplicationProductDraft {
-  return { category: "Bioestimulante", product: "", composition: "", dose: "" };
+  return { productId: "", category: "Bioestimulante", product: "", composition: "", dose: "" };
+}
+
+function normalizedProductName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-MX");
+}
+
+function ProductSearchInput({
+  value,
+  productId,
+  products,
+  onChange,
+  composition,
+  index
+}: {
+  value: string;
+  productId: string;
+  products: ProductOption[];
+  onChange: (patch: { productId: string; product: string; composition?: string }) => void;
+  composition?: string;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = normalizedProductName(value);
+  const exactMatch = products.find((product) => normalizedProductName(product.name) === query);
+  const matches = query
+    ? products.filter((product) => normalizedProductName(product.name).includes(query)).slice(0, 8)
+    : products.slice(0, 8);
+
+  return (
+    <div className="relative">
+      <TextInput
+        aria-label={`Producto ${index + 1}`}
+        onBlur={() => setOpen(false)}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          const nextMatch = products.find((product) => normalizedProductName(product.name) === normalizedProductName(nextValue));
+          onChange({
+            productId: nextMatch?.id ?? "",
+            product: nextValue,
+            composition: nextMatch?.composition ?? ""
+          });
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="Buscar producto"
+        required
+        value={value}
+      />
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-auto border border-app-border bg-white shadow-lg">
+          {matches.map((product) => (
+            <button
+              className="block w-full px-3 py-2 text-left hover:bg-app-sidebar"
+              key={product.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange({
+                  productId: product.id,
+                  product: product.name,
+                  composition: product.composition ?? ""
+                });
+                setOpen(false);
+              }}
+              type="button"
+            >
+              <span className="block truncate text-sm font-medium text-app-text">{product.name}</span>
+              {product.composition ? <span className="block truncate text-xs text-app-muted">{product.composition}</span> : null}
+            </button>
+          ))}
+          {value.trim() && !exactMatch ? (
+            <button
+              className="block w-full border-t border-app-border px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange({ productId: "", product: value.trim(), composition: "" });
+                setOpen(false);
+              }}
+              type="button"
+            >
+              Agregar otro: {value.trim()}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {productId && composition ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-app-muted">{composition}</p> : null}
+    </div>
+  );
 }
 
 function insertedId(row: { id?: string } | null | undefined, fallback: string) {
@@ -303,6 +402,7 @@ export function RecordModal() {
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
   const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
   const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
   const [draftCropId, setDraftCropId] = useState(INITIAL_CROP_ID);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
@@ -400,6 +500,44 @@ export function RecordModal() {
     };
   }, [canAssignGreenhouseManager, modal, organization.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProducts = async () => {
+      if (!organization.id || (modal !== "nutrition" && modal !== "application")) {
+        setProductOptions([]);
+        return;
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        setProductOptions([]);
+        return;
+      }
+
+      const { data, error: productsError } = await supabase
+        .from("products")
+        .select("id, name, composition")
+        .eq("company_id", organization.id)
+        .order("name", { ascending: true });
+
+      if (cancelled) return;
+      if (productsError) {
+        setProductOptions([]);
+        setError(appErrorMessage(productsError, "No se pudo cargar el catálogo de productos."));
+        return;
+      }
+
+      setProductOptions((data ?? []) as ProductOption[]);
+    };
+
+    loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modal, organization.id]);
+
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
   const activeCropOptions = crops.filter((crop) => crop.isActive);
@@ -446,6 +584,55 @@ export function RecordModal() {
       || (manager.source === "staff" && manager.id === managerStaffId)
     )?.name
     ?? (managerUserId === currentUser.id ? currentUser.fullName : "Sin encargado");
+
+  const ensureProduct = async ({
+    productId,
+    product,
+    composition,
+    category
+  }: {
+    productId: string;
+    product: string;
+    composition?: string;
+    category?: ApplicationRecord["category"];
+  }) => {
+    const productName = product.trim();
+    if (!productName) return { productId: "", product: productName, composition: composition ?? "" };
+    if (productId) return { productId, product: productName, composition: composition ?? "" };
+
+    const existingProduct = productOptions.find((option) => normalizedProductName(option.name) === normalizedProductName(productName));
+    if (existingProduct) {
+      return {
+        productId: existingProduct.id,
+        product: existingProduct.name,
+        composition: existingProduct.composition ?? composition ?? ""
+      };
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return { productId: "", product: productName, composition: composition ?? "" };
+
+    const { data } = await supabase
+      .from("products")
+      .insert({
+        company_id: organization.id,
+        name: productName,
+        category: category ? applicationCategoryToDb[category] : null,
+        composition: composition?.trim() || null
+      })
+      .select("id, name, composition")
+      .single();
+
+    if (!data) return { productId: "", product: productName, composition: composition ?? "" };
+
+    const newProduct = data as ProductOption;
+    setProductOptions((current) => [...current, newProduct].sort((a, b) => a.name.localeCompare(b.name, "es-MX")));
+    return {
+      productId: newProduct.id,
+      product: newProduct.name,
+      composition: newProduct.composition ?? composition ?? ""
+    };
+  };
 
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
     const managerValue = String(form.get("managerRef") ?? "").trim();
@@ -628,11 +815,13 @@ export function RecordModal() {
       const occurredAt = String(form.get("date"));
       const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === greenhouseId);
       const stage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, occurredAt));
-      const records = nutritionProducts.map((product) => ({
+      const resolvedProducts = await Promise.all(nutritionProducts.map((product) => ensureProduct(product)));
+      const records = resolvedProducts.map((product, index) => ({
         greenhouseId,
         date: occurredAt,
+        productId: product.productId,
         product: product.product,
-        dose: product.dose,
+        dose: nutritionProducts[index].dose,
         method: String(form.get("method")) as NutritionRecord["method"],
         ph: Number(form.get("ph")),
         ec: Number(form.get("ec")),
@@ -645,6 +834,7 @@ export function RecordModal() {
         .insert(records.map((record) => ({
           company_id: organization.id,
           greenhouse_id: record.greenhouseId,
+          product_id: record.productId || null,
           product_name: record.product,
           dose: record.dose,
           method: nutritionMethodToDb[record.method],
@@ -672,12 +862,14 @@ export function RecordModal() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     save(async () => {
-      const records = applicationProducts.map((product) => ({
+      const resolvedProducts = await Promise.all(applicationProducts.map((product) => ensureProduct(product)));
+      const records = applicationProducts.map((product, index) => ({
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
         category: product.category,
-        product: product.product,
-        composition: product.composition,
+        productId: resolvedProducts[index].productId,
+        product: resolvedProducts[index].product,
+        composition: resolvedProducts[index].composition,
         dose: product.dose,
         area: String(form.get("area")),
         responsible: currentUser.fullName,
@@ -690,6 +882,7 @@ export function RecordModal() {
         .insert(records.map((record) => ({
           company_id: organization.id,
           greenhouse_id: record.greenhouseId,
+          product_id: record.productId || null,
           category: applicationCategoryToDb[record.category],
           product_name: record.product,
           composition: record.composition,
@@ -1051,21 +1244,27 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <section className="grid gap-3 sm:col-span-2">
+          <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos y mezcla</p>
+                <p className="mt-2 text-xs text-app-muted">Registra productos, dosis y mezcla aplicada.</p>
+              </div>
               <Button className="h-8" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setNutritionProducts((current) => [...current, emptyNutritionProduct()])} type="button" variant="ghost">
-                Agregar producto
+                Producto
               </Button>
             </div>
-            {nutritionProducts.map((product, index) => (
-              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.2fr_1fr_auto]">
-                <TextInput
-                  aria-label={`Producto ${index + 1}`}
-                  onChange={(event) => setNutritionProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, product: event.target.value } : item))}
-                  placeholder="Producto"
-                  required
+            <div className="mt-4 grid gap-3">
+              {nutritionProducts.map((product, index) => (
+              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_auto]">
+                <ProductSearchInput
+                  index={index}
+                  productId={product.productId}
+                  products={productOptions}
                   value={product.product}
+                  onChange={(patch) => setNutritionProducts((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, ...patch } : item
+                  ))}
                 />
                 <TextInput
                   aria-label={`Dosis ${index + 1}`}
@@ -1076,7 +1275,8 @@ export function RecordModal() {
                 />
                 <Button aria-label={`Quitar producto ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus className="h-4 w-4" />} onClick={() => setNutritionProducts((current) => current.length === 1 ? [emptyNutritionProduct()] : current.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="ghost" />
               </div>
-            ))}
+              ))}
+            </div>
           </section>
           <Field label="Método"><SelectInput name="method" defaultValue="Fertirriego">{["Fertirriego", "Foliar", "Drench"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="Objetivo"><SelectInput name="objective" defaultValue="Engorde">{["Raíz", "Floración", "Cuajado", "Engorde", "Calidad"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
@@ -1090,15 +1290,30 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <section className="grid gap-3 sm:col-span-2">
+          <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Productos</p>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos y mezcla</p>
+                <p className="mt-2 text-xs text-app-muted">Registra productos, dosis y mezcla aplicada.</p>
+              </div>
               <Button className="h-8" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setApplicationProducts((current) => [...current, emptyApplicationProduct()])} type="button" variant="ghost">
-                Agregar producto
+                Producto
               </Button>
             </div>
-            {applicationProducts.map((product, index) => (
-              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[0.9fr_1fr_1fr_0.8fr_auto]">
+            <div className="mt-4 grid gap-3">
+              {applicationProducts.map((product, index) => (
+              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_0.8fr_auto]">
+                <ProductSearchInput
+                  composition={product.composition}
+                  index={index}
+                  productId={product.productId}
+                  products={productOptions}
+                  value={product.product}
+                  onChange={(patch) => setApplicationProducts((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, ...patch } : item
+                  ))}
+                />
+                <TextInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
                 <SelectInput
                   aria-label={`Categoría ${index + 1}`}
                   onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value as ApplicationRecord["category"] } : item))}
@@ -1106,12 +1321,10 @@ export function RecordModal() {
                 >
                   {Object.keys(applicationCategoryToDb).map((item) => <option key={item}>{item}</option>)}
                 </SelectInput>
-                <TextInput aria-label={`Producto ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, product: event.target.value } : item))} placeholder="Producto" required value={product.product} />
-                <TextInput aria-label={`Composición ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, composition: event.target.value } : item))} placeholder="Ingrediente activo" value={product.composition} />
-                <TextInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
                 <Button aria-label={`Quitar producto ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus className="h-4 w-4" />} onClick={() => setApplicationProducts((current) => current.length === 1 ? [emptyApplicationProduct()] : current.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="ghost" />
               </div>
-            ))}
+              ))}
+            </div>
           </section>
           <Field label="Área aplicada"><TextInput name="area" placeholder="Área completa o sección 1" /></Field>
           <Field label="Intervalo de seguridad (antes de cosecha)"><TextInput name="safetyInterval" placeholder="Ej. 3 días" /></Field>

@@ -525,7 +525,7 @@ async function loadTaskContext(adminClient: any, connection: any, taskIds: strin
 async function loadMaterials(adminClient: any, task: any) {
   const { data } = await adminClient
     .from("task_materials")
-    .select("id, product_id, product_name, dose, unit, notes")
+    .select("id, product_id, product_name, composition, dose, unit, notes")
     .eq("company_id", task.company_id)
     .eq("task_id", task.id)
     .order("mixing_order", { ascending: true });
@@ -702,7 +702,7 @@ async function completeTechnicalTask(adminClient: any, connection: any, task: an
       product_id: material.product_id,
       category: material.product_category ?? executionPayload.category,
       product_name: material.product_name,
-      composition: null,
+      composition: material.composition ?? null,
       dose: recordDose(material),
       applied_area: executionPayload.appliedArea || null,
       safety_interval: null,
