@@ -7,13 +7,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Edit3,
-  MessageCircle,
   Minus,
   Plus,
-  Send,
-  Users
+  Send
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
@@ -2143,20 +2140,6 @@ export function OperationsSection({
             </div>
           )}
 
-          <div className="mt-10 grid gap-4 border-t border-app-border py-6 md:grid-cols-3">
-            <div className="flex items-start gap-3">
-              <Clock3 className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Planeación enviada</p><p className="mt-1 text-xs leading-5 text-app-muted">Al publicar, Mira prepara y envía la semana a los encargados.</p></div>
-            </div>
-            <div className="flex items-start gap-3">
-              <Users className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Responsable operativo</p><p className="mt-1 text-xs leading-5 text-app-muted">El manager coordina también a la cuadrilla.</p></div>
-            </div>
-            <div className="flex items-start gap-3">
-              <MessageCircle className="mt-0.5 h-4 w-4 text-app-green" />
-              <div><p className="text-sm font-medium">Canal de avisos</p><p className="mt-1 text-xs leading-5 text-app-muted">Los encargados conectados reciben sus actividades asignadas.</p></div>
-            </div>
-          </div>
         </>
       )}
 
