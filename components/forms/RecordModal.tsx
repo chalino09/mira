@@ -1035,7 +1035,13 @@ export function RecordModal() {
   };
 
   return (
-    <Modal open={modal !== null} title={copy?.title ?? ""} onClose={closeModal}>
+    <Modal
+      bodyClassName={modal === "cost" ? "sm:min-h-[calc(96vh-64px)] sm:max-h-[calc(96vh-64px)]" : undefined}
+      open={modal !== null}
+      panelClassName={modal === "cost" ? "sm:max-h-[96vh] sm:min-h-[96vh] sm:max-w-5xl" : undefined}
+      title={copy?.title ?? ""}
+      onClose={closeModal}
+    >
       {copy ? (
         <div className="mb-6 border-b border-app-border pb-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-app-muted">{copy.kicker}</p>

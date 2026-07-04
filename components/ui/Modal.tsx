@@ -3,22 +3,25 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/utils";
 
 type ModalProps = {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  bodyClassName?: string;
+  panelClassName?: string;
 };
 
-export function Modal({ title, open, onClose, children }: ModalProps) {
+export function Modal({ title, open, onClose, children, bodyClassName, panelClassName }: ModalProps) {
   if (!open) {
     return null;
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/20 p-3 backdrop-blur-sm sm:items-center sm:justify-center">
-      <div className="max-h-[92vh] w-full overflow-hidden rounded-app border border-app-border bg-white sm:max-w-4xl">
+      <div className={cn("max-h-[92vh] w-full overflow-hidden rounded-app border border-app-border bg-white sm:max-w-4xl", panelClassName)}>
         <div className="flex items-center justify-between border-b border-app-border px-5 py-4">
           <h2 className="text-base font-semibold text-app-text">{title}</h2>
           <Button
@@ -29,7 +32,7 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
             variant="ghost"
           />
         </div>
-        <div className="max-h-[calc(92vh-64px)] overflow-y-auto px-5 py-5">{children}</div>
+        <div className={cn("max-h-[calc(92vh-64px)] overflow-y-auto px-5 py-5", bodyClassName)}>{children}</div>
       </div>
     </div>
   );
