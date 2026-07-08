@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -777,8 +777,8 @@ export function RecordModal() {
       const record = {
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        durationMin: Number(form.get("durationMin")),
-        liters: Number(form.get("liters")),
+        durationMin: requiredNumber(form.get("durationMin")),
+        liters: requiredNumber(form.get("liters")),
         sector: String(form.get("sector")),
         ph: optionalNumber(form.get("ph")),
         ec: optionalNumber(form.get("ec")),
@@ -970,11 +970,11 @@ export function RecordModal() {
       const record = {
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        kilograms: Number(form.get("kilograms")),
-        firstQuality: Number(form.get("firstQuality")),
-        secondQuality: Number(form.get("secondQuality")),
-        discard: Number(form.get("discard")),
-        estimatedPrice: Number(form.get("estimatedPrice")),
+        kilograms: requiredNumber(form.get("kilograms")),
+        firstQuality: requiredNumber(form.get("firstQuality")),
+        secondQuality: requiredNumber(form.get("secondQuality")),
+        discard: requiredNumber(form.get("discard")),
+        estimatedPrice: requiredNumber(form.get("estimatedPrice")),
         destination: String(form.get("destination")),
         notes: String(form.get("notes"))
       };
@@ -1009,7 +1009,7 @@ export function RecordModal() {
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
         category: cost.category,
-        amount: Number(cost.amount),
+        amount: requiredNumber(cost.amount),
         notes: cost.notes
       }));
       const { data, error: insertError } = await getSupabaseBrowserClient()!
@@ -1237,8 +1237,8 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <Field label="Duración min"><TextInput name="durationMin" type="number" required defaultValue={0} /></Field>
-          <Field label="Litros estimados"><TextInput name="liters" type="number" required defaultValue={0} /></Field>
+          <Field label="Duración min"><FormattedNumberInput name="durationMin" required defaultValue={0} /></Field>
+          <Field label="Litros estimados"><FormattedNumberInput name="liters" required defaultValue={0} /></Field>
           <Field label="Sector o válvula"><TextInput name="sector" placeholder="Válvula A1" /></Field>
           <Field label="pH"><TextInput name="ph" step="0.1" type="number" placeholder="Opcional" /></Field>
           <Field label="CE"><TextInput name="ec" step="0.1" type="number" placeholder="Opcional" /></Field>
@@ -1272,7 +1272,7 @@ export function RecordModal() {
                     itemIndex === index ? { ...item, ...patch } : item
                   ))}
                 />
-                <TextInput
+                <FormattedQuantityInput
                   aria-label={`Dosis ${index + 1}`}
                   onChange={(event) => setNutritionProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
                   placeholder="Dosis"
@@ -1319,7 +1319,7 @@ export function RecordModal() {
                     itemIndex === index ? { ...item, ...patch } : item
                   ))}
                 />
-                <TextInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
+                <FormattedQuantityInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
                 <SelectInput
                   aria-label={`Categoría ${index + 1}`}
                   onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value as ApplicationRecord["category"] } : item))}
@@ -1333,8 +1333,8 @@ export function RecordModal() {
             </div>
           </section>
           <Field label="Área aplicada"><TextInput name="area" placeholder="Área completa o sección 1" /></Field>
-          <Field label="Intervalo de seguridad (antes de cosecha)"><TextInput name="safetyInterval" placeholder="Ej. 3 días" /></Field>
-          <Field label="Tiempo de reentrada"><TextInput name="reentry" placeholder="Ej. 12 horas" /></Field>
+          <Field label="Intervalo de seguridad (antes de cosecha)"><FormattedQuantityInput name="safetyInterval" placeholder="Ej. 3 días" /></Field>
+          <Field label="Tiempo de reentrada"><FormattedQuantityInput name="reentry" placeholder="Ej. 12 horas" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
         </FormShell>
       ) : null}
@@ -1363,11 +1363,11 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <Field label="Kg cosechados"><TextInput name="kilograms" type="number" required defaultValue={0} /></Field>
-          <Field label="Primera"><TextInput name="firstQuality" type="number" defaultValue={0} /></Field>
-          <Field label="Segunda"><TextInput name="secondQuality" type="number" defaultValue={0} /></Field>
-          <Field label="Descarte"><TextInput name="discard" type="number" defaultValue={0} /></Field>
-          <Field label="Precio estimado"><TextInput name="estimatedPrice" step="0.1" type="number" defaultValue={0} /></Field>
+          <Field label="Kg cosechados"><FormattedNumberInput name="kilograms" required defaultValue={0} /></Field>
+          <Field label="Primera"><FormattedNumberInput name="firstQuality" defaultValue={0} /></Field>
+          <Field label="Segunda"><FormattedNumberInput name="secondQuality" defaultValue={0} /></Field>
+          <Field label="Descarte"><FormattedNumberInput name="discard" defaultValue={0} /></Field>
+          <Field label="Precio estimado"><FormattedNumberInput name="estimatedPrice" step="0.1" defaultValue={0} /></Field>
           <Field label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
         </FormShell>
@@ -1401,7 +1401,7 @@ export function RecordModal() {
                 >
                   {Object.keys(costCategoryToDb).map((item) => <option key={item}>{item}</option>)}
                 </SelectInput>
-                <TextInput
+                <FormattedNumberInput
                   aria-label={`Monto ${index + 1}`}
                   min="0.01"
                   onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
@@ -1410,7 +1410,6 @@ export function RecordModal() {
                   placeholder="Monto"
                   required
                   step="0.01"
-                  type="number"
                   value={cost.amount}
                 />
                 <TextInput

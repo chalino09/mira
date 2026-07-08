@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, FileText, FlaskConical, Plus, Save, Sprout, Trash2, Upload, WandSparkles } from "lucide-react";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { appErrorMessage } from "@/lib/errors";
@@ -11,7 +11,7 @@ import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { uploadPrivateCompanyFile } from "@/lib/storage";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, parseNumericInput } from "@/lib/utils";
 
 type LabStudyType = "suelo" | "agua" | "fertilidad" | "pasta_saturada" | "solucion_suelo_avanzada" | "foliar";
 type LabDiagnosticStatus = "sin_clasificar" | "adecuado" | "atencion" | "critico";
@@ -206,9 +206,7 @@ function fileKind(file: File): "pdf" | "imagen" | "otro" {
 }
 
 function toNullableNumber(value: string) {
-  if (!value.trim()) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseNumericInput(value);
 }
 
 function fileSizeLabel(bytes: number) {
@@ -977,10 +975,10 @@ export function TechnicalLabSection() {
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-[minmax(90px,0.35fr)_minmax(90px,0.35fr)_minmax(0,1fr)]">
                       <Field label="Mín.">
-                        <TextInput inputMode="decimal" value={parameter.rangeMin} onChange={(event) => updateEditParameter(parameter.id, { rangeMin: event.target.value })} />
+                        <FormattedNumberInput value={parameter.rangeMin} onChange={(event) => updateEditParameter(parameter.id, { rangeMin: event.target.value })} />
                       </Field>
                       <Field label="Máx.">
-                        <TextInput inputMode="decimal" value={parameter.rangeMax} onChange={(event) => updateEditParameter(parameter.id, { rangeMax: event.target.value })} />
+                        <FormattedNumberInput value={parameter.rangeMax} onChange={(event) => updateEditParameter(parameter.id, { rangeMax: event.target.value })} />
                       </Field>
                       <Field label="Observación">
                         <TextInput value={parameter.observation} onChange={(event) => updateEditParameter(parameter.id, { observation: event.target.value })} />

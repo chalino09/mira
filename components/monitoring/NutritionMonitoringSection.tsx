@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { INITIAL_CROP_ID, cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -206,11 +206,9 @@ function RawInputsBlock({
 
           return (
             <Field key={`${sampleType}-${key}`} label={`${analyte?.shortLabel ?? key} · ${unit}`} preserveCase>
-              <TextInput
-                inputMode="decimal"
+              <FormattedNumberInput
                 onChange={(event) => onChange(key, event.target.value)}
                 placeholder="0"
-                type="number"
                 step="any"
                 value={String(values[key] ?? "")}
               />

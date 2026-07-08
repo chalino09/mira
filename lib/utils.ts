@@ -55,6 +55,18 @@ export function formatNumericInput(value: string | number | null | undefined) {
   return hasDecimal ? `${formattedInteger}.${decimal}` : formattedInteger;
 }
 
+export function formatQuantityInput(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return formatNumericInput(value);
+  }
+
+  const text = String(value ?? "");
+  const match = text.match(/^(\s*[-+]?\d[\d,.]*)(.*)$/);
+  if (!match) return text;
+
+  return `${formatNumericInput(match[1])}${match[2] ?? ""}`;
+}
+
 export function formatCurrency(value?: number | null) {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",

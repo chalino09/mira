@@ -16,7 +16,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
@@ -26,7 +26,7 @@ import { appErrorMessage } from "@/lib/errors";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { cn, parseNumericInput } from "@/lib/utils";
 import type { CopilotInsight } from "@/lib/mira-copilot";
 import type { ApplicationRecord, CropCatalogItem, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
@@ -524,8 +524,11 @@ function activityLabel(task: OperationTaskRow) {
 }
 
 function optionalFormNumber(value: FormDataEntryValue | null) {
-  const textValue = String(value ?? "").trim();
-  return textValue ? Number(textValue) : null;
+  return parseNumericInput(String(value ?? ""));
+}
+
+function requiredFormNumber(value: FormDataEntryValue | null) {
+  return optionalFormNumber(value) ?? 0;
 }
 
 function telegramDispatchMessage(data: any) {
@@ -639,7 +642,7 @@ function ActivityFormModal({
       priority: String(form.get("priority")) as TaskPriority,
       instructions: String(form.get("instructions") ?? ""),
       executionMode: String(form.get("executionMode")) as ExecutionMode,
-      crewSize: String(form.get("crewSize") ?? "").trim() ? Number(form.get("crewSize")) : null,
+      crewSize: optionalFormNumber(form.get("crewSize")),
       assigneeIds,
       staffAssigneeIds,
       materials: ["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType)
@@ -728,7 +731,7 @@ function ActivityFormModal({
             </SelectInput>
           </Field>
           <Field label="Personas en cuadrilla">
-            <TextInput min={0} name="crewSize" type="number" defaultValue={task?.crew_size ?? ""} />
+            <FormattedNumberInput min={0} name="crewSize" defaultValue={task?.crew_size ?? ""} />
           </Field>
           <Field className="sm:col-span-2" label="Instrucciones">
             <TextArea
@@ -740,10 +743,10 @@ function ActivityFormModal({
           {activityType === "riego" ? (
             <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
               <Field label="Duración planeada (min)">
-                <TextInput min={1} onChange={(event) => updateTechnicalPlan({ plannedDurationMin: event.target.value })} type="number" value={technicalPlan.plannedDurationMin ?? ""} />
+                <FormattedNumberInput min={1} onChange={(event) => updateTechnicalPlan({ plannedDurationMin: event.target.value })} value={technicalPlan.plannedDurationMin ?? ""} />
               </Field>
               <Field label="Litros planeados">
-                <TextInput min={0} onChange={(event) => updateTechnicalPlan({ plannedLiters: event.target.value })} step="0.01" type="number" value={technicalPlan.plannedLiters ?? ""} />
+                <FormattedNumberInput min={0} onChange={(event) => updateTechnicalPlan({ plannedLiters: event.target.value })} step="0.01" value={technicalPlan.plannedLiters ?? ""} />
               </Field>
               <Field label="Sector o válvula">
                 <TextInput onChange={(event) => updateTechnicalPlan({ sector: event.target.value })} value={technicalPlan.sector ?? ""} />
@@ -930,7 +933,7 @@ function ActivityFormModal({
                     itemIndex === index ? { ...item, ...patch } : item
                   ))}
                 />
-                <TextInput
+                <FormattedNumberInput
                   aria-label={`Dosis ${index + 1}`}
                   onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
                     itemIndex === index ? { ...item, dose: event.target.value } : item
@@ -1071,7 +1074,7 @@ function CompleteApplicationModal({
                   />
                 </Field>
                 <Field label="Dosis real">
-                  <TextInput
+                  <FormattedQuantityInput
                     onChange={(event) => updateApplication(index, { dose: event.target.value })}
                     required
                     value={application.dose}
@@ -1171,8 +1174,8 @@ function CompleteIrrigationModal({
     const form = new FormData(event.currentTarget);
     await onSave({
       date: String(form.get("date")),
-      durationMin: Number(form.get("durationMin")),
-      liters: Number(form.get("liters")),
+      durationMin: requiredFormNumber(form.get("durationMin")),
+      liters: requiredFormNumber(form.get("liters")),
       sector: String(form.get("sector") ?? ""),
       ph: optionalFormNumber(form.get("ph")),
       ec: optionalFormNumber(form.get("ec")),
@@ -1186,8 +1189,8 @@ function CompleteIrrigationModal({
         <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
-          <Field label="Duración min"><TextInput min={1} name="durationMin" required type="number" defaultValue={task?.technical_plan?.plannedDurationMin ?? ""} /></Field>
-          <Field label="Litros estimados"><TextInput min={0.01} name="liters" required step="0.01" type="number" defaultValue={task?.technical_plan?.plannedLiters ?? ""} /></Field>
+          <Field label="Duración min"><FormattedNumberInput min={1} name="durationMin" required defaultValue={task?.technical_plan?.plannedDurationMin ?? ""} /></Field>
+          <Field label="Litros estimados"><FormattedNumberInput min={0.01} name="liters" required step="0.01" defaultValue={task?.technical_plan?.plannedLiters ?? ""} /></Field>
           <Field label="Sector o válvula"><TextInput name="sector" defaultValue={task?.technical_plan?.sector ?? ""} /></Field>
           <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
           <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
@@ -1268,7 +1271,7 @@ function CompleteNutritionModal({
                 required
                 value={product.productName}
               />
-              <TextInput
+              <FormattedQuantityInput
                 aria-label={`Dosis real ${index + 1}`}
                 onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
                 required
@@ -1305,11 +1308,11 @@ function CompleteHarvestModal({
     const form = new FormData(event.currentTarget);
     await onSave({
       date: String(form.get("date")),
-      kilograms: Number(form.get("kilograms")),
-      firstQuality: Number(form.get("firstQuality") || 0),
-      secondQuality: Number(form.get("secondQuality") || 0),
-      discard: Number(form.get("discard") || 0),
-      estimatedPrice: Number(form.get("estimatedPrice") || 0),
+      kilograms: requiredFormNumber(form.get("kilograms")),
+      firstQuality: requiredFormNumber(form.get("firstQuality")),
+      secondQuality: requiredFormNumber(form.get("secondQuality")),
+      discard: requiredFormNumber(form.get("discard")),
+      estimatedPrice: requiredFormNumber(form.get("estimatedPrice")),
       destination: String(form.get("destination") ?? ""),
       notes: String(form.get("notes") ?? "")
     });
@@ -1323,11 +1326,11 @@ function CompleteHarvestModal({
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
-          <Field label="Kilogramos totales"><TextInput min={0.01} name="kilograms" required step="0.01" type="number" /></Field>
-          <Field label="Primera calidad"><TextInput min={0} name="firstQuality" step="0.01" type="number" defaultValue={0} /></Field>
-          <Field label="Segunda calidad"><TextInput min={0} name="secondQuality" step="0.01" type="number" defaultValue={0} /></Field>
-          <Field label="Descarte"><TextInput min={0} name="discard" step="0.01" type="number" defaultValue={0} /></Field>
-          <Field label="Precio estimado"><TextInput min={0} name="estimatedPrice" step="0.01" type="number" defaultValue={0} /></Field>
+          <Field label="Kilogramos totales"><FormattedNumberInput min={0.01} name="kilograms" required step="0.01" /></Field>
+          <Field label="Primera calidad"><FormattedNumberInput min={0} name="firstQuality" step="0.01" defaultValue={0} /></Field>
+          <Field label="Segunda calidad"><FormattedNumberInput min={0} name="secondQuality" step="0.01" defaultValue={0} /></Field>
+          <Field label="Descarte"><FormattedNumberInput min={0} name="discard" step="0.01" defaultValue={0} /></Field>
+          <Field label="Precio estimado"><FormattedNumberInput min={0} name="estimatedPrice" step="0.01" defaultValue={0} /></Field>
           <Field className="sm:col-span-2" label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
         </div>

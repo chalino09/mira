@@ -1,4 +1,5 @@
 import { INITIAL_CROP_ID } from "@/lib/crop-ddt";
+import { parseNumericInput } from "@/lib/utils";
 
 export type NutritionSampleType = "petiole_cell_extract" | "soil_solution";
 export type NutritionDiagnosticStatus = "Bajo" | "Adecuado" | "Alto";
@@ -320,17 +321,7 @@ export function parseNutritionNumber(value: string | number | null | undefined) 
     return Number.isFinite(value) ? value : null;
   }
 
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  const normalized = value.trim().replace(/\s/g, "").replace(/,/g, ".");
-  if (!normalized) {
-    return null;
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseNumericInput(value);
 }
 
 export function nutritionRangeFor(

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { cn, formatNumericInput } from "@/lib/utils";
+import { cn, formatNumericInput, formatQuantityInput } from "@/lib/utils";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10";
@@ -35,30 +35,58 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
   return <input className={cn(fieldClass, className)} {...props} />;
 }
 
-export function FormattedNumberInput({
+type FormattedInputValue = string | number | null | undefined;
+
+type FormattedInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode" | "defaultValue" | "value"> & {
+  defaultValue?: FormattedInputValue;
+  value?: FormattedInputValue;
+};
+
+function FormattedInput({
   className,
   defaultValue,
+  value: controlledValue,
+  onChange,
+  formatter,
   ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode" | "defaultValue"> & {
-  defaultValue?: number | string | null;
+}: FormattedInputProps & {
+  formatter: (value: FormattedInputValue) => string;
 }) {
-  const formattedDefaultValue = defaultValue == null ? "" : formatNumericInput(defaultValue);
+  const isControlled = controlledValue !== undefined;
+  const formattedDefaultValue = defaultValue == null ? "" : formatter(defaultValue);
   const [value, setValue] = useState(formattedDefaultValue);
 
   useEffect(() => {
     setValue(formattedDefaultValue);
-  }, [formattedDefaultValue]);
+  }, [formattedDefaultValue, isControlled]);
+
+  const displayValue = isControlled ? formatter(controlledValue) : value;
 
   return (
     <input
       className={cn(fieldClass, className)}
       inputMode="decimal"
       type="text"
-      value={value}
-      onChange={(event) => setValue(formatNumericInput(event.target.value))}
+      value={displayValue}
+      onChange={(event) => {
+        const formattedValue = formatter(event.currentTarget.value);
+        if (!isControlled) {
+          setValue(formattedValue);
+        }
+        event.currentTarget.value = formattedValue;
+        onChange?.(event);
+      }}
       {...props}
     />
   );
+}
+
+export function FormattedNumberInput(props: FormattedInputProps) {
+  return <FormattedInput {...props} formatter={formatNumericInput} />;
+}
+
+export function FormattedQuantityInput(props: FormattedInputProps) {
+  return <FormattedInput {...props} formatter={formatQuantityInput} />;
 }
 
 export function SelectInput({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
