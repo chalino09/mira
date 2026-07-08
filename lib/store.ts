@@ -277,7 +277,9 @@ export const useGreenhouseStore = create<AppState>((set) => ({
           id: makeId("act"),
           greenhouseId: record.greenhouseId,
           title: "Cosecha registrada",
-          detail: `${record.kilograms.toLocaleString("es-MX")} kg capturados`,
+          detail: record.boxCount
+            ? `${record.boxCount.toLocaleString("es-MX")} cajas · ${record.kilograms.toLocaleString("es-MX")} kg`
+            : `${record.kilograms.toLocaleString("es-MX")} kg capturados`,
           time: "Ahora"
         },
         ...state.activities

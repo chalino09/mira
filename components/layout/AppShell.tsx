@@ -906,12 +906,18 @@ function PestsSection() {
 
 function HarvestSection({ embedded = false }: { embedded?: boolean }) {
   const { greenhouseHarvest, openModal } = useFilteredData();
+  const totalBoxes = greenhouseHarvest.reduce((sum, item) => sum + item.boxCount, 0);
   const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
-  const totalFirstQuality = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality, 0);
-  const qualityPercent = totalKg ? Math.round((totalFirstQuality / totalKg) * 100) : 0;
-  const averagePrice = greenhouseHarvest.length
-    ? greenhouseHarvest.reduce((sum, item) => sum + item.estimatedPrice, 0) / greenhouseHarvest.length
-    : 0;
+  const commercialKg = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality + item.secondQuality + item.thirdQuality, 0);
+  const estimatedRevenue = greenhouseHarvest.reduce((sum, item) => {
+    const revenue =
+      item.firstQuality * item.firstQualityPrice +
+      item.secondQuality * item.secondQualityPrice +
+      item.thirdQuality * item.thirdQualityPrice;
+    const fallbackCommercialKg = item.firstQuality + item.secondQuality + item.thirdQuality;
+    return sum + (revenue || fallbackCommercialKg * item.estimatedPrice);
+  }, 0);
+  const averagePrice = commercialKg ? estimatedRevenue / commercialKg : 0;
   const harvestChartData = greenhouseHarvest
     .slice(0, 7)
     .reverse()
@@ -924,25 +930,27 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
     <section>
       {!embedded ? (
         <SectionHeader
-          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar no programada</Button>}
+          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar cosecha</Button>}
           title="Cosecha"
-          description="Resultados de cosecha: kilogramos, calidad, precio y destino. Lo programado se confirma desde Operación."
+          description="Cortes capturados por cajas, calidad, merma, precio por kg y destino."
         />
       ) : null}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <MetricCard icon={Leaf} label="Kg acumulados" value={`${formatNumber(totalKg)} kg`} detail="Registros cargados" />
-        <MetricCard icon={CheckCircle2} label="Primera calidad" value={`${qualityPercent}%`} detail="Según registros guardados" />
-        <MetricCard icon={WalletCards} label="Precio estimado" value={formatCurrency(averagePrice)} detail="Promedio por kg" />
+        <MetricCard icon={Leaf} label="Cajas acumuladas" value={formatNumber(totalBoxes)} detail={`${formatNumber(totalKg)} kg registrados`} />
+        <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da y 3ra calidad" />
+        <MetricCard icon={WalletCards} label="Precio promedio" value={formatCurrency(averagePrice)} detail="Ponderado por kg comercial" />
       </div>
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
         <YieldChart data={harvestChartData} />
         <DataTable<HarvestRecord>
           columns={[
             { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
+            { key: "boxes", label: "Cajas", render: (item) => item.boxCount ? formatNumber(item.boxCount) : "--" },
             { key: "kg", label: "Kg", render: (item) => formatNumber(item.kilograms) },
-            { key: "first", label: "Primera", render: (item) => formatNumber(item.firstQuality) },
-            { key: "second", label: "Segunda", render: (item) => formatNumber(item.secondQuality) },
-            { key: "discard", label: "Descarte", render: (item) => formatNumber(item.discard) },
+            { key: "first", label: "1ra", render: (item) => qualityCell(item.firstQualityBoxes, item.firstQuality) },
+            { key: "second", label: "2da", render: (item) => qualityCell(item.secondQualityBoxes, item.secondQuality) },
+            { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
+            { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
             { key: "price", label: "Precio", render: (item) => formatCurrency(item.estimatedPrice) },
             { key: "destination", label: "Destino", render: (item) => item.destination }
           ]}
@@ -951,6 +959,19 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
       </div>
     </section>
   );
+}
+
+function qualityCell(boxes: number, kilograms: number) {
+  if (boxes > 0) {
+    return (
+      <span>
+        <span className="block font-medium">{formatNumber(boxes)} cj</span>
+        <span className="block text-xs text-app-muted">{formatNumber(kilograms)} kg</span>
+      </span>
+    );
+  }
+
+  return `${formatNumber(kilograms)} kg`;
 }
 
 type TechnicalRecordTab = "applications" | "nutrition" | "irrigation";
@@ -965,9 +986,9 @@ function TechnicalRecordsSection() {
   const [activeRecord, setActiveRecord] = useState<TechnicalRecordTab>("applications");
   const openModal = useGreenhouseStore((state) => state.openModal);
   const manualRecordCopy: Record<TechnicalRecordTab, { label: string; modal: "application" | "nutrition" | "irrigation" | "harvest" }> = {
-    applications: { label: "Registrar no programada", modal: "application" },
-    nutrition: { label: "Registrar no programada", modal: "nutrition" },
-    irrigation: { label: "Registrar no programado", modal: "irrigation" }
+    applications: { label: "Registrar aplicación", modal: "application" },
+    nutrition: { label: "Registrar nutrición", modal: "nutrition" },
+    irrigation: { label: "Registrar riego", modal: "irrigation" }
   };
   const manualRecord = manualRecordCopy[activeRecord];
 

@@ -499,7 +499,7 @@ Deno.serve(async (request) => {
 
   const harvestQuery = adminClient
     .from("harvest_records")
-    .select("id, greenhouse_id, occurred_at, kilograms, first_quality_kg, second_quality_kg, discard_kg, destination")
+    .select("id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, merma_kg, discard_kg, destination")
     .eq("company_id", companyId)
     .gte("occurred_at", lookbackStart)
     .order("occurred_at", { ascending: false })

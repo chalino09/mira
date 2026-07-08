@@ -112,6 +112,10 @@ Para convertir alertas sanitarias en expedientes con historial de seguimiento, e
 
 Para registrar encargados internos sin correo ni acceso y asignarlos a invernaderos o actividades, ejecuta `35_internal_staff.sql` despues de `34_pest_alert_followup_history.sql`.
 
+Para cargar el catalogo base de productos desde Excel, ejecuta `36_product_catalog_from_excel.sql` despues de `35_internal_staff.sql`.
+
+Para capturar cosecha por cajas, tercera calidad, merma y precios por calidad, ejecuta `37_harvest_boxes_quality_pricing.sql` despues de `36_product_catalog_from_excel.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -13,6 +14,7 @@ import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
+import { harvestValuesFromForm } from "@/lib/harvest";
 import { cn, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
@@ -328,7 +330,7 @@ const modalCopy = {
   harvest: {
     title: "Nueva cosecha",
     kicker: "Producción",
-    note: "Guarda kilos, calidad, precio estimado y destino."
+    note: "Captura cajas, calidad, merma y precios por kg sin perder el resumen en kilos."
   },
   cost: {
     title: "Nuevos costos",
@@ -970,11 +972,7 @@ export function RecordModal() {
       const record = {
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        kilograms: requiredNumber(form.get("kilograms")),
-        firstQuality: requiredNumber(form.get("firstQuality")),
-        secondQuality: requiredNumber(form.get("secondQuality")),
-        discard: requiredNumber(form.get("discard")),
-        estimatedPrice: requiredNumber(form.get("estimatedPrice")),
+        ...harvestValuesFromForm(form),
         destination: String(form.get("destination")),
         notes: String(form.get("notes"))
       };
@@ -985,9 +983,20 @@ export function RecordModal() {
           greenhouse_id: record.greenhouseId,
           occurred_at: record.date,
           kilograms: record.kilograms,
+          box_count: record.boxCount,
+          box_weight_kg: record.boxWeightKg,
           first_quality_kg: record.firstQuality,
           second_quality_kg: record.secondQuality,
-          discard_kg: record.discard,
+          third_quality_kg: record.thirdQuality,
+          discard_kg: record.merma,
+          merma_kg: record.merma,
+          first_quality_boxes: record.firstQualityBoxes,
+          second_quality_boxes: record.secondQualityBoxes,
+          third_quality_boxes: record.thirdQualityBoxes,
+          merma_boxes: record.mermaBoxes,
+          first_quality_price: record.firstQualityPrice,
+          second_quality_price: record.secondQualityPrice,
+          third_quality_price: record.thirdQualityPrice,
           estimated_price: record.estimatedPrice,
           destination: record.destination,
           notes: record.notes,
@@ -1363,11 +1372,7 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <Field label="Kg cosechados"><FormattedNumberInput name="kilograms" required defaultValue={0} /></Field>
-          <Field label="Primera"><FormattedNumberInput name="firstQuality" defaultValue={0} /></Field>
-          <Field label="Segunda"><FormattedNumberInput name="secondQuality" defaultValue={0} /></Field>
-          <Field label="Descarte"><FormattedNumberInput name="discard" defaultValue={0} /></Field>
-          <Field label="Precio estimado"><FormattedNumberInput name="estimatedPrice" step="0.1" defaultValue={0} /></Field>
+          <HarvestCaptureFields />
           <Field label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
         </FormShell>

@@ -17,6 +17,7 @@ import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
@@ -24,6 +25,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { harvestValuesFromForm } from "@/lib/harvest";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
 import { cn, parseNumericInput } from "@/lib/utils";
@@ -1308,11 +1310,7 @@ function CompleteHarvestModal({
     const form = new FormData(event.currentTarget);
     await onSave({
       date: String(form.get("date")),
-      kilograms: requiredFormNumber(form.get("kilograms")),
-      firstQuality: requiredFormNumber(form.get("firstQuality")),
-      secondQuality: requiredFormNumber(form.get("secondQuality")),
-      discard: requiredFormNumber(form.get("discard")),
-      estimatedPrice: requiredFormNumber(form.get("estimatedPrice")),
+      ...harvestValuesFromForm(form),
       destination: String(form.get("destination") ?? ""),
       notes: String(form.get("notes") ?? "")
     });
@@ -1326,11 +1324,7 @@ function CompleteHarvestModal({
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
-          <Field label="Kilogramos totales"><FormattedNumberInput min={0.01} name="kilograms" required step="0.01" /></Field>
-          <Field label="Primera calidad"><FormattedNumberInput min={0} name="firstQuality" step="0.01" defaultValue={0} /></Field>
-          <Field label="Segunda calidad"><FormattedNumberInput min={0} name="secondQuality" step="0.01" defaultValue={0} /></Field>
-          <Field label="Descarte"><FormattedNumberInput min={0} name="discard" step="0.01" defaultValue={0} /></Field>
-          <Field label="Precio estimado"><FormattedNumberInput min={0} name="estimatedPrice" step="0.01" defaultValue={0} /></Field>
+          <HarvestCaptureFields compact />
           <Field className="sm:col-span-2" label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
         </div>
@@ -1872,10 +1866,20 @@ export function OperationsSection({
       target_kilograms: payload.kilograms,
       target_first_quality_kg: payload.firstQuality,
       target_second_quality_kg: payload.secondQuality,
-      target_discard_kg: payload.discard,
+      target_merma_kg: payload.merma,
       target_estimated_price: payload.estimatedPrice,
       target_destination: payload.destination || null,
-      target_notes: payload.notes || null
+      target_notes: payload.notes || null,
+      target_box_count: payload.boxCount,
+      target_box_weight_kg: payload.boxWeightKg,
+      target_first_quality_boxes: payload.firstQualityBoxes,
+      target_second_quality_boxes: payload.secondQualityBoxes,
+      target_third_quality_boxes: payload.thirdQualityBoxes,
+      target_merma_boxes: payload.mermaBoxes,
+      target_third_quality_kg: payload.thirdQuality,
+      target_first_quality_price: payload.firstQualityPrice,
+      target_second_quality_price: payload.secondQualityPrice,
+      target_third_quality_price: payload.thirdQualityPrice
     });
     setCompleting(false);
     if (error) {

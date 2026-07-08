@@ -364,20 +364,42 @@ function parseNutritionCapture(text: string, task: any) {
 
 function parseHarvestCapture(text: string, task: any) {
   const normalized = normalizeText(text);
-  const kilograms = matchNumber(normalized, [
+  const boxCount = matchNumber(normalized, [
+    /(\d+(?:[\.,]\d+)?)\s*cajas?\b/,
+    /\bcosecha\s+(\d+(?:[\.,]\d+)?)\s*cajas?\b/
+  ]) ?? 0;
+  const boxWeightKg = matchNumber(normalized, [
+    /(\d+(?:[\.,]\d+)?)\s*kg\s*(?:\/|por)?\s*caja\b/,
+    /\bde\s+(\d+(?:[\.,]\d+)?)\s*kg\b/
+  ]) ?? 20;
+  const firstQualityBoxes = matchNumber(normalized, [/\b(?:primera|1ra)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const secondQualityBoxes = matchNumber(normalized, [/\b(?:segunda|2da)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const thirdQualityBoxes = matchNumber(normalized, [/\b(?:tercera|3ra)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const mermaBoxes = matchNumber(normalized, [/\b(?:merma|descarte)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const fallbackKilograms = matchNumber(normalized, [
     /(\d+(?:[\.,]\d+)?)\s*(?:kg|kilos)\b/,
     /\bcosecha\s+(\d+(?:[\.,]\d+)?)/
-  ]);
-  const firstQualityKg = matchNumber(normalized, [/\b(?:primera|calidad)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
-  const secondQualityKg = matchNumber(normalized, [/\bsegunda\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
-  const discardKg = matchNumber(normalized, [/\b(?:descarte|merma)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
-  const estimatedPrice = matchNumber(normalized, [/\bprecio\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  ]) ?? 0;
+  const firstQualityPrice = matchNumber(normalized, [/\b(?:precio1|precio primera|precio 1ra)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const secondQualityPrice = matchNumber(normalized, [/\b(?:precio2|precio segunda|precio 2da)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
+  const thirdQualityPrice = matchNumber(normalized, [/\b(?:precio3|precio tercera|precio 3ra)\s+(\d+(?:[\.,]\d+)?)/]) ?? 0;
   const destination = matchTextAfter(normalized, ["destino"]) || "";
+  const kilograms = boxCount ? boxCount * boxWeightKg : fallbackKilograms;
+  const firstQualityKg = firstQualityBoxes * boxWeightKg;
+  const secondQualityKg = secondQualityBoxes * boxWeightKg;
+  const thirdQualityKg = thirdQualityBoxes * boxWeightKg;
+  const mermaKg = mermaBoxes * boxWeightKg;
+  const commercialKg = firstQualityKg + secondQualityKg + thirdQualityKg;
+  const estimatedRevenue =
+    firstQualityKg * firstQualityPrice +
+    secondQualityKg * secondQualityPrice +
+    thirdQualityKg * thirdQualityPrice;
+  const estimatedPrice = commercialKg ? estimatedRevenue / commercialKg : 0;
 
   if (!kilograms) {
     return {
       ok: false,
-      message: "Para completar cosecha responde los kilos. Ejemplo: cosecha 120 kg primera 100 segunda 15 descarte 5 precio 18 destino central"
+      message: "Para completar cosecha responde las cajas. Ejemplo: cosecha 500 cajas de 20 kg primera 400 segunda 80 tercera 20 precio1 18 precio2 12 precio3 8 destino central"
     };
   }
 
@@ -386,19 +408,30 @@ function parseHarvestCapture(text: string, task: any) {
     payload: {
       occurredAt: localIsoDate(),
       kilograms,
+      boxCount,
+      boxWeightKg,
       firstQualityKg,
       secondQualityKg,
-      discardKg,
+      thirdQualityKg,
+      mermaKg,
+      firstQualityBoxes,
+      secondQualityBoxes,
+      thirdQualityBoxes,
+      mermaBoxes,
+      firstQualityPrice,
+      secondQualityPrice,
+      thirdQualityPrice,
       estimatedPrice,
       destination,
       notes: text
     },
     summary: [
-      `${kilograms} kg`,
-      firstQualityKg ? `primera ${firstQualityKg}` : "",
-      secondQualityKg ? `segunda ${secondQualityKg}` : "",
-      discardKg ? `descarte ${discardKg}` : "",
-      estimatedPrice ? `precio ${estimatedPrice}` : ""
+      boxCount ? `${boxCount} cajas` : `${kilograms} kg`,
+      boxCount ? `${kilograms} kg` : "",
+      firstQualityBoxes ? `1ra ${firstQualityBoxes}` : "",
+      secondQualityBoxes ? `2da ${secondQualityBoxes}` : "",
+      thirdQualityBoxes ? `3ra ${thirdQualityBoxes}` : "",
+      mermaBoxes ? `merma ${mermaBoxes}` : ""
     ].filter(Boolean).join(" · ")
   };
 }
@@ -415,7 +448,7 @@ function capturePromptForTask(task: any) {
   if (task.type === "riego") return "Responde: riego 45 min 1200 L sector 2 ph 6.1 ce 2.4";
   if (task.type === "aplicacion_foliar") return "Responde: aplicacion categoria fungicida area nave norte";
   if (task.type === "fertirriego" || task.type === "fertilizacion") return "Responde: nutricion ph 5.8 ce 2.4. Si no tienes pH/CE, responde: nutricion ok";
-  if (task.type === "cosecha") return "Responde: cosecha 120 kg primera 100 segunda 15 descarte 5 precio 18 destino central";
+  if (task.type === "cosecha") return "Responde: cosecha 500 cajas de 20 kg primera 400 segunda 80 tercera 20 precio1 18 precio2 12 precio3 8 destino central";
   return "";
 }
 
@@ -753,9 +786,20 @@ async function completeTechnicalTask(adminClient: any, connection: any, task: an
       greenhouse_id: task.greenhouse_id,
       occurred_at: executionPayload.occurredAt,
       kilograms: executionPayload.kilograms,
+      box_count: executionPayload.boxCount ?? 0,
+      box_weight_kg: executionPayload.boxWeightKg ?? 20,
       first_quality_kg: executionPayload.firstQualityKg ?? 0,
       second_quality_kg: executionPayload.secondQualityKg ?? 0,
-      discard_kg: executionPayload.discardKg ?? 0,
+      third_quality_kg: executionPayload.thirdQualityKg ?? 0,
+      discard_kg: executionPayload.mermaKg ?? 0,
+      merma_kg: executionPayload.mermaKg ?? 0,
+      first_quality_boxes: executionPayload.firstQualityBoxes ?? 0,
+      second_quality_boxes: executionPayload.secondQualityBoxes ?? 0,
+      third_quality_boxes: executionPayload.thirdQualityBoxes ?? 0,
+      merma_boxes: executionPayload.mermaBoxes ?? 0,
+      first_quality_price: executionPayload.firstQualityPrice ?? 0,
+      second_quality_price: executionPayload.secondQualityPrice ?? 0,
+      third_quality_price: executionPayload.thirdQualityPrice ?? 0,
       estimated_price: executionPayload.estimatedPrice ?? 0,
       destination: executionPayload.destination || null,
       notes: executionPayload.notes || task.instructions || null,
