@@ -305,6 +305,7 @@ const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
 };
 
 const nutritionObjectiveToDb: Record<NutritionRecord["objective"], string> = {
+  Desarrollo: "desarrollo",
   Raíz: "raiz",
   Floración: "floracion",
   Cuajado: "cuajado",
@@ -499,7 +500,7 @@ function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan 
   if (type === "fertirriego" || type === "fertilizacion") {
     return {
       method: plan.method ?? "Fertirriego",
-      objective: plan.objective ?? "Calidad",
+      objective: plan.objective ?? "Desarrollo",
       targetPh: plan.targetPh ?? "",
       targetEc: plan.targetEc ?? ""
     };
@@ -781,7 +782,7 @@ function ActivityFormModal({
               <Field label="Objetivo">
                 <SelectInput
                   onChange={(event) => updateTechnicalPlan({ objective: event.target.value as NutritionRecord["objective"] })}
-                  value={technicalPlan.objective ?? "Calidad"}
+                  value={technicalPlan.objective ?? "Desarrollo"}
                 >
                   {Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}
                 </SelectInput>
@@ -1316,7 +1317,7 @@ function CompleteNutritionModal({
         <MoreDataDetails>
           <div className="grid gap-2 sm:grid-cols-2">
             <Field label="Objetivo">
-              <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Calidad"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
+              <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Desarrollo"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
             </Field>
             <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
             <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>

@@ -146,7 +146,7 @@ export type NutritionRecord = {
   ph: number;
   ec: number;
   stage: CropStage;
-  objective: "Raíz" | "Floración" | "Cuajado" | "Engorde" | "Calidad";
+  objective: "Desarrollo" | "Raíz" | "Floración" | "Cuajado" | "Engorde" | "Calidad";
   notes: string;
 };
 

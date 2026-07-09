@@ -276,6 +276,7 @@ function dbStage(value: string | undefined) {
 
 function dbObjective(value: string | undefined) {
   const normalized = normalizeText(value ?? "");
+  if (normalized.includes("desarrollo") || normalized.includes("crecimiento")) return "desarrollo";
   if (normalized.includes("raiz")) return "raiz";
   if (normalized.includes("floracion")) return "floracion";
   if (normalized.includes("cuajado")) return "cuajado";

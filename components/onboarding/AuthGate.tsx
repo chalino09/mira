@@ -236,6 +236,7 @@ function mapNutritionMethod(method?: string | null): NutritionRecord["method"] {
 }
 
 function mapNutritionObjective(objective?: string | null): NutritionRecord["objective"] {
+  if (objective === "desarrollo") return "Desarrollo";
   if (objective === "floracion") return "Floración";
   if (objective === "cuajado") return "Cuajado";
   if (objective === "engorde") return "Engorde";

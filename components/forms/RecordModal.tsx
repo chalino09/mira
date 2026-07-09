@@ -233,6 +233,7 @@ const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
 };
 
 const nutritionObjectiveToDb: Record<NutritionRecord["objective"], string> = {
+  Desarrollo: "desarrollo",
   Raíz: "raiz",
   Floración: "floracion",
   Cuajado: "cuajado",
@@ -1301,7 +1302,7 @@ export function RecordModal() {
             </div>
           </section>
           <Field label="Método"><SelectInput name="method" defaultValue="Fertirriego">{["Fertirriego", "Foliar", "Drench"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
-          <Field label="Objetivo"><SelectInput name="objective" defaultValue="Engorde">{["Raíz", "Floración", "Cuajado", "Engorde", "Calidad"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
+          <Field label="Objetivo"><SelectInput name="objective" defaultValue={selectedGreenhouse?.stage === "Vegetativo" ? "Desarrollo" : "Engorde"}>{Object.keys(nutritionObjectiveToDb).map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={0} /></Field>
           <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={0} /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>

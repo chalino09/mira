@@ -403,7 +403,7 @@ begin
   if target_crop_stage is not null and target_crop_stage not in ('vegetativo', 'floracion', 'cuajado', 'produccion', 'descanso') then
     raise exception 'invalid_crop_stage';
   end if;
-  if target_objective is not null and target_objective not in ('raiz', 'floracion', 'cuajado', 'engorde', 'calidad') then
+  if target_objective is not null and target_objective not in ('desarrollo', 'raiz', 'floracion', 'cuajado', 'engorde', 'calidad') then
     raise exception 'invalid_nutrition_objective';
   end if;
   if jsonb_typeof(target_products) <> 'array' or jsonb_array_length(target_products) = 0 then

@@ -69,7 +69,7 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type public.nutrition_objective as enum ('raiz', 'floracion', 'cuajado', 'engorde', 'calidad');
+  create type public.nutrition_objective as enum ('desarrollo', 'raiz', 'floracion', 'cuajado', 'engorde', 'calidad');
 exception when duplicate_object then null;
 end $$;
 
