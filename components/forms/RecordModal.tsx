@@ -1,7 +1,7 @@
 "use client";
 
 import { Minus, Plus } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
@@ -49,6 +49,21 @@ function requiredNumber(value: FormDataEntryValue | null) {
   return optionalNumber(value) ?? 0;
 }
 
+function normalizedComparableText(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-MX");
+}
+
+function sameNumericValue(left: number | null | undefined, right: number | null | undefined) {
+  if (left === null || left === undefined || right === null || right === undefined) return false;
+  return Math.abs(Number(left) - Number(right)) <= 0.01;
+}
+
+function sameOptionalText(left: string | null | undefined, right: string | null | undefined) {
+  const normalizedLeft = normalizedComparableText(left ?? "");
+  const normalizedRight = normalizedComparableText(right ?? "");
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
 type CostDraft = {
   category: CostRecord["category"];
   amount: string;
@@ -84,6 +99,12 @@ type ApplicationProductDraft = {
   product: string;
   composition: string;
   dose: string;
+};
+
+type DuplicateWarning = {
+  title: string;
+  message: string;
+  detail: string;
 };
 
 function emptyNutritionProduct(): NutritionProductDraft {
@@ -350,12 +371,22 @@ const modalCopy = {
 function FormShell({
   children,
   disabled,
+  duplicateWarning,
   error,
+  manualNote,
+  onDismissDuplicate,
+  onReviewDuplicate,
+  onSaveDuplicate,
   onSubmit
 }: {
   children: React.ReactNode;
   disabled: boolean;
+  duplicateWarning?: DuplicateWarning | null;
   error: string;
+  manualNote?: boolean;
+  onDismissDuplicate?: () => void;
+  onReviewDuplicate?: () => void;
+  onSaveDuplicate?: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
@@ -368,6 +399,29 @@ function FormShell({
         <p className="mt-4 text-sm leading-6 text-app-muted">
           Al guardar, el registro queda disponible para todo el equipo autorizado.
         </p>
+        {manualNote ? (
+          <p className="mt-4 border-l-2 border-app-green bg-app-soft px-3 py-2 text-xs leading-5 text-app-muted">
+            Registro manual o no programado. Si ya existe una actividad, confírmala desde Operaciones para mantener el historial limpio.
+          </p>
+        ) : null}
+        {duplicateWarning ? (
+          <div className="mt-5 border border-[#E4D7B2] bg-[#FBF6E8] p-3">
+            <p className="text-sm font-semibold text-app-text">{duplicateWarning.title}</p>
+            <p className="mt-2 text-xs leading-5 text-app-muted">{duplicateWarning.message}</p>
+            <p className="mt-2 text-xs font-medium text-app-text">{duplicateWarning.detail}</p>
+            <div className="mt-3 grid gap-2">
+              <Button disabled={disabled} onClick={onSaveDuplicate} type="button" variant="primary">
+                Guardar de todos modos
+              </Button>
+              <Button disabled={disabled} onClick={onReviewDuplicate} type="button" variant="secondary">
+                Revisar operación
+              </Button>
+              <Button disabled={disabled} onClick={onDismissDuplicate} type="button" variant="ghost">
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {error ? <p className="mt-5 text-sm text-[#8A2E2E]">{error}</p> : null}
         <div className="mt-6 grid gap-2">
           <Button disabled={disabled} type="submit" variant="primary">
@@ -398,6 +452,11 @@ export function RecordModal() {
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const irrigationRecords = useGreenhouseStore((state) => state.irrigationRecords);
+  const nutritionRecords = useGreenhouseStore((state) => state.nutritionRecords);
+  const applicationRecords = useGreenhouseStore((state) => state.applicationRecords);
+  const harvestRecords = useGreenhouseStore((state) => state.harvestRecords);
+  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
   const addGreenhouse = useGreenhouseStore((state) => state.addGreenhouse);
   const updateGreenhouse = useGreenhouseStore((state) => state.updateGreenhouse);
   const addTask = useGreenhouseStore((state) => state.addTask);
@@ -415,10 +474,14 @@ export function RecordModal() {
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
   const [draftCropId, setDraftCropId] = useState(INITIAL_CROP_ID);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
+  const pendingDuplicateSaveRef = useRef<(() => Promise<void>) | null>(null);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
 
   useEffect(() => {
     setError("");
+    setDuplicateWarning(null);
+    pendingDuplicateSaveRef.current = null;
     if (modal === "cost") setCostRows([emptyCost()]);
     if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
     if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
@@ -576,6 +639,108 @@ export function RecordModal() {
     }
   };
 
+  const duplicateMessage = "Ya existe una operación confirmada para esta área y fecha con datos parecidos. Si esto viene de una actividad programada, confirma desde Operaciones para mantener el historial limpio.";
+
+  const duplicateAreaName = (greenhouseId: string) =>
+    greenhouses.find((greenhouse) => greenhouse.id === greenhouseId)
+      ? greenhouseDisplayName(greenhouses.find((greenhouse) => greenhouse.id === greenhouseId)!, crops)
+      : "esta área";
+
+  const potentialIrrigationDuplicate = (record: { greenhouseId: string; date: string; liters: number; sector: string }) => {
+    const match = irrigationRecords.find((item) =>
+      item.sourceTaskId
+      && item.greenhouseId === record.greenhouseId
+      && item.date === record.date
+      && (sameNumericValue(item.liters, record.liters) || sameOptionalText(item.sector, record.sector))
+    );
+    if (!match) return null;
+    return {
+      title: "Posible duplicado",
+      message: duplicateMessage,
+      detail: `${duplicateAreaName(record.greenhouseId)} · ${record.date} · ${record.liters.toLocaleString("es-MX")} L`
+    };
+  };
+
+  const potentialNutritionDuplicate = (records: Array<{ greenhouseId: string; date: string; product: string; dose: string }>) => {
+    const firstRecord = records[0];
+    if (!firstRecord) return null;
+    const match = nutritionRecords.find((item) =>
+      item.sourceTaskId
+      && item.greenhouseId === firstRecord.greenhouseId
+      && item.date === firstRecord.date
+      && records.some((record) => sameOptionalText(item.product, record.product) && sameOptionalText(item.dose, record.dose))
+    );
+    if (!match) return null;
+    return {
+      title: "Posible duplicado",
+      message: duplicateMessage,
+      detail: `${duplicateAreaName(firstRecord.greenhouseId)} · ${firstRecord.date} · ${match.product} ${match.dose}`
+    };
+  };
+
+  const potentialApplicationDuplicate = (records: Array<{ greenhouseId: string; date: string; product: string; dose: string }>) => {
+    const firstRecord = records[0];
+    if (!firstRecord) return null;
+    const match = applicationRecords.find((item) =>
+      item.sourceTaskId
+      && item.greenhouseId === firstRecord.greenhouseId
+      && item.date === firstRecord.date
+      && records.some((record) => sameOptionalText(item.product, record.product) && sameOptionalText(item.dose, record.dose))
+    );
+    if (!match) return null;
+    return {
+      title: "Posible duplicado",
+      message: duplicateMessage,
+      detail: `${duplicateAreaName(firstRecord.greenhouseId)} · ${firstRecord.date} · ${match.product} ${match.dose}`
+    };
+  };
+
+  const potentialHarvestDuplicate = (record: { greenhouseId: string; date: string; kilograms: number; boxCount: number }) => {
+    const match = harvestRecords.find((item) =>
+      item.sourceTaskId
+      && item.greenhouseId === record.greenhouseId
+      && item.date === record.date
+      && (sameNumericValue(item.kilograms, record.kilograms) || sameNumericValue(item.boxCount, record.boxCount))
+    );
+    if (!match) return null;
+    const detailValue = record.boxCount > 0
+      ? `${record.boxCount.toLocaleString("es-MX")} cajas`
+      : `${record.kilograms.toLocaleString("es-MX")} kg`;
+    return {
+      title: "Posible duplicado",
+      message: duplicateMessage,
+      detail: `${duplicateAreaName(record.greenhouseId)} · ${record.date} · ${detailValue}`
+    };
+  };
+
+  const saveManualRecord = (warning: DuplicateWarning | null, handler: () => Promise<void>) => {
+    if (warning) {
+      pendingDuplicateSaveRef.current = handler;
+      setDuplicateWarning(warning);
+      setError("");
+      return;
+    }
+    save(handler);
+  };
+
+  const dismissDuplicateWarning = () => {
+    pendingDuplicateSaveRef.current = null;
+    setDuplicateWarning(null);
+  };
+
+  const saveDuplicateAnyway = () => {
+    const handler = pendingDuplicateSaveRef.current;
+    pendingDuplicateSaveRef.current = null;
+    setDuplicateWarning(null);
+    if (handler) save(handler);
+  };
+
+  const reviewDuplicateOperation = () => {
+    dismissDuplicateWarning();
+    closeModal();
+    setActiveSection("calendar");
+  };
+
   useEffect(() => {
     if (modal === "greenhouse" || modal === "editGreenhouse") {
       setDraftCropId(defaultCropId);
@@ -594,6 +759,14 @@ export function RecordModal() {
       || (manager.source === "staff" && manager.id === managerStaffId)
     )?.name
     ?? (managerUserId === currentUser.id ? currentUser.fullName : "Sin encargado");
+
+  const manualRecordShellProps = {
+    duplicateWarning,
+    manualNote: true,
+    onDismissDuplicate: dismissDuplicateWarning,
+    onReviewDuplicate: reviewDuplicateOperation,
+    onSaveDuplicate: saveDuplicateAnyway
+  };
 
   const ensureProduct = async ({
     productId,
@@ -783,18 +956,18 @@ export function RecordModal() {
   const handleIrrigation = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    save(async () => {
-      const record = {
-        greenhouseId: String(form.get("greenhouseId")),
-        date: String(form.get("date")),
-        durationMin: requiredNumber(form.get("durationMin")),
-        liters: requiredNumber(form.get("liters")),
-        sector: String(form.get("sector")),
-        ph: optionalNumber(form.get("ph")),
-        ec: optionalNumber(form.get("ec")),
-        notes: String(form.get("notes")),
-        responsible: currentUser.fullName
-      };
+    const record = {
+      greenhouseId: String(form.get("greenhouseId")),
+      date: String(form.get("date")),
+      durationMin: requiredNumber(form.get("durationMin")),
+      liters: requiredNumber(form.get("liters")),
+      sector: String(form.get("sector")),
+      ph: optionalNumber(form.get("ph")),
+      ec: optionalNumber(form.get("ec")),
+      notes: String(form.get("notes")),
+      responsible: currentUser.fullName
+    };
+    saveManualRecord(potentialIrrigationDuplicate(record), async () => {
       const { data, error: insertError } = await getSupabaseBrowserClient()!
         .from("irrigation_records")
         .insert({
@@ -820,9 +993,15 @@ export function RecordModal() {
   const handleNutrition = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    save(async () => {
-      const greenhouseId = String(form.get("greenhouseId"));
-      const occurredAt = String(form.get("date"));
+    const greenhouseId = String(form.get("greenhouseId"));
+    const occurredAt = String(form.get("date"));
+    const duplicateRecords = nutritionProducts.map((product) => ({
+      greenhouseId,
+      date: occurredAt,
+      product: product.product,
+      dose: product.dose
+    }));
+    saveManualRecord(potentialNutritionDuplicate(duplicateRecords), async () => {
       const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === greenhouseId);
       const stage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, occurredAt));
       const resolvedProducts = await Promise.all(nutritionProducts.map((product) => ensureProduct(product)));
@@ -871,7 +1050,13 @@ export function RecordModal() {
   const handleApplication = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    save(async () => {
+    const duplicateRecords = applicationProducts.map((product) => ({
+      greenhouseId: String(form.get("greenhouseId")),
+      date: String(form.get("date")),
+      product: product.product,
+      dose: product.dose
+    }));
+    saveManualRecord(potentialApplicationDuplicate(duplicateRecords), async () => {
       const resolvedProducts = await Promise.all(applicationProducts.map((product) => ensureProduct(product)));
       const records = applicationProducts.map((product, index) => ({
         greenhouseId: String(form.get("greenhouseId")),
@@ -976,14 +1161,14 @@ export function RecordModal() {
   const handleHarvest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    save(async () => {
-      const record = {
-        greenhouseId: String(form.get("greenhouseId")),
-        date: String(form.get("date")),
-        ...harvestValuesFromForm(form),
-        destination: String(form.get("destination")),
-        notes: String(form.get("notes"))
-      };
+    const record = {
+      greenhouseId: String(form.get("greenhouseId")),
+      date: String(form.get("date")),
+      ...harvestValuesFromForm(form),
+      destination: String(form.get("destination")),
+      notes: String(form.get("notes"))
+    };
+    saveManualRecord(potentialHarvestDuplicate(record), async () => {
       const { data, error: insertError } = await getSupabaseBrowserClient()!
         .from("harvest_records")
         .insert({
@@ -1251,7 +1436,7 @@ export function RecordModal() {
       ) : null}
 
       {modal === "irrigation" ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation}>
+        <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Duración min"><FormattedNumberInput name="durationMin" required defaultValue={0} /></Field>
@@ -1264,7 +1449,7 @@ export function RecordModal() {
       ) : null}
 
       {modal === "nutrition" ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition}>
+        <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
@@ -1310,7 +1495,7 @@ export function RecordModal() {
       ) : null}
 
       {modal === "application" ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleApplication}>
+        <FormShell disabled={isSaving} error={error} onSubmit={handleApplication} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
@@ -1377,7 +1562,7 @@ export function RecordModal() {
       ) : null}
 
       {modal === "harvest" ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest}>
+        <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <HarvestCaptureFields />

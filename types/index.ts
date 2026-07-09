@@ -125,6 +125,7 @@ export type Task = {
 
 export type IrrigationRecord = {
   id: string;
+  sourceTaskId?: string;
   greenhouseId: string;
   date: string;
   durationMin: number;
@@ -138,6 +139,7 @@ export type IrrigationRecord = {
 
 export type NutritionRecord = {
   id: string;
+  sourceTaskId?: string;
   greenhouseId: string;
   date: string;
   product: string;
@@ -229,6 +231,7 @@ export type PestAlertUpdate = {
 
 export type HarvestRecord = {
   id: string;
+  sourceTaskId?: string;
   greenhouseId: string;
   date: string;
   kilograms: number;

@@ -1264,6 +1264,7 @@ export function AuthGate() {
 
       const irrigationRecords: IrrigationRecord[] = (irrigationRows ?? []).map((record: any) => ({
         id: record.id,
+        sourceTaskId: record.source_task_id ?? undefined,
         greenhouseId: record.greenhouse_id,
         date: record.occurred_at,
         durationMin: record.duration_min ?? 0,
@@ -1277,6 +1278,7 @@ export function AuthGate() {
 
       const nutritionRecords: NutritionRecord[] = (nutritionRows ?? []).map((record: any) => ({
         id: record.id,
+        sourceTaskId: record.source_task_id ?? undefined,
         greenhouseId: record.greenhouse_id,
         date: record.occurred_at,
         product: record.product_name,
@@ -1363,6 +1365,7 @@ export function AuthGate() {
 
       const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({
         id: record.id,
+        sourceTaskId: record.source_task_id ?? undefined,
         greenhouseId: record.greenhouse_id,
         date: record.occurred_at,
         kilograms: Number(record.kilograms ?? 0),

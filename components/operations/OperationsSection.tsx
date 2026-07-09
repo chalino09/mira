@@ -1869,6 +1869,7 @@ export function OperationsSection({
     addIrrigation({
       ...payload,
       id: rpcRecordId(data),
+      sourceTaskId: irrigationTask.id,
       greenhouseId: irrigationTask.greenhouse_id,
       responsible: currentUser.fullName
     });
@@ -1906,6 +1907,7 @@ export function OperationsSection({
     const recordIds = rpcRecordIds(data);
     payload.products.forEach((product, index) => addNutrition({
       id: recordIds[index],
+      sourceTaskId: nutritionTask.id,
       greenhouseId: nutritionTask.greenhouse_id,
       date: payload.date,
       product: product.productName,
@@ -1956,7 +1958,7 @@ export function OperationsSection({
       return;
     }
 
-    addHarvest({ ...payload, id: rpcRecordId(data), greenhouseId: harvestTask.greenhouse_id });
+    addHarvest({ ...payload, id: rpcRecordId(data), sourceTaskId: harvestTask.id, greenhouseId: harvestTask.greenhouse_id });
     setHarvestTask(null);
     setNotice({ tone: "green", message: "Cosecha completada y guardada en Registros técnicos." });
     await loadOperations();
