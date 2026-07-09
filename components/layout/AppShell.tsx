@@ -188,7 +188,7 @@ function costByCategory(costs: CostRecord[]) {
   );
 }
 
-async function completeTaskRecord(taskId: string, completeTask: (id: string) => void) {
+async function completeTaskRecord(taskId: string, completeTask: (id: string) => void, updateNote?: string | null) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     throw new Error("missing_supabase_client");
@@ -197,7 +197,7 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string) => 
   const { error: rpcError } = await supabase.rpc("update_operational_task_status", {
     target_task_id: taskId,
     next_status: "completada",
-    update_note: null
+    update_note: updateNote || null
   });
 
   const missingOperationsRpc = ["42883", "PGRST202"].includes(rpcError?.code ?? "");
@@ -207,6 +207,10 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string) => 
 
   if (error) throw error;
   completeTask(taskId);
+}
+
+function isTechnicalCompletionTask(task: Task) {
+  return ["Riego", "Fertirriego", "Fertilización", "Aplicación foliar", "Cosecha"].includes(task.type);
 }
 
 function InlineNotice({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "red" | "green" }) {
@@ -231,6 +235,9 @@ type CopilotSurfaceProps = {
   onOpenCopilot: () => void;
   onPrepareCopilotMessage: (insight: CopilotInsight) => void;
   operationRefreshKey?: number;
+  pendingCompletionTask?: { id: string; date: string } | null;
+  onPendingCompletionConsumed?: () => void;
+  onRequestTechnicalCompletion?: (task: Task) => void;
 };
 
 function dateKey(date: Date) {
@@ -281,7 +288,8 @@ function OverviewSection({
   copilotInsights,
   onCreateCopilotTask,
   onOpenCopilot,
-  onPrepareCopilotMessage
+  onPrepareCopilotMessage,
+  onRequestTechnicalCompletion
 }: CopilotSurfaceProps) {
   const {
     greenhouse,
@@ -298,6 +306,7 @@ function OverviewSection({
   } = useFilteredData();
   const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [simpleCompletionTask, setSimpleCompletionTask] = useState<Task | null>(null);
   const lastIrrigation = greenhouseIrrigation[0];
   const lastApplication = greenhouseApplications[0];
   const pendingAlerts = greenhousePests.filter((alert) => alert.severity !== "Baja").length;
@@ -312,11 +321,32 @@ function OverviewSection({
   }
 
   const handleCompleteTask = async (taskId: string) => {
+    const task = tasks.find((item) => item.id === taskId) ?? greenhouseTasks.find((item) => item.id === taskId);
+    if (!task) return;
+    if (isTechnicalCompletionTask(task)) {
+      onRequestTechnicalCompletion?.(task);
+      return;
+    }
+    setSimpleCompletionTask(task);
+  };
+
+  const handleSimpleCompletion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!simpleCompletionTask) return;
+    const form = new FormData(event.currentTarget);
+    const occurredAt = String(form.get("occurredAt") ?? localDateKey());
+    const note = String(form.get("note") ?? "").trim();
+    const updateNote = [
+      occurredAt !== simpleCompletionTask.date ? `Fecha real: ${formatDate(occurredAt)}` : "",
+      note
+    ].filter(Boolean).join("\n");
+
     setTaskNotice(null);
-    setSavingTaskId(taskId);
+    setSavingTaskId(simpleCompletionTask.id);
     try {
-      await completeTaskRecord(taskId, completeTask);
+      await completeTaskRecord(simpleCompletionTask.id, completeTask, updateNote);
       setTaskNotice({ tone: "green", message: "Tarea marcada como completada." });
+      setSimpleCompletionTask(null);
     } catch (caught) {
       setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo completar la tarea.") });
     } finally {
@@ -350,6 +380,33 @@ function OverviewSection({
         pendingAlerts={pendingAlerts}
         tasks={greenhouseTasks}
       />
+      <Modal
+        onClose={() => setSimpleCompletionTask(null)}
+        open={Boolean(simpleCompletionTask)}
+        panelClassName="sm:max-w-xl"
+        title="Confirmar actividad"
+      >
+        <form className="grid gap-5" onSubmit={handleSimpleCompletion}>
+          <div className="border-l-2 border-app-green pl-3">
+            <p className="text-sm font-medium text-app-text">{simpleCompletionTask?.type} · {simpleCompletionTask?.title}</p>
+            <p className="mt-1 text-xs leading-5 text-app-muted">Confirma la ejecución antes de marcarla como completada.</p>
+          </div>
+          <Field label="Fecha real">
+            <DatePickerInput name="occurredAt" required defaultValue={simpleCompletionTask?.date ?? localDateKey()} />
+          </Field>
+          <Field label="Nota opcional">
+            <TextArea name="note" placeholder="Comentario breve si aplica" />
+          </Field>
+          <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
+            <Button disabled={Boolean(savingTaskId)} onClick={() => setSimpleCompletionTask(null)} type="button" variant="secondary">
+              Cancelar
+            </Button>
+            <Button disabled={Boolean(savingTaskId)} type="submit" variant="primary">
+              {savingTaskId ? "Guardando..." : "Completar"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }
@@ -2188,6 +2245,8 @@ function ActiveSection(props: CopilotSurfaceProps) {
       <OperationsSection
         copilotInsights={props.copilotInsights}
         operationRefreshKey={props.operationRefreshKey}
+        pendingCompletionTask={props.pendingCompletionTask}
+        onPendingCompletionConsumed={props.onPendingCompletionConsumed}
         onCreateCopilotTask={props.onCreateCopilotTask}
         onPrepareCopilotMessage={props.onPrepareCopilotMessage}
       />
@@ -2222,6 +2281,7 @@ export function AppShell() {
   const [copilotConversationId, setCopilotConversationId] = useState<string | null>(null);
   const [copilotChatMessages, setCopilotChatMessages] = useState<CopilotChatMessage[]>([]);
   const [operationRefreshKey, setOperationRefreshKey] = useState(0);
+  const [pendingCompletionTask, setPendingCompletionTask] = useState<{ id: string; date: string } | null>(null);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
   const localCopilotInsights = useMemo(
     () =>
@@ -2492,6 +2552,13 @@ export function AppShell() {
             <ActiveSection
               copilotInsights={copilotInsights}
               operationRefreshKey={operationRefreshKey}
+              pendingCompletionTask={pendingCompletionTask}
+              onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
+              onRequestTechnicalCompletion={(task) => {
+                setPendingCompletionTask({ id: task.id, date: task.date });
+                setActiveSection("calendar");
+                setOperationRefreshKey((current) => current + 1);
+              }}
               onCreateCopilotTask={createCopilotTaskSuggestion}
               onOpenCopilot={() => setCopilotOpen(true)}
               onPrepareCopilotMessage={prepareCopilotMessage}

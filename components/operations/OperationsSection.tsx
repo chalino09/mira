@@ -1387,11 +1387,15 @@ function CompleteHarvestModal({
 export function OperationsSection({
   copilotInsights = [],
   operationRefreshKey = 0,
+  pendingCompletionTask,
+  onPendingCompletionConsumed,
   onCreateCopilotTask,
   onPrepareCopilotMessage
 }: {
   copilotInsights?: CopilotInsight[];
   operationRefreshKey?: number;
+  pendingCompletionTask?: { id: string; date: string } | null;
+  onPendingCompletionConsumed?: () => void;
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
 }) {
@@ -1435,6 +1439,15 @@ export function OperationsSection({
   const weekStartKey = dateKey(weekStart);
   const weekEndKey = dateKey(weekDays[6]);
   const todayKey = dateKey(new Date());
+
+  useEffect(() => {
+    if (!pendingCompletionTask?.date) return;
+    const targetWeekStart = startOfIsoWeek(dateFromKey(pendingCompletionTask.date));
+    const targetWeekStartKey = dateKey(targetWeekStart);
+    if (targetWeekStartKey !== weekStartKey) {
+      setWeekStart(targetWeekStart);
+    }
+  }, [pendingCompletionTask?.date, weekStartKey]);
 
   const loadOperations = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -1719,9 +1732,9 @@ export function OperationsSection({
     setNotice({ tone: "green", message: telegramDispatchMessage(data) });
   };
 
-  const completeTask = async (task: OperationTaskRow) => {
+  const completeTask = useCallback(async (task: OperationTaskRow) => {
     if (task.type === "aplicacion_foliar") {
-      if (!materialsForTask(task.id).length) {
+      if (!materials.some((material) => material.task_id === task.id)) {
         setNotice({
           tone: "red",
           message: "Agrega al menos un producto y su dosis antes de completar la aplicación."
@@ -1736,7 +1749,7 @@ export function OperationsSection({
       return;
     }
     if (task.type === "fertirriego" || task.type === "fertilizacion") {
-      if (!materialsForTask(task.id).length) {
+      if (!materials.some((material) => material.task_id === task.id)) {
         setNotice({
           tone: "red",
           message: "Agrega al menos un producto y su dosis antes de completar la nutrición."
@@ -1769,7 +1782,15 @@ export function OperationsSection({
     }
     setNotice({ tone: "green", message: "Actividad completada." });
     await loadOperations();
-  };
+  }, [loadOperations, materials]);
+
+  useEffect(() => {
+    if (!pendingCompletionTask?.id || loading || completing) return;
+    const targetTask = tasks.find((task) => task.id === pendingCompletionTask.id);
+    if (!targetTask) return;
+    onPendingCompletionConsumed?.();
+    completeTask(targetTask);
+  }, [completeTask, completing, loading, onPendingCompletionConsumed, pendingCompletionTask?.id, tasks]);
 
   const completeApplication = async (payload: ApplicationExecutionPayload) => {
     if (!applicationTask) return;
