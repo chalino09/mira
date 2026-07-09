@@ -998,6 +998,36 @@ function applicationNotesWithFollowUp(application: ApplicationExecutionDraft) {
   return [application.notes, followUp ? `Seguimiento foliar - ${followUp}` : ""].filter(Boolean).join("\n");
 }
 
+function MoreDataDetails({ children }: { children: React.ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="rounded-[6px] border border-app-border/70 bg-white/40 px-3 py-2">
+      <button
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-app-muted transition hover:text-app-text"
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        <ChevronRight className={cn("h-3 w-3 transition-transform duration-200", isOpen ? "rotate-90" : "rotate-0")} />
+        Más datos
+      </button>
+      <div
+        className={cn(
+          "grid transition-all duration-300 ease-out",
+          isOpen ? "mt-2 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="border-t border-app-border/70 pt-3">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CompleteApplicationModal({
   task,
   materials,
@@ -1053,7 +1083,7 @@ function CompleteApplicationModal({
   };
 
   return (
-    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar aplicación realizada">
+    <Modal open={Boolean(task)} onClose={onClose} panelClassName="sm:self-start sm:mt-8" title="Confirmar aplicación realizada">
       <form className="grid gap-6" onSubmit={handleSubmit}>
         <div className="border-l-2 border-app-green pl-3">
           <p className="text-sm font-medium text-app-text">
@@ -1105,12 +1135,8 @@ function CompleteApplicationModal({
                 </Field>
               </div>
 
-              <details className="group border-t border-app-border pt-3">
-                <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">
-                  <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
-                  Detalles opcionales
-                </summary>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <MoreDataDetails>
+                <div className="grid gap-2 sm:grid-cols-2">
                   <Field label="Ingrediente activo o composición">
                     <TextInput
                       onChange={(event) => updateApplication(index, { composition: event.target.value })}
@@ -1140,7 +1166,7 @@ function CompleteApplicationModal({
                     />
                   </Field>
                 </div>
-              </details>
+              </MoreDataDetails>
             </section>
           ))}
         </div>
@@ -1184,18 +1210,25 @@ function CompleteIrrigationModal({
   };
 
   return (
-    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar riego realizado">
+    <Modal open={Boolean(task)} onClose={onClose} panelClassName="sm:self-start sm:mt-8" title="Confirmar riego realizado">
       <form className="grid gap-5" key={task?.id ?? "irrigation-completion"} onSubmit={handleSubmit}>
-        <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
+        <div className="border-l-2 border-app-green pl-3">
+          <p className="text-sm font-medium text-app-text">Riego · {greenhouseName}</p>
+          <p className="mt-1 text-xs leading-5 text-app-muted">Confirma fecha, duración y volumen aplicado.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <Field label="Duración min"><FormattedNumberInput min={1} name="durationMin" required defaultValue={task?.technical_plan?.plannedDurationMin ?? ""} /></Field>
           <Field label="Litros estimados"><FormattedNumberInput min={0.01} name="liters" required step="0.01" defaultValue={task?.technical_plan?.plannedLiters ?? ""} /></Field>
           <Field label="Sector o válvula"><TextInput name="sector" defaultValue={task?.technical_plan?.sector ?? ""} /></Field>
-          <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
-          <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
-          <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
         </div>
+        <MoreDataDetails>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
+            <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
+            <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+          </div>
+        </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
@@ -1246,9 +1279,12 @@ function CompleteNutritionModal({
   };
 
   return (
-    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar nutrición realizada">
+    <Modal open={Boolean(task)} onClose={onClose} panelClassName="sm:self-start sm:mt-8" title="Confirmar nutrición realizada">
       <form className="grid gap-5" key={task?.id ?? "nutrition-completion"} onSubmit={handleSubmit}>
-        <p className="text-sm text-app-muted">{task?.title} · {greenhouseName}</p>
+        <div className="border-l-2 border-app-green pl-3">
+          <p className="text-sm font-medium text-app-text">Nutrición · {greenhouseName}</p>
+          <p className="mt-1 text-xs leading-5 text-app-muted">Confirma productos, dosis y método real aplicado.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <Field label="Método">
@@ -1256,31 +1292,37 @@ function CompleteNutritionModal({
               {Object.keys(nutritionMethodToDb).map((method) => <option key={method}>{method}</option>)}
             </SelectInput>
           </Field>
-          <Field label="Objetivo">
-            <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Calidad"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
-          </Field>
-          <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
-          <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
         </div>
         <div className="grid gap-3 border-t border-app-border pt-4">
           {products.map((product, index) => (
             <div key={product.materialId} className="grid gap-2 sm:grid-cols-2">
-              <TextInput
-                aria-label={`Producto ${index + 1}`}
-                onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, productName: event.target.value } : item))}
-                required
-                value={product.productName}
-              />
-              <FormattedQuantityInput
-                aria-label={`Dosis real ${index + 1}`}
-                onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
-                required
-                value={product.dose}
-              />
+              <Field label={`Producto ${index + 1}`}>
+                <TextInput
+                  onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, productName: event.target.value } : item))}
+                  required
+                  value={product.productName}
+                />
+              </Field>
+              <Field label="Dosis real">
+                <FormattedQuantityInput
+                  onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
+                  required
+                  value={product.dose}
+                />
+              </Field>
             </div>
           ))}
         </div>
-        <Field label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+        <MoreDataDetails>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="Objetivo">
+              <SelectInput name="objective" defaultValue={task?.technical_plan?.objective ?? "Calidad"}>{Object.keys(nutritionObjectiveToDb).map((objective) => <option key={objective}>{objective}</option>)}</SelectInput>
+            </Field>
+            <Field label="pH"><TextInput name="ph" step="0.1" type="number" defaultValue={task?.technical_plan?.targetPh ?? ""} /></Field>
+            <Field label="CE"><TextInput name="ec" step="0.1" type="number" defaultValue={task?.technical_plan?.targetEc ?? ""} /></Field>
+            <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+          </div>
+        </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving || !products.length} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
@@ -1315,17 +1357,24 @@ function CompleteHarvestModal({
   };
 
   return (
-    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar cosecha realizada">
+    <Modal open={Boolean(task)} onClose={onClose} panelClassName="sm:self-start sm:mt-8" title="Confirmar cosecha realizada">
       <form className="grid gap-5" key={task?.id ?? "harvest-completion"} onSubmit={handleSubmit}>
-        <p className="text-sm text-app-muted">
-          {task?.title} · {greenhouseName}{task?.technical_plan?.harvestZone ? ` · ${task.technical_plan.harvestZone}` : ""}
-        </p>
+        <div className="border-l-2 border-app-green pl-3">
+          <p className="text-sm font-medium text-app-text">
+            Cosecha · {greenhouseName}{task?.technical_plan?.harvestZone ? ` · ${task.technical_plan.harvestZone}` : ""}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-app-muted">Confirma cajas, calidades y destino de salida.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha real"><DatePickerInput name="date" required defaultValue={dateKey(new Date())} /></Field>
           <HarvestCaptureFields compact />
           <Field className="sm:col-span-2" label="Cliente o destino"><TextInput name="destination" /></Field>
-          <Field className="sm:col-span-2" label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
         </div>
+        <MoreDataDetails>
+          <div>
+            <Field label="Observaciones"><TextArea name="notes" defaultValue={task?.instructions ?? ""} /></Field>
+          </div>
+        </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
