@@ -258,13 +258,6 @@ const applicationCategories: ApplicationRecord["category"][] = [
 
 const doseUnitOptions = ["ml/L", "g/L", "L/ha", "kg/ha", "ml/20 L", "g/20 L", "cc/L", "%"];
 
-const applicationEffectivenessOptions = [
-  "Pendiente de revisión",
-  "Funcionó",
-  "Requiere reaplicación",
-  "Subió población de plaga"
-];
-
 const rafiaWorkTypes = [
   "Anillado",
   "Enredado",
@@ -1040,7 +1033,7 @@ function CompleteApplicationModal({
           composition: material.composition ?? "",
           safetyInterval: "",
           reentryInterval: "",
-          effectiveness: "Pendiente de revisión",
+          effectiveness: "",
           reviewDate: "",
           reapplicationDate: "",
           notes: material.notes ?? ""
@@ -1063,9 +1056,11 @@ function CompleteApplicationModal({
     <Modal open={Boolean(task)} onClose={onClose} title="Confirmar aplicación realizada">
       <form className="grid gap-6" onSubmit={handleSubmit}>
         <div className="border-l-2 border-app-green pl-3">
-          <p className="text-sm font-medium text-app-text">{task?.title}</p>
+          <p className="text-sm font-medium text-app-text">
+            {task ? activityLabels[task.type] ?? "Aplicación" : "Aplicación"} · {greenhouseName}
+          </p>
           <p className="mt-1 text-xs leading-5 text-app-muted">
-            {greenhouseName}. La receta planeada se conserva y estos datos quedarán en Registros técnicos.
+            Confirma solo lo necesario. La receta planeada se conserva en Registros técnicos.
           </p>
         </div>
 
@@ -1081,7 +1076,7 @@ function CompleteApplicationModal({
         <div className="grid gap-5 border-t border-app-border pt-5">
           {applications.map((application, index) => (
             <section key={application.materialId} className="grid gap-3 border-b border-app-border pb-5 last:border-b-0">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr_0.9fr]">
                 <Field label={`Producto ${index + 1}`}>
                   <TextInput
                     onChange={(event) => updateApplication(index, { productName: event.target.value })}
@@ -1108,55 +1103,44 @@ function CompleteApplicationModal({
                     {applicationCategories.map((category) => <option key={category}>{category}</option>)}
                   </SelectInput>
                 </Field>
-                <Field label="Ingrediente activo o composición">
-                  <TextInput
-                    onChange={(event) => updateApplication(index, { composition: event.target.value })}
-                    placeholder="Se llenará desde catálogo cuando esté disponible"
-                    value={application.composition}
-                  />
-                </Field>
-                <Field label="Intervalo de seguridad (antes de cosecha)">
-                  <TextInput
-                    onChange={(event) => updateApplication(index, { safetyInterval: event.target.value })}
-                    placeholder="Ej. 3 días"
-                    value={application.safetyInterval}
-                  />
-                </Field>
-                <Field label="Tiempo de reentrada">
-                  <TextInput
-                    onChange={(event) => updateApplication(index, { reentryInterval: event.target.value })}
-                    placeholder="Ej. 12 horas"
-                    value={application.reentryInterval}
-                  />
-                </Field>
-                <Field label="Revisión de eficacia">
-                  <SelectInput
-                    onChange={(event) => updateApplication(index, { effectiveness: event.target.value })}
-                    value={application.effectiveness}
-                  >
-                    {applicationEffectivenessOptions.map((option) => <option key={option}>{option}</option>)}
-                  </SelectInput>
-                </Field>
-                <Field label="Fecha de revisión">
-                  <DatePickerInput
-                    onChange={(event) => updateApplication(index, { reviewDate: event.target.value })}
-                    value={application.reviewDate}
-                  />
-                </Field>
-                <Field label="Fecha de reaplicación">
-                  <DatePickerInput
-                    onChange={(event) => updateApplication(index, { reapplicationDate: event.target.value })}
-                    value={application.reapplicationDate}
-                  />
-                </Field>
-                <Field label="Observaciones">
-                  <TextInput
-                    onChange={(event) => updateApplication(index, { notes: event.target.value })}
-                    placeholder="Población, daño o condición observada"
-                    value={application.notes}
-                  />
-                </Field>
               </div>
+
+              <details className="group border-t border-app-border pt-3">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">
+                  <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
+                  Detalles opcionales
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Ingrediente activo o composición">
+                    <TextInput
+                      onChange={(event) => updateApplication(index, { composition: event.target.value })}
+                      placeholder="Se llenará desde catálogo cuando esté disponible"
+                      value={application.composition}
+                    />
+                  </Field>
+                  <Field label="Intervalo de seguridad">
+                    <TextInput
+                      onChange={(event) => updateApplication(index, { safetyInterval: event.target.value })}
+                      placeholder="Ej. 3 días"
+                      value={application.safetyInterval}
+                    />
+                  </Field>
+                  <Field label="Tiempo de reentrada">
+                    <TextInput
+                      onChange={(event) => updateApplication(index, { reentryInterval: event.target.value })}
+                      placeholder="Ej. 12 horas"
+                      value={application.reentryInterval}
+                    />
+                  </Field>
+                  <Field label="Observaciones">
+                    <TextInput
+                      onChange={(event) => updateApplication(index, { notes: event.target.value })}
+                      placeholder="Condición observada o comentario"
+                      value={application.notes}
+                    />
+                  </Field>
+                </div>
+              </details>
             </section>
           ))}
         </div>
