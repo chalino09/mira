@@ -166,12 +166,19 @@ begin
     end if;
 
     if category_value is null or category_value not in (
+      'fertilizante',
       'bioestimulante',
+      'corrector',
+      'acondicionador_agua',
+      'adyuvante_coadyuvante',
+      'microorganismos',
       'fungicida',
       'insecticida',
-      'fertilizante',
-      'microorganismos',
-      'corrector'
+      'acaricida',
+      'nematicida',
+      'bactericida',
+      'sanitizante_desinfectante',
+      'regulador_crecimiento'
     ) then
       raise exception 'invalid_application_category';
     end if;

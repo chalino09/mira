@@ -156,12 +156,19 @@ export type ApplicationRecord = {
   greenhouseId: string;
   date: string;
   category:
+    | "Fertilizante"
     | "Bioestimulante"
+    | "Corrector"
+    | "Acondicionador de agua"
+    | "Adyuvante / Coadyuvante"
+    | "Microorganismos"
     | "Fungicida"
     | "Insecticida"
-    | "Fertilizante"
-    | "Microorganismos"
-    | "Corrector";
+    | "Acaricida"
+    | "Nematicida"
+    | "Bactericida"
+    | "Sanitizante / Desinfectante"
+    | "Regulador de crecimiento";
   product: string;
   composition: string;
   dose: string;

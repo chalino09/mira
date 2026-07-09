@@ -211,12 +211,19 @@ const riskLevelToDb: Record<RiskLevel, string> = {
 };
 
 const applicationCategoryToDb: Record<ApplicationRecord["category"], string> = {
+  Fertilizante: "fertilizante",
   Bioestimulante: "bioestimulante",
+  Corrector: "corrector",
+  "Acondicionador de agua": "acondicionador_agua",
+  "Adyuvante / Coadyuvante": "adyuvante_coadyuvante",
+  Microorganismos: "microorganismos",
   Fungicida: "fungicida",
   Insecticida: "insecticida",
-  Fertilizante: "fertilizante",
-  Microorganismos: "microorganismos",
-  Corrector: "corrector"
+  Acaricida: "acaricida",
+  Nematicida: "nematicida",
+  Bactericida: "bactericida",
+  "Sanitizante / Desinfectante": "sanitizante_desinfectante",
+  "Regulador de crecimiento": "regulador_crecimiento"
 };
 
 const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {

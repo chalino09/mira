@@ -511,7 +511,7 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
         <SectionHeader
           action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("application")} variant="secondary">Nueva aplicación</Button>}
           title="Aplicaciones"
-          description="Bioestimulantes, fungicidas, insecticidas, fertilizantes, microorganismos y correctores."
+          description="Nutrición, sanidad, correctores, acondicionadores de agua y coadyuvantes."
         />
       ) : null}
       <DataTable<ApplicationRecord>

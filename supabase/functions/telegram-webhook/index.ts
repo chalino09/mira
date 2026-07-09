@@ -90,14 +90,27 @@ const activityLabels: Record<string, string> = {
   otro: "Otra"
 };
 
-const applicationCategories = new Set([
-  "bioestimulante",
-  "fungicida",
-  "insecticida",
-  "fertilizante",
-  "microorganismos",
-  "corrector"
-]);
+const applicationCategoryAliases: Record<string, string> = {
+  fertilizante: "fertilizante",
+  bioestimulante: "bioestimulante",
+  corrector: "corrector",
+  "acondicionador de agua": "acondicionador_agua",
+  acondicionador_agua: "acondicionador_agua",
+  adyuvante: "adyuvante_coadyuvante",
+  coadyuvante: "adyuvante_coadyuvante",
+  adyuvante_coadyuvante: "adyuvante_coadyuvante",
+  microorganismos: "microorganismos",
+  fungicida: "fungicida",
+  insecticida: "insecticida",
+  acaricida: "acaricida",
+  nematicida: "nematicida",
+  bactericida: "bactericida",
+  sanitizante: "sanitizante_desinfectante",
+  desinfectante: "sanitizante_desinfectante",
+  sanitizante_desinfectante: "sanitizante_desinfectante",
+  "regulador de crecimiento": "regulador_crecimiento",
+  regulador_crecimiento: "regulador_crecimiento"
+};
 
 function normalizeText(value: string) {
   return value
@@ -312,7 +325,7 @@ function parseIrrigationCapture(text: string, task: any) {
 
 function parseApplicationCapture(text: string, task: any) {
   const normalized = normalizeText(text);
-  const category = Array.from(applicationCategories).find((item) => normalized.includes(item));
+  const category = Object.entries(applicationCategoryAliases).find(([alias]) => normalized.includes(alias))?.[1];
   const appliedArea = matchTextAfter(normalized, ["area", "zona", "sector"]) || task.technical_plan?.appliedArea || "";
 
   if (!category) {
@@ -459,7 +472,7 @@ function hasCaptureSignal(task: any, text: string) {
       && /\d+(?:[\.,]\d+)?\s*(?:l|litros)\b/.test(normalized);
   }
   if (task.type === "aplicacion_foliar") {
-    return Array.from(applicationCategories).some((item) => normalized.includes(item));
+    return Object.keys(applicationCategoryAliases).some((alias) => normalized.includes(alias));
   }
   if (task.type === "fertirriego" || task.type === "fertilizacion") {
     return /\b(?:ph|ce|ec)\b/.test(normalized) || /\bnutricion\s+ok\b/.test(normalized);

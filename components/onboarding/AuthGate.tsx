@@ -211,12 +211,19 @@ function mapTaskStatus(status?: string | null): Task["status"] {
 
 function mapApplicationCategory(category?: string | null): ApplicationRecord["category"] {
   const labels: Record<string, ApplicationRecord["category"]> = {
+    fertilizante: "Fertilizante",
     bioestimulante: "Bioestimulante",
+    corrector: "Corrector",
+    acondicionador_agua: "Acondicionador de agua",
+    adyuvante_coadyuvante: "Adyuvante / Coadyuvante",
+    microorganismos: "Microorganismos",
     fungicida: "Fungicida",
     insecticida: "Insecticida",
-    fertilizante: "Fertilizante",
-    microorganismos: "Microorganismos",
-    corrector: "Corrector"
+    acaricida: "Acaricida",
+    nematicida: "Nematicida",
+    bactericida: "Bactericida",
+    sanitizante_desinfectante: "Sanitizante / Desinfectante",
+    regulador_crecimiento: "Regulador de crecimiento"
   };
 
   return labels[category ?? ""] ?? "Bioestimulante";

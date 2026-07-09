@@ -46,12 +46,19 @@ end $$;
 
 do $$ begin
   create type public.application_category as enum (
+    'fertilizante',
     'bioestimulante',
+    'corrector',
+    'acondicionador_agua',
+    'adyuvante_coadyuvante',
+    'microorganismos',
     'fungicida',
     'insecticida',
-    'fertilizante',
-    'microorganismos',
-    'corrector'
+    'acaricida',
+    'nematicida',
+    'bactericida',
+    'sanitizante_desinfectante',
+    'regulador_crecimiento'
   );
 exception when duplicate_object then null;
 end $$;
