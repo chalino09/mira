@@ -188,22 +188,37 @@ function costByCategory(costs: CostRecord[]) {
   );
 }
 
-async function completeTaskRecord(taskId: string, completeTask: (id: string) => void, updateNote?: string | null) {
+async function completeTaskRecord(taskId: string, completeTask: (id: string, status?: Task["status"]) => void, updateNote?: string | null) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     throw new Error("missing_supabase_client");
   }
 
-  const { error: rpcError } = await supabase.rpc("update_operational_task_status", {
+  const { data, error: workRpcError } = await supabase.rpc("complete_work", {
+    target_work_id: taskId,
+    target_payload: {
+      occurredAt: new Date().toISOString(),
+      note: updateNote || null
+    }
+  });
+
+  const missingWorkRpc = ["42883", "PGRST202"].includes(workRpcError?.code ?? "");
+  if (!missingWorkRpc) {
+    if (workRpcError) throw workRpcError;
+    completeTask(taskId, data?.status === "verificada" ? "Verificada" : "Completada");
+    return;
+  }
+
+  const { error: legacyRpcError } = await supabase.rpc("update_operational_task_status", {
     target_task_id: taskId,
     next_status: "completada",
     update_note: updateNote || null
   });
 
-  const missingOperationsRpc = ["42883", "PGRST202"].includes(rpcError?.code ?? "");
+  const missingOperationsRpc = ["42883", "PGRST202"].includes(legacyRpcError?.code ?? "");
   const { error } = missingOperationsRpc
     ? await supabase.from("tasks").update({ status: "completada" }).eq("id", taskId)
-    : { error: rpcError };
+    : { error: legacyRpcError };
 
   if (error) throw error;
   completeTask(taskId);

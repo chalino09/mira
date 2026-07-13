@@ -49,7 +49,7 @@ export function CalendarContributionGrid({ tasks }: { tasks: Task[] }) {
     visibleTasks.filter((task) => task.status === "Bloqueada").map((task) => task.date)
   );
   const today = toLocalDateKey(new Date());
-  const completedCount = visibleTasks.filter((task) => task.status === "Completada").length;
+  const completedCount = visibleTasks.filter((task) => task.status === "Completada" || task.status === "Verificada").length;
   const activeDayCount = Object.keys(taskCountByDate).length;
 
   const days = Array.from({ length: weeks * daysPerWeek }, (_, index) => {

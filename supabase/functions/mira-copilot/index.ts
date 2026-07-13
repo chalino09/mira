@@ -165,7 +165,7 @@ function deterministicInsights(context: any) {
   const greenhouseName = (id: string | null) => context.greenhouseById[id ?? ""] ?? "Area productiva";
 
   const overdue = context.tasks
-    .filter((task: any) => task.scheduled_date < today && !["completada", "cancelada"].includes(task.status))
+    .filter((task: any) => task.scheduled_date < today && !["completada", "verificada", "cancelada"].includes(task.status))
     .slice(0, 4);
 
   overdue.forEach((task: any) => {

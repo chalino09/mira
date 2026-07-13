@@ -10,6 +10,8 @@ import {
   Edit3,
   Minus,
   Plus,
+  Play,
+  RotateCcw,
   Send
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -35,7 +37,7 @@ import type { ApplicationRecord, CropCatalogItem, Greenhouse, HarvestRecord, Irr
 type PlanStatus = "draft" | "published" | "closed";
 type TaskPriority = "low" | "normal" | "high" | "critical";
 type ExecutionMode = "manager" | "crew" | "both";
-type OperationStatus = "pendiente" | "en_progreso" | "bloqueada" | "completada" | "cancelada";
+type OperationStatus = "pendiente" | "en_progreso" | "bloqueada" | "completada" | "verificada" | "cancelada";
 
 type WeeklyPlanRow = {
   id: string;
@@ -212,10 +214,11 @@ const activityLabels: Record<string, string> = {
 };
 
 const statusLabels: Record<OperationStatus, string> = {
-  pendiente: "Pendiente",
-  en_progreso: "Pendiente",
+  pendiente: "Planeado",
+  en_progreso: "En ejecución",
   bloqueada: "Bloqueada",
   completada: "Completada",
+  verificada: "Verificada",
   cancelada: "Cancelada"
 };
 
@@ -224,6 +227,7 @@ const statusTones: Record<OperationStatus, "neutral" | "green" | "amber" | "red"
   en_progreso: "neutral",
   bloqueada: "red",
   completada: "green",
+  verificada: "green",
   cancelada: "neutral"
 };
 
@@ -1433,6 +1437,8 @@ export function OperationsSection({
   const [editingTask, setEditingTask] = useState<OperationTaskRow | null>(null);
   const [blockedTask, setBlockedTask] = useState<OperationTaskRow | null>(null);
   const [blockedReason, setBlockedReason] = useState("");
+  const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
   const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
 
   const canPlan = currentUser.role === "owner" || currentUser.role === "admin";
@@ -1770,10 +1776,9 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error } = await supabase.rpc("update_operational_task_status", {
-      target_task_id: task.id,
-      next_status: "completada",
-      update_note: null
+    const { data, error } = await supabase.rpc("complete_work", {
+      target_work_id: task.id,
+      target_payload: { occurredAt: new Date().toISOString() }
     });
     setCompleting(false);
 
@@ -1781,9 +1786,41 @@ export function OperationsSection({
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: "Actividad completada." });
+    setNotice({ tone: "green", message: data?.status === "verificada" ? "Trabajo completado y verificado." : "Trabajo completado." });
     await loadOperations();
   }, [loadOperations, materials]);
+
+  const startTask = async (task: OperationTaskRow) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("start_work", { target_work_id: task.id });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo iniciar el trabajo.") });
+      return;
+    }
+    setNotice({ tone: "green", message: "Trabajo iniciado." });
+    await loadOperations();
+  };
+
+  const verifyTask = async (task: OperationTaskRow) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("verify_work", { target_work_id: task.id, target_note: null });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo verificar el trabajo.") });
+      return;
+    }
+    setNotice({ tone: "green", message: "Trabajo verificado." });
+    await loadOperations();
+  };
 
   useEffect(() => {
     if (!pendingCompletionTask?.id || loading || completing) return;
@@ -1970,10 +2007,9 @@ export function OperationsSection({
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
-    const { error } = await supabase.rpc("update_operational_task_status", {
-      target_task_id: blockedTask.id,
-      next_status: "bloqueada",
-      update_note: blockedReason
+    const { error } = await supabase.rpc("block_work", {
+      target_work_id: blockedTask.id,
+      target_reason: blockedReason
     });
     if (error) {
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reportar el bloqueo.") });
@@ -1985,9 +2021,32 @@ export function OperationsSection({
     await loadOperations();
   };
 
-  const completedCount = tasks.filter((task) => task.status === "completada").length;
+  const reopenCompletedWork = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!reopenTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("reopen_work", {
+      target_work_id: reopenTask.id,
+      target_reason: reopenReason
+    });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reabrir el trabajo.") });
+      return;
+    }
+    setReopenTask(null);
+    setReopenReason("");
+    setNotice({ tone: "green", message: "Trabajo reabierto para ejecución." });
+    await loadOperations();
+  };
+
+  const completedCount = tasks.filter((task) => ["completada", "verificada"].includes(task.status)).length;
   const blockedCount = tasks.filter((task) => task.status === "bloqueada").length;
-  const todayCount = tasks.filter((task) => task.scheduled_date === todayKey && task.status !== "completada").length;
+  const todayCount = tasks.filter((task) => task.scheduled_date === todayKey && !["completada", "verificada", "cancelada"].includes(task.status)).length;
   const unassignedCount = tasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
@@ -2005,6 +2064,11 @@ export function OperationsSection({
   const openBlockedTask = (task: OperationTaskRow) => {
     setBlockedReason("");
     setBlockedTask(task);
+  };
+
+  const openReopenTask = (task: OperationTaskRow) => {
+    setReopenReason("");
+    setReopenTask(task);
   };
 
   return (
@@ -2190,11 +2254,23 @@ export function OperationsSection({
                                   variant="ghost"
                                 />
                               ) : null}
-                              {task.status !== "completada" && task.status !== "cancelada" ? (
+                              {["pendiente", "bloqueada"].includes(task.status) ? (
+                                <Button aria-label={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar trabajo"} className="h-8 w-8 px-0" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar trabajo"} variant="ghost" />
+                              ) : null}
+                              {["pendiente", "en_progreso"].includes(task.status) ? (
                                 <>
                                   <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
                                   <Button aria-label="Completar actividad" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} title="Completar actividad" variant="ghost" />
                                 </>
+                              ) : null}
+                              {canPlan && task.status === "completada" ? (
+                                <>
+                                  <Button aria-label="Verificar trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} title="Verificar trabajo" variant="ghost" />
+                                  <Button aria-label="Reabrir trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} title="Reabrir trabajo" variant="ghost" />
+                                </>
+                              ) : null}
+                              {canPlan && task.status === "verificada" ? (
+                                <Button aria-label="Reabrir trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} title="Reabrir trabajo" variant="ghost" />
                               ) : null}
                             </div>
                           </article>
@@ -2289,6 +2365,27 @@ export function OperationsSection({
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setBlockedTask(null); setBlockedReason(""); }} type="button" variant="secondary">Cancelar</Button>
             <Button icon={<Ban className="h-4 w-4" />} type="submit" variant="primary">Reportar bloqueo</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={Boolean(reopenTask)} onClose={() => { setReopenTask(null); setReopenReason(""); }} title="Reabrir trabajo">
+        <form className="grid gap-5" onSubmit={reopenCompletedWork}>
+          <div>
+            <p className="text-sm font-medium text-app-text">{reopenTask?.title}</p>
+            <p className="mt-2 text-sm leading-6 text-app-muted">El trabajo volverá a ejecución y el motivo quedará en su auditoría.</p>
+          </div>
+          <Field label="Motivo">
+            <TextArea
+              onChange={(event) => setReopenReason(event.target.value)}
+              placeholder="Describe qué debe corregirse antes de volver a completar el trabajo."
+              required
+              value={reopenReason}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => { setReopenTask(null); setReopenReason(""); }} type="button" variant="secondary">Cancelar</Button>
+            <Button disabled={completing} icon={<RotateCcw className="h-4 w-4" />} type="submit" variant="primary">Reabrir trabajo</Button>
           </div>
         </form>
       </Modal>

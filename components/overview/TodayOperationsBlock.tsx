@@ -12,7 +12,7 @@ function localDateKey(date = new Date()) {
 }
 
 function statusTone(status: Task["status"]): "neutral" | "green" | "amber" | "red" {
-  if (status === "Completada") return "green";
+  if (status === "Completada" || status === "Verificada") return "green";
   if (status === "Bloqueada") return "red";
   return "neutral";
 }
@@ -29,7 +29,7 @@ export function TodayOperationsBlock({
   className?: string;
 }) {
   const today = localDateKey();
-  const activeTasks = tasks.filter((task) => task.status !== "Completada" && task.status !== "Cancelada");
+  const activeTasks = tasks.filter((task) => !["Completada", "Verificada", "Cancelada"].includes(task.status));
   const todayTasks = activeTasks.filter((task) => task.date === today);
   const overdueTasks = activeTasks.filter((task) => task.date < today);
   const blockedTasks = activeTasks.filter((task) => task.status === "Bloqueada");

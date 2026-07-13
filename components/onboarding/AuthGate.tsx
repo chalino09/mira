@@ -203,8 +203,10 @@ function mapTaskType(type?: string | null, technicalPlan?: Record<string, any> |
 }
 
 function mapTaskStatus(status?: string | null): Task["status"] {
+  if (status === "en_progreso") return "En ejecución";
   if (status === "bloqueada") return "Bloqueada";
   if (status === "completada") return "Completada";
+  if (status === "verificada") return "Verificada";
   if (status === "cancelada") return "Cancelada";
   return "Pendiente";
 }

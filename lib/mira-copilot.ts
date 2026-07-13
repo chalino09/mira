@@ -135,7 +135,7 @@ export function taskDate(task: OperationLikeTask) {
 
 export function isTaskIncomplete(status: string) {
   const normalized = status.toLowerCase();
-  return !["completada", "completado", "cancelada", "cancelado"].includes(normalized);
+  return !["completada", "completado", "verificada", "verificado", "cancelada", "cancelado"].includes(normalized);
 }
 
 function greenhouseName(greenhouses: BuildCopilotPulseInput["greenhouses"], greenhouseId?: string | null) {

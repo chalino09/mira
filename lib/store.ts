@@ -49,7 +49,7 @@ type AppState = {
   openModal: (modal: ModalType) => void;
   closeModal: () => void;
   addTask: (task: WithOptionalId<Task>) => void;
-  completeTask: (id: string) => void;
+  completeTask: (id: string, status?: Task["status"]) => void;
   addIrrigation: (record: WithOptionalId<IrrigationRecord>) => void;
   addGreenhouse: (greenhouse: Greenhouse) => void;
   updateGreenhouse: (greenhouse: Greenhouse) => void;
@@ -146,10 +146,10 @@ export const useGreenhouseStore = create<AppState>((set) => ({
       ],
       modal: null
     })),
-  completeTask: (id) =>
+  completeTask: (id, status = "Completada") =>
     set((state) => ({
       tasks: state.tasks.map((task) =>
-        task.id === id ? { ...task, status: "Completada" } : task
+        task.id === id ? { ...task, status } : task
       )
     })),
   addIrrigation: (record) =>

@@ -32,6 +32,17 @@ export type TaskType =
   | "Preparación de ciclo"
   | "Otra";
 
+export type WorkOrigin = "planned" | "unplanned" | "copilot" | "telegram" | "migrated";
+export type WorkStatus = "Pendiente" | "En ejecución" | "Bloqueada" | "Completada" | "Verificada" | "Cancelada";
+
+export type WorkEvent = {
+  id: string;
+  workId: string;
+  type: "created" | "assigned" | "published" | "acknowledged" | "started" | "blocked" | "completed" | "verified" | "reopened" | "cancelled" | "comment" | "question" | "answer";
+  note: string | null;
+  createdAt: string;
+};
+
 export type NavigationItem = {
   id: SectionId;
   label: string;
@@ -119,7 +130,7 @@ export type Task = {
   title: string;
   date: string;
   time: string;
-  status: "Pendiente" | "Bloqueada" | "Completada" | "Cancelada";
+  status: WorkStatus;
   responsible: string;
 };
 

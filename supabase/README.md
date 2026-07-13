@@ -116,6 +116,8 @@ Para cargar el catalogo base de productos desde Excel, ejecuta `36_product_catal
 
 Para capturar cosecha por cajas, tercera calidad, merma y precios por calidad, ejecuta `37_harvest_boxes_quality_pricing.sql` despues de `36_product_catalog_from_excel.sql`.
 
+Para habilitar el núcleo Work —ciclo de vida, orígenes, auditoría y verificación— ejecuta `40_work_core.sql` después de las migraciones existentes. Esta migración conserva las RPC actuales para compatibilidad.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

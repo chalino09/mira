@@ -213,7 +213,7 @@ function trimAnswer(value: string) {
 
 function localFallback(message: string, context: any, memories: any[]) {
   const today = context.today;
-  const overdue = context.tasks.filter((task: any) => task.scheduled_date < today && !["completada", "cancelada"].includes(task.status));
+  const overdue = context.tasks.filter((task: any) => task.scheduled_date < today && !["completada", "verificada", "cancelada"].includes(task.status));
   const blocked = context.tasks.filter((task: any) => task.status === "bloqueada");
   const weatherRisk = context.weather.filter((item: any) => ["amber", "red"].includes(item.risk_tone));
   const pests = context.pests.filter((item: any) => item.severity !== "baja" && !item.is_resolved);
@@ -287,7 +287,7 @@ function repeatedTaskMemory(context: any) {
   const today = context.today;
   const groups = new Map();
   for (const task of context.tasks) {
-    if (task.scheduled_date >= today || ["completada", "cancelada"].includes(task.status)) continue;
+    if (task.scheduled_date >= today || ["completada", "verificada", "cancelada"].includes(task.status)) continue;
     const key = `${task.greenhouse_id}:${task.type}`;
     const current = groups.get(key) ?? [];
     current.push(task);

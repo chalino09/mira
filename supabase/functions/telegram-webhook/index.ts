@@ -550,7 +550,7 @@ async function loadTaskContext(adminClient: any, connection: any, taskIds: strin
     .select("id, company_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
     .eq("company_id", connection.company_id)
     .in("id", allowedIds)
-    .not("status", "in", "(completada,cancelada)")
+    .not("status", "in", "(completada,verificada,cancelada)")
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true });
 
@@ -1161,7 +1161,7 @@ async function handleOperationalReply({
     .select("id, company_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
     .eq("company_id", connection.company_id)
     .in("id", taskIds)
-    .not("status", "in", "(completada,cancelada)")
+    .not("status", "in", "(completada,verificada,cancelada)")
     .gte("scheduled_date", dateStart)
     .lte("scheduled_date", dateEnd)
     .order("scheduled_date", { ascending: true })
