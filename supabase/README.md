@@ -118,6 +118,8 @@ Para capturar cosecha por cajas, tercera calidad, merma y precios por calidad, e
 
 Para habilitar el núcleo Work —ciclo de vida, orígenes, auditoría y verificación— ejecuta `40_work_core.sql` después de las migraciones existentes. Esta migración conserva las RPC actuales para compatibilidad.
 
+Para enlazar riego, nutrición, aplicaciones y cosecha al Work, ejecuta en orden `41_work_technical_adapters.sql` y `42_work_technical_backfill.sql`. La segunda migración crea Work históricos para cada resultado técnico existente y deja `source_task_id` como obligatorio. Después despliega de nuevo `telegram-webhook`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

@@ -686,145 +686,22 @@ async function plannedExecutionForTask(adminClient: any, task: any) {
   return null;
 }
 
-async function setTaskStatus(adminClient: any, connection: any, task: any, nextStatus: string, note: string | null) {
-  const patch = nextStatus === "completada"
-    ? {
-        blocked_reason: null,
-        completed_at: new Date().toISOString(),
-        started_at: null,
-        status: nextStatus,
-        updated_at: new Date().toISOString()
-      }
-    : {
-        blocked_reason: note,
-        completed_at: null,
-        started_at: null,
-        status: nextStatus,
-        updated_at: new Date().toISOString()
-      };
-
-  const { error } = await adminClient
-    .from("tasks")
-    .update(patch)
-    .eq("id", task.id)
-    .eq("company_id", connection.company_id);
-
-  if (error) throw error;
-
-  await adminClient.from("task_updates").insert({
-    actor_user_id: connection.user_id,
-    company_id: connection.company_id,
-    note,
-    task_id: task.id,
-    update_type: nextStatus === "completada" ? "completed" : "blocked",
-    metadata: { source: "telegram" }
+async function executeTelegramWorkAction(
+  adminClient: any,
+  connection: any,
+  task: any,
+  action: "block" | "complete",
+  note: string | null,
+  executionPayload: any = {}
+) {
+  const { error } = await adminClient.rpc("execute_telegram_work_action", {
+    target_work_id: task.id,
+    target_actor_user_id: connection.user_id,
+    target_action: action,
+    target_note: note,
+    target_payload: executionPayload
   });
-}
-
-async function completeTechnicalTask(adminClient: any, connection: any, task: any, executionPayload: any) {
-  if (task.type === "riego") {
-    const { error } = await adminClient.from("irrigation_records").upsert({
-      company_id: task.company_id,
-      greenhouse_id: task.greenhouse_id,
-      occurred_at: executionPayload.occurredAt,
-      duration_min: executionPayload.durationMin,
-      estimated_liters: executionPayload.estimatedLiters,
-      sector: executionPayload.sector || null,
-      ph: executionPayload.ph,
-      ec: executionPayload.ec,
-      notes: executionPayload.notes || task.instructions || null,
-      responsible_user_id: connection.user_id,
-      created_by: connection.user_id,
-      source_task_id: task.id
-    }, { onConflict: "source_task_id" });
-    if (error) throw error;
-  }
-
-  if (task.type === "aplicacion_foliar") {
-    const materials = await loadMaterials(adminClient, task);
-    if (!materials.length) throw new Error("application_materials_required");
-    const rows = materials.map((material: any) => ({
-      company_id: task.company_id,
-      greenhouse_id: task.greenhouse_id,
-      product_id: material.product_id,
-      category: material.product_category ?? executionPayload.category,
-      product_name: material.product_name,
-      composition: material.composition ?? null,
-      dose: recordDose(material),
-      applied_area: executionPayload.appliedArea || null,
-      safety_interval: null,
-      reentry_interval: null,
-      occurred_at: executionPayload.occurredAt,
-      notes: executionPayload.notes || material.notes || task.instructions || null,
-      responsible_user_id: connection.user_id,
-      created_by: connection.user_id,
-      source_task_id: task.id,
-      source_task_material_id: material.id
-    }));
-    const { error } = await adminClient
-      .from("application_records")
-      .upsert(rows, { onConflict: "source_task_material_id" });
-    if (error) throw error;
-  }
-
-  if (task.type === "fertirriego" || task.type === "fertilizacion") {
-    const materials = await loadMaterials(adminClient, task);
-    if (!materials.length) throw new Error("nutrition_products_required");
-    const rows = materials.map((material: any) => ({
-      company_id: task.company_id,
-      greenhouse_id: task.greenhouse_id,
-      product_id: material.product_id,
-      product_name: material.product_name,
-      dose: recordDose(material),
-      method: executionPayload.method,
-      ph: executionPayload.ph,
-      ec: executionPayload.ec,
-      occurred_at: executionPayload.occurredAt,
-      crop_stage: executionPayload.cropStage,
-      objective: executionPayload.objective,
-      notes: executionPayload.notes || material.notes || task.instructions || null,
-      responsible_user_id: connection.user_id,
-      created_by: connection.user_id,
-      source_task_id: task.id,
-      source_task_material_id: material.id
-    }));
-    const { error } = await adminClient
-      .from("nutrition_records")
-      .upsert(rows, { onConflict: "source_task_material_id" });
-    if (error) throw error;
-  }
-
-  if (task.type === "cosecha") {
-    const { error } = await adminClient.from("harvest_records").upsert({
-      company_id: task.company_id,
-      greenhouse_id: task.greenhouse_id,
-      occurred_at: executionPayload.occurredAt,
-      kilograms: executionPayload.kilograms,
-      box_count: executionPayload.boxCount ?? 0,
-      box_weight_kg: executionPayload.boxWeightKg ?? 20,
-      first_quality_kg: executionPayload.firstQualityKg ?? 0,
-      second_quality_kg: executionPayload.secondQualityKg ?? 0,
-      third_quality_kg: executionPayload.thirdQualityKg ?? 0,
-      discard_kg: executionPayload.mermaKg ?? 0,
-      merma_kg: executionPayload.mermaKg ?? 0,
-      first_quality_boxes: executionPayload.firstQualityBoxes ?? 0,
-      second_quality_boxes: executionPayload.secondQualityBoxes ?? 0,
-      third_quality_boxes: executionPayload.thirdQualityBoxes ?? 0,
-      merma_boxes: executionPayload.mermaBoxes ?? 0,
-      first_quality_price: executionPayload.firstQualityPrice ?? 0,
-      second_quality_price: executionPayload.secondQualityPrice ?? 0,
-      third_quality_price: executionPayload.thirdQualityPrice ?? 0,
-      estimated_price: executionPayload.estimatedPrice ?? 0,
-      destination: executionPayload.destination || null,
-      notes: executionPayload.notes || task.instructions || null,
-      responsible_user_id: connection.user_id,
-      created_by: connection.user_id,
-      source_task_id: task.id
-    }, { onConflict: "source_task_id" });
-    if (error) throw error;
-  }
-
-  await setTaskStatus(adminClient, connection, task, "completada", "Telegram: registro tecnico confirmado");
+  if (error) throw error;
 }
 
 async function executeConfirmedAction(adminClient: any, connection: any, payload: any) {
@@ -833,16 +710,23 @@ async function executeConfirmedAction(adminClient: any, connection: any, payload
   if (!task) throw new Error("task_not_found");
 
   if (payload.action === "block") {
-    await setTaskStatus(adminClient, connection, task, "bloqueada", payload.note || "Telegram: actividad bloqueada");
+    await executeTelegramWorkAction(adminClient, connection, task, "block", payload.note || "Telegram: actividad bloqueada");
     return { task, message: "Bloqueo reportado." };
   }
 
   if (payload.executionPayload) {
-    await completeTechnicalTask(adminClient, connection, task, payload.executionPayload);
+    await executeTelegramWorkAction(
+      adminClient,
+      connection,
+      task,
+      "complete",
+      "Telegram: registro técnico confirmado",
+      payload.executionPayload
+    );
     return { task, message: "Actividad completada y registro tecnico guardado." };
   }
 
-  await setTaskStatus(adminClient, connection, task, "completada", "Telegram: actividad completada");
+  await executeTelegramWorkAction(adminClient, connection, task, "complete", "Telegram: actividad completada");
   return { task, message: "Actividad completada." };
 }
 

@@ -209,6 +209,11 @@ function insertedId(row: { id?: string } | null | undefined, fallback: string) {
   return row.id;
 }
 
+function rpcRecordId(data: { recordId?: string } | null | undefined, fallback: string) {
+  if (!data?.recordId) throw new Error(fallback);
+  return data.recordId;
+}
+
 const taskTypeToDb: Record<TaskType, string> = {
   Riego: "riego",
   Fertirriego: "fertirriego",
@@ -817,6 +822,35 @@ export function RecordModal() {
     };
   };
 
+  const createUnplannedTechnicalWork = async ({
+    greenhouseId,
+    type,
+    title,
+    occurredAt,
+    materials = []
+  }: {
+    greenhouseId: string;
+    type: "riego" | "fertirriego" | "fertilizacion" | "aplicacion_foliar" | "cosecha";
+    title: string;
+    occurredAt: string;
+    materials?: Array<{ productId: string; productName: string; dose: string; notes?: string }>;
+  }) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) throw new Error("No se pudo conectar con Supabase.");
+    const { data, error: rpcError } = await supabase.rpc("create_unplanned_work", {
+      target_company_id: organization.id,
+      target_greenhouse_id: greenhouseId,
+      target_type: type,
+      target_title: title,
+      target_occurred_at: occurredAt,
+      target_payload: { materials }
+    });
+    if (rpcError) throw rpcError;
+    const result = data as { workId?: string; materialIds?: string[] } | null;
+    if (!result?.workId) throw new Error("No se pudo crear el Work no planeado.");
+    return { workId: result.workId, materialIds: result.materialIds ?? [] };
+  };
+
   const readGreenhouseForm = (form: FormData): Omit<Greenhouse, "id"> => {
     const managerValue = String(form.get("managerRef") ?? "").trim();
     const managerUserId = managerValue.startsWith("user:") ? managerValue.replace("user:", "") : null;
@@ -968,25 +1002,24 @@ export function RecordModal() {
       responsible: currentUser.fullName
     };
     saveManualRecord(potentialIrrigationDuplicate(record), async () => {
-      const { data, error: insertError } = await getSupabaseBrowserClient()!
-        .from("irrigation_records")
-        .insert({
-          company_id: organization.id,
-          greenhouse_id: record.greenhouseId,
-          occurred_at: record.date,
-          duration_min: record.durationMin,
-          estimated_liters: record.liters,
-          sector: record.sector || null,
-          ph: record.ph,
-          ec: record.ec,
-          notes: record.notes,
-          responsible_user_id: currentUser.id,
-          created_by: currentUser.id
-        })
-        .select("id")
-        .single();
-      if (insertError) throw insertError;
-      addIrrigation({ ...record, id: insertedId(data, "No se pudo confirmar el riego guardado.") });
+      const work = await createUnplannedTechnicalWork({
+        greenhouseId: record.greenhouseId,
+        type: "riego",
+        title: "Riego no planeado",
+        occurredAt: record.date
+      });
+      const { data, error: rpcError } = await getSupabaseBrowserClient()!.rpc("complete_irrigation_task", {
+        target_task_id: work.workId,
+        target_occurred_at: record.date,
+        target_duration_min: record.durationMin,
+        target_estimated_liters: record.liters,
+        target_sector: record.sector || null,
+        target_ph: record.ph,
+        target_ec: record.ec,
+        target_notes: record.notes || null
+      });
+      if (rpcError) throw rpcError;
+      addIrrigation({ ...record, id: rpcRecordId(data as { recordId?: string }, "No se pudo confirmar el riego guardado."), sourceTaskId: work.workId });
     });
   };
 
@@ -1018,30 +1051,33 @@ export function RecordModal() {
         objective: String(form.get("objective")) as NutritionRecord["objective"],
         notes: String(form.get("notes"))
       }));
-      const { data, error: insertError } = await getSupabaseBrowserClient()!
-        .from("nutrition_records")
-        .insert(records.map((record) => ({
-          company_id: organization.id,
-          greenhouse_id: record.greenhouseId,
-          product_id: record.productId || null,
-          product_name: record.product,
-          dose: record.dose,
-          method: nutritionMethodToDb[record.method],
-          ph: record.ph,
-          ec: record.ec,
-          occurred_at: record.date,
-          crop_stage: cropStageToDbValue(record.stage),
-          objective: nutritionObjectiveToDb[record.objective],
-          notes: record.notes,
-          responsible_user_id: currentUser.id,
-          created_by: currentUser.id
-        })))
-        .select("id");
-      if (insertError) throw insertError;
+      const work = await createUnplannedTechnicalWork({
+        greenhouseId,
+        type: records[0]?.method === "Fertirriego" ? "fertirriego" : "fertilizacion",
+        title: "Nutrición no planeada",
+        occurredAt,
+        materials: records.map((record) => ({ productId: record.productId, productName: record.product, dose: record.dose, notes: record.notes }))
+      });
+      const { data, error: rpcError } = await getSupabaseBrowserClient()!.rpc("complete_nutrition_task", {
+        target_task_id: work.workId,
+        target_occurred_at: occurredAt,
+        target_method: nutritionMethodToDb[records[0]?.method ?? "Fertilización"],
+        target_crop_stage: cropStageToDbValue(records[0]?.stage ?? "Vegetativo"),
+        target_objective: nutritionObjectiveToDb[records[0]?.objective ?? "Desarrollo"],
+        target_ph: records[0]?.ph,
+        target_ec: records[0]?.ec,
+        target_notes: records[0]?.notes || null,
+        target_products: records.map((record, index) => ({
+          materialId: work.materialIds[index], productName: record.product, dose: record.dose
+        }))
+      });
+      if (rpcError) throw rpcError;
+      const recordIds = (data as { recordIds?: string[] } | null)?.recordIds ?? [];
       records.forEach((record, index) => {
         addNutrition({
           ...record,
-          id: insertedId(data?.[index], "No se pudo confirmar la nutrición guardada.")
+          id: recordIds[index] ?? (() => { throw new Error("No se pudo confirmar la nutrición guardada."); })(),
+          sourceTaskId: work.workId
         });
       });
     });
@@ -1072,30 +1108,30 @@ export function RecordModal() {
         reentry: String(form.get("reentry")),
         notes: String(form.get("notes"))
       }));
-      const { data, error: insertError } = await getSupabaseBrowserClient()!
-        .from("application_records")
-        .insert(records.map((record) => ({
-          company_id: organization.id,
-          greenhouse_id: record.greenhouseId,
-          product_id: record.productId || null,
-          category: applicationCategoryToDb[record.category],
-          product_name: record.product,
-          composition: record.composition,
-          dose: record.dose,
-          applied_area: record.area,
-          safety_interval: record.safetyInterval,
-          reentry_interval: record.reentry,
-          occurred_at: record.date,
-          notes: record.notes,
-          responsible_user_id: currentUser.id,
-          created_by: currentUser.id
-        })))
-        .select("id");
-      if (insertError) throw insertError;
+      const work = await createUnplannedTechnicalWork({
+        greenhouseId: records[0]?.greenhouseId ?? "",
+        type: "aplicacion_foliar",
+        title: "Aplicación no planeada",
+        occurredAt: records[0]?.date ?? "",
+        materials: records.map((record) => ({ productId: record.productId, productName: record.product, dose: record.dose, notes: record.notes }))
+      });
+      const { data, error: rpcError } = await getSupabaseBrowserClient()!.rpc("complete_application_task", {
+        target_task_id: work.workId,
+        target_occurred_at: records[0]?.date,
+        target_applied_area: records[0]?.area || null,
+        target_applications: records.map((record, index) => ({
+          materialId: work.materialIds[index], productName: record.product, dose: record.dose,
+          category: applicationCategoryToDb[record.category], composition: record.composition,
+          safetyInterval: record.safetyInterval, reentryInterval: record.reentry, notes: record.notes
+        }))
+      });
+      if (rpcError) throw rpcError;
+      const recordIds = (data as { recordIds?: string[] } | null)?.recordIds ?? [];
       records.forEach((record, index) => {
         addApplication({
           ...record,
-          id: insertedId(data?.[index], "No se pudo confirmar la aplicación guardada.")
+          id: recordIds[index] ?? (() => { throw new Error("No se pudo confirmar la aplicación guardada."); })(),
+          sourceTaskId: work.workId
         });
       });
     });
@@ -1169,37 +1205,35 @@ export function RecordModal() {
       notes: String(form.get("notes"))
     };
     saveManualRecord(potentialHarvestDuplicate(record), async () => {
-      const { data, error: insertError } = await getSupabaseBrowserClient()!
-        .from("harvest_records")
-        .insert({
-          company_id: organization.id,
-          greenhouse_id: record.greenhouseId,
-          occurred_at: record.date,
-          kilograms: record.kilograms,
-          box_count: record.boxCount,
-          box_weight_kg: record.boxWeightKg,
-          first_quality_kg: record.firstQuality,
-          second_quality_kg: record.secondQuality,
-          third_quality_kg: record.thirdQuality,
-          discard_kg: record.merma,
-          merma_kg: record.merma,
-          first_quality_boxes: record.firstQualityBoxes,
-          second_quality_boxes: record.secondQualityBoxes,
-          third_quality_boxes: record.thirdQualityBoxes,
-          merma_boxes: record.mermaBoxes,
-          first_quality_price: record.firstQualityPrice,
-          second_quality_price: record.secondQualityPrice,
-          third_quality_price: record.thirdQualityPrice,
-          estimated_price: record.estimatedPrice,
-          destination: record.destination,
-          notes: record.notes,
-          responsible_user_id: currentUser.id,
-          created_by: currentUser.id
-        })
-        .select("id")
-        .single();
-      if (insertError) throw insertError;
-      addHarvest({ ...record, id: insertedId(data, "No se pudo confirmar la cosecha guardada.") });
+      const work = await createUnplannedTechnicalWork({
+        greenhouseId: record.greenhouseId,
+        type: "cosecha",
+        title: "Cosecha no planeada",
+        occurredAt: record.date
+      });
+      const { data, error: rpcError } = await getSupabaseBrowserClient()!.rpc("complete_harvest_task", {
+        target_task_id: work.workId,
+        target_occurred_at: record.date,
+        target_kilograms: record.kilograms,
+        target_first_quality_kg: record.firstQuality,
+        target_second_quality_kg: record.secondQuality,
+        target_merma_kg: record.merma,
+        target_estimated_price: record.estimatedPrice,
+        target_destination: record.destination || null,
+        target_notes: record.notes || null,
+        target_box_count: record.boxCount,
+        target_box_weight_kg: record.boxWeightKg,
+        target_first_quality_boxes: record.firstQualityBoxes,
+        target_second_quality_boxes: record.secondQualityBoxes,
+        target_third_quality_boxes: record.thirdQualityBoxes,
+        target_merma_boxes: record.mermaBoxes,
+        target_third_quality_kg: record.thirdQuality,
+        target_first_quality_price: record.firstQualityPrice,
+        target_second_quality_price: record.secondQualityPrice,
+        target_third_quality_price: record.thirdQualityPrice
+      });
+      if (rpcError) throw rpcError;
+      addHarvest({ ...record, id: rpcRecordId(data as { recordId?: string }, "No se pudo confirmar la cosecha guardada."), sourceTaskId: work.workId });
     });
   };
 
