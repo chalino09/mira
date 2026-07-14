@@ -120,6 +120,8 @@ Para habilitar el núcleo Work —ciclo de vida, orígenes, auditoría y verific
 
 Para enlazar riego, nutrición, aplicaciones y cosecha al Work, ejecuta en orden `41_work_technical_adapters.sql` y `42_work_technical_backfill.sql`. La segunda migración crea Work históricos para cada resultado técnico existente y deja `source_task_id` como obligatorio. Después despliega de nuevo `telegram-webhook`.
 
+Para habilitar el almacén central, movimientos auditables, costo promedio y costos automáticos por Work, ejecuta `43_inventory_core.sql` y después `44_work_inventory_costs.sql`. Antes de completar trabajos con materiales, registra una entrada del artículo con su misma unidad; el sistema no permite existencias negativas.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

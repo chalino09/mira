@@ -38,6 +38,7 @@ import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { OverviewHero } from "@/components/overview/OverviewHero";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
+import { InventorySection } from "@/components/inventory/InventorySection";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -2274,6 +2275,7 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "applications") return <ApplicationsSection />;
   if (activeSection === "pests") return <PestsSection />;
   if (activeSection === "harvest") return <HarvestSection />;
+  if (activeSection === "inventory") return <InventorySection />;
   if (activeSection === "costs") return <CostsSection />;
   if (activeSection === "reports") return <ReportsSection />;
   return <SettingsSection />;

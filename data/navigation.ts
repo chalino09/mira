@@ -5,6 +5,7 @@ import {
   FlaskConical,
   Home,
   Leaf,
+  Package,
   Settings,
   ShieldAlert,
   Sprout,
@@ -20,6 +21,7 @@ export const navigationItems: NavigationItem[] = [
   { id: "records", label: "Registros técnicos", icon: ActivitySquare },
   { id: "pests", label: "Plagas", icon: ShieldAlert },
   { id: "harvest", label: "Cosecha", icon: Leaf },
+  { id: "inventory", label: "Inventario", icon: Package },
   { id: "costs", label: "Costos", icon: WalletCards },
   { id: "reports", label: "Reportes", icon: BarChart3 },
   { id: "settings", label: "Ajustes", icon: Settings }

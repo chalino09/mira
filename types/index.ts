@@ -11,6 +11,7 @@ export type SectionId =
   | "applications"
   | "pests"
   | "harvest"
+  | "inventory"
   | "costs"
   | "reports"
   | "settings";

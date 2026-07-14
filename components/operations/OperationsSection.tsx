@@ -125,6 +125,8 @@ type TechnicalPlan = {
   sector?: string;
   targetPh?: string;
   targetEc?: string;
+  energyKwh?: string;
+  laborHours?: string;
   method?: NutritionRecord["method"];
   objective?: NutritionRecord["objective"];
   appliedArea?: string;
@@ -492,13 +494,18 @@ function ProductCombobox({
 }
 
 function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan {
+  const resourcePlan = {
+    energyKwh: plan.energyKwh ?? "",
+    laborHours: plan.laborHours ?? ""
+  };
   if (type === "riego") {
     return {
       plannedDurationMin: plan.plannedDurationMin ?? "",
       plannedLiters: plan.plannedLiters ?? "",
       sector: plan.sector ?? "",
       targetPh: plan.targetPh ?? "",
-      targetEc: plan.targetEc ?? ""
+      targetEc: plan.targetEc ?? "",
+      ...resourcePlan
     };
   }
   if (type === "fertirriego" || type === "fertilizacion") {
@@ -506,30 +513,34 @@ function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan 
       method: plan.method ?? "Fertirriego",
       objective: plan.objective ?? "Desarrollo",
       targetPh: plan.targetPh ?? "",
-      targetEc: plan.targetEc ?? ""
+      targetEc: plan.targetEc ?? "",
+      ...resourcePlan
     };
   }
-  if (type === "aplicacion_foliar") return { appliedArea: plan.appliedArea ?? "" };
+  if (type === "aplicacion_foliar") return { appliedArea: plan.appliedArea ?? "", ...resourcePlan };
   if (type === "tutoreo") {
     return {
       rafiaWorkType: plan.rafiaWorkType ?? "Enredado",
-      rafiaSector: plan.rafiaSector ?? ""
+      rafiaSector: plan.rafiaSector ?? "",
+      ...resourcePlan
     };
   }
   if (type === "mantenimiento") {
     return {
       maintenanceWorkType: plan.maintenanceWorkType ?? "Sistema de riego",
-      maintenanceSector: plan.maintenanceSector ?? ""
+      maintenanceSector: plan.maintenanceSector ?? "",
+      ...resourcePlan
     };
   }
   if (type === "preparacion_ciclo") {
     return {
       cycleWorkType: plan.cycleWorkType ?? "Preparación de camas",
-      cycleSector: plan.cycleSector ?? ""
+      cycleSector: plan.cycleSector ?? "",
+      ...resourcePlan
     };
   }
-  if (type === "cosecha") return { harvestZone: plan.harvestZone ?? "" };
-  return {};
+  if (type === "cosecha") return { harvestZone: plan.harvestZone ?? "", ...resourcePlan };
+  return resourcePlan;
 }
 
 function activityLabel(task: OperationTaskRow) {
@@ -754,6 +765,15 @@ function ActivityFormModal({
               placeholder="Preparación, orden, zona y criterios para terminar."
             />
           </Field>
+          <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
+            <Field label="Energía estimada (kWh)">
+              <FormattedNumberInput min={0} onChange={(event) => updateTechnicalPlan({ energyKwh: event.target.value })} step="0.01" value={technicalPlan.energyKwh ?? ""} />
+            </Field>
+            <Field label="Horas por persona">
+              <FormattedNumberInput min={0} onChange={(event) => updateTechnicalPlan({ laborHours: event.target.value })} step="0.25" value={technicalPlan.laborHours ?? ""} />
+            </Field>
+            <p className="sm:col-span-2 text-xs leading-5 text-app-muted">Si configuras sus tarifas en Inventario, estos valores generan costos automáticos al completar el Work.</p>
+          </div>
           {activityType === "riego" ? (
             <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
               <Field label="Duración planeada (min)">
