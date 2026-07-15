@@ -8,7 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit3,
+  ExternalLink,
   Minus,
+  Paperclip,
   Plus,
   Play,
   RotateCcw,
@@ -29,8 +31,9 @@ import { appErrorMessage } from "@/lib/errors";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { harvestValuesFromForm } from "@/lib/harvest";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { useGreenhouseStore } from "@/lib/store";
-import { cn, parseNumericInput } from "@/lib/utils";
+import { cn, formatDate, parseNumericInput } from "@/lib/utils";
 import type { CopilotInsight } from "@/lib/mira-copilot";
 import type { ApplicationRecord, CropCatalogItem, Greenhouse, HarvestRecord, IrrigationRecord, NutritionRecord } from "@/types";
 
@@ -60,8 +63,25 @@ type OperationTaskRow = {
   execution_mode: ExecutionMode;
   crew_size: number | null;
   blocked_reason: string | null;
+  origin: "planned" | "unplanned" | "copilot" | "telegram" | "migrated";
+  occurred_at: string | null;
+  completed_at: string | null;
+  verified_at: string | null;
   technical_plan: TechnicalPlan;
 };
+
+type WorkEvidenceRow = {
+  id: string;
+  work_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  note: string | null;
+  created_at: string;
+};
+
+type OperationView = "plan" | "execution" | "verification" | "history";
 
 type AssignmentRow = {
   id: string;
@@ -1409,13 +1429,55 @@ function CompleteHarvestModal({
   );
 }
 
+function WorkEvidenceModal({
+  task,
+  evidence,
+  saving,
+  onClose,
+  onOpenEvidence,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  evidence: WorkEvidenceRow[];
+  saving: boolean;
+  onClose: () => void;
+  onOpenEvidence: (evidence: WorkEvidenceRow) => void;
+  onSave: (file: File, note: string) => Promise<void>;
+}) {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const file = form.get("file");
+    if (!(file instanceof File) || !file.size) return;
+    await onSave(file, String(form.get("note") ?? ""));
+    event.currentTarget.reset();
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Evidencia privada" panelClassName="sm:max-w-xl">
+      <div className="grid gap-5">
+        <p className="text-sm leading-6 text-app-muted">Los archivos quedan vinculados a este Work y sólo se abren con enlaces temporales para miembros de la empresa.</p>
+        <form className="grid gap-4 border-y border-app-border py-4" onSubmit={handleSubmit}>
+          <Field label="Archivo"><TextInput accept="image/jpeg,image/png,image/webp,application/pdf" name="file" required type="file" /></Field>
+          <Field label="Nota (opcional)"><TextInput name="note" placeholder="Qué confirma esta evidencia" /></Field>
+          <div className="flex justify-end"><Button disabled={saving} icon={<Paperclip className="h-4 w-4" />} type="submit" variant="primary">{saving ? "Subiendo..." : "Adjuntar evidencia"}</Button></div>
+        </form>
+        {evidence.length ? <div className="grid divide-y divide-app-border border-y border-app-border">{evidence.map((item) => <div className="flex items-center justify-between gap-4 py-3" key={item.id}><div className="min-w-0"><p className="truncate text-sm font-medium text-app-text">{item.file_name}</p><p className="mt-1 text-xs text-app-muted">{item.note || "Sin nota"} · {formatDate(item.created_at)}</p></div><Button icon={<ExternalLink className="h-3.5 w-3.5" />} onClick={() => onOpenEvidence(item)} variant="ghost">Abrir</Button></div>)}</div> : <p className="text-sm text-app-muted">Aún no hay evidencia adjunta.</p>}
+        <div className="flex justify-end"><Button onClick={onClose} type="button" variant="secondary">Cerrar</Button></div>
+      </div>
+    </Modal>
+  );
+}
+
 export function OperationsSection({
   copilotInsights = [],
   operationRefreshKey = 0,
   pendingCompletionTask,
   onPendingCompletionConsumed,
   onCreateCopilotTask,
-  onPrepareCopilotMessage
+  onPrepareCopilotMessage,
+  workTypeFilter,
+  specialtyLabel
 }: {
   copilotInsights?: CopilotInsight[];
   operationRefreshKey?: number;
@@ -1423,6 +1485,8 @@ export function OperationsSection({
   onPendingCompletionConsumed?: () => void;
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
+  workTypeFilter?: string[];
+  specialtyLabel?: string;
 }) {
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
@@ -1435,6 +1499,7 @@ export function OperationsSection({
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
   const [plan, setPlan] = useState<WeeklyPlanRow | null>(null);
   const [tasks, setTasks] = useState<OperationTaskRow[]>([]);
+  const [evidence, setEvidence] = useState<WorkEvidenceRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [staffAssignments, setStaffAssignments] = useState<StaffAssignmentRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
@@ -1459,6 +1524,8 @@ export function OperationsSection({
   const [blockedReason, setBlockedReason] = useState("");
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
+  const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
+  const [operationView, setOperationView] = useState<OperationView>("plan");
   const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
 
   const canPlan = currentUser.role === "owner" || currentUser.role === "admin";
@@ -1491,7 +1558,7 @@ export function OperationsSection({
         .maybeSingle(),
       supabase
         .from("tasks")
-        .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, technical_plan")
+        .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
         .eq("company_id", organization.id)
         .gte("scheduled_date", weekStartKey)
         .lte("scheduled_date", weekEndKey)
@@ -1532,7 +1599,7 @@ export function OperationsSection({
       .map((member: any) => member.user_id)
       .filter((id: string | null): id is string => Boolean(id));
 
-    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -1547,10 +1614,13 @@ export function OperationsSection({
         : Promise.resolve({ data: [], error: null }),
       taskGreenhouseIds.length
         ? supabase.from("greenhouses").select("id, name").eq("company_id", organization.id).in("id", taskGreenhouseIds)
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length
+        ? supabase.from("work_evidence").select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_at").in("work_id", taskIds).order("created_at", { ascending: false })
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1561,6 +1631,7 @@ export function OperationsSection({
     setAssignments((assignmentsResponse.data ?? []) as AssignmentRow[]);
     setStaffAssignments((staffAssignmentsResponse.data ?? []) as StaffAssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
+    setEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
     setProductOptions((productsResponse.data ?? []) as ProductOption[]);
     setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
@@ -2064,12 +2135,76 @@ export function OperationsSection({
     await loadOperations();
   };
 
-  const completedCount = tasks.filter((task) => ["completada", "verificada"].includes(task.status)).length;
-  const blockedCount = tasks.filter((task) => task.status === "bloqueada").length;
-  const todayCount = tasks.filter((task) => task.scheduled_date === todayKey && !["completada", "verificada", "cancelada"].includes(task.status)).length;
-  const unassignedCount = tasks.filter((task) =>
+  const evidenceForTask = (taskId: string) => evidence.filter((item) => item.work_id === taskId);
+
+  const saveEvidence = async (file: File, note: string) => {
+    if (!evidenceTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !organization.id) return;
+
+    setSaving(true);
+    setNotice(null);
+    try {
+      const storagePath = await uploadPrivateCompanyFile({
+        bucket: "work-evidence",
+        companyId: organization.id,
+        file,
+        supabase,
+        type: `work-${evidenceTask.id}`
+      });
+      const { error } = await supabase.from("work_evidence").insert({
+        company_id: organization.id,
+        work_id: evidenceTask.id,
+        storage_path: storagePath,
+        file_name: file.name,
+        mime_type: file.type || null,
+        file_size_bytes: file.size,
+        note: note.trim() || null
+      });
+      if (error) throw error;
+      setNotice({ tone: "green", message: "Evidencia privada adjuntada al trabajo." });
+      await loadOperations();
+    } catch (caught) {
+      setNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo adjuntar la evidencia.") });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEvidence = async (item: WorkEvidenceRow) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    try {
+      const signedUrl = await createPrivateCompanyFileUrl({ bucket: "work-evidence", path: item.storage_path, supabase });
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (caught) {
+      setNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo abrir la evidencia privada.") });
+    }
+  };
+
+  const scopedTasks = workTypeFilter?.length ? tasks.filter((task) => workTypeFilter.includes(task.type)) : tasks;
+  const completedCount = scopedTasks.filter((task) => ["completada", "verificada"].includes(task.status)).length;
+  const blockedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
+  const todayCount = scopedTasks.filter((task) => task.scheduled_date === todayKey && !["completada", "verificada", "cancelada"].includes(task.status)).length;
+  const unassignedCount = scopedTasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
+  const viewStatuses: Record<OperationView, OperationStatus[]> = {
+    plan: ["pendiente"],
+    execution: ["en_progreso", "bloqueada"],
+    verification: ["completada"],
+    history: ["verificada", "cancelada"]
+  };
+  const visibleTasks = scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
+  const overdueCount = scopedTasks.filter((task) => task.scheduled_date < todayKey && ["pendiente", "en_progreso", "bloqueada"].includes(task.status)).length;
+  const blockedScopedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
+  const awaitingVerificationCount = scopedTasks.filter((task) => task.status === "completada").length;
+  const operationViews: Array<{ id: OperationView; label: string; count: number }> = [
+    { id: "plan", label: "Plan", count: scopedTasks.filter((task) => task.status === "pendiente").length },
+    { id: "execution", label: "Ejecución", count: scopedTasks.filter((task) => ["en_progreso", "bloqueada"].includes(task.status)).length },
+    { id: "verification", label: "Por verificar", count: awaitingVerificationCount },
+    { id: "history", label: "Historial", count: scopedTasks.filter((task) => ["verificada", "cancelada"].includes(task.status)).length }
+  ];
 
   const openNewActivity = () => {
     setEditingTask(null);
@@ -2097,11 +2232,11 @@ export function OperationsSection({
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-            <h1 className="text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">Operación</h1>
+            <h1 className="text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
             <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
-                ? "Planea la semana, asigna encargados y revisa la ejecución del equipo."
-                : "Consulta, confirma y reporta las actividades bajo tu responsabilidad."}
+                ? "Planea, ejecuta, verifica y consulta cada Work desde un solo lugar."
+                : "Consulta, confirma, adjunta evidencia y reporta el avance de tus trabajos."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2165,6 +2300,22 @@ export function OperationsSection({
             ))}
           </div>
 
+          <div className="mt-6 flex flex-wrap gap-2 border-b border-app-border pb-4">
+            {operationViews.map((view) => (
+              <Button key={view.id} onClick={() => setOperationView(view.id)} variant={operationView === view.id ? "primary" : "ghost"}>
+                {view.label} · {view.count}
+              </Button>
+            ))}
+          </div>
+
+          {overdueCount || blockedScopedCount || awaitingVerificationCount ? (
+            <div className="grid gap-2 border-b border-app-border py-4 md:grid-cols-3">
+              {overdueCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOperationView("execution")} type="button"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{overdueCount}</strong> trabajo{overdueCount === 1 ? "" : "s"} con fecha vencida</span></button> : null}
+              {blockedScopedCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOperationView("execution")} type="button"><Ban className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{blockedScopedCount}</strong> bloqueo{blockedScopedCount === 1 ? "" : "s"} por resolver</span></button> : null}
+              {awaitingVerificationCount ? <button className="flex items-start gap-2 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-left" onClick={() => setOperationView("verification")} type="button"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-app-green" /><span className="text-sm text-app-green"><strong>{awaitingVerificationCount}</strong> trabajo{awaitingVerificationCount === 1 ? "" : "s"} esperando verificación</span></button> : null}
+            </div>
+          ) : null}
+
           {canPlan && plan && tasks.length ? (
             <div className="flex flex-col gap-3 border-b border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-app-muted">
@@ -2205,12 +2356,12 @@ export function OperationsSection({
 
           {loading ? (
             <div className="py-16 text-center text-sm text-app-muted">Cargando operación...</div>
-          ) : tasks.length ? (
+          ) : scopedTasks.length ? (
             <div className="mt-8 max-w-full overflow-x-auto overscroll-x-contain pb-2">
               <div className="grid xl:min-w-full xl:grid-flow-col xl:grid-rows-1 xl:auto-cols-[minmax(260px,1fr)]">
                 {weekDays.map((date, dayIndex) => {
                   const key = dateKey(date);
-                  const dayTasks = tasks.filter((task) => task.scheduled_date === key);
+                  const dayTasks = visibleTasks.filter((task) => task.scheduled_date === key);
                   return (
                     <section key={key} className={`min-w-0 border-t border-app-border py-4 xl:px-4 ${dayIndex ? "xl:border-l" : ""}`}>
                     <div className="flex items-center justify-between gap-3">
@@ -2263,6 +2414,9 @@ export function OperationsSection({
                                 {task.blocked_reason}
                               </p>
                             ) : null}
+                            {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
+                            {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
+                            <button className="mt-3 flex items-center gap-1.5 text-xs font-medium text-app-green" onClick={() => setEvidenceTask(task)} type="button"><Paperclip className="h-3.5 w-3.5" />Evidencia{evidenceForTask(task.id).length ? ` · ${evidenceForTask(task.id).length}` : ""}</button>
                             <div className="mt-3 flex flex-wrap gap-1">
                               {canPlan ? (
                                 <Button
@@ -2296,7 +2450,7 @@ export function OperationsSection({
                           </article>
                         );
                       })}
-                      {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin actividades</p> : null}
+                      {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin trabajos en esta vista</p> : null}
                     </div>
                   </section>
                   );
@@ -2309,7 +2463,7 @@ export function OperationsSection({
                 actionLabel={canPlan ? "Agregar actividad" : undefined}
                 icon={CalendarRange}
                 onAction={canPlan ? openNewActivity : undefined}
-                title={canPlan ? "La semana todavía no tiene actividades." : "No tienes actividades asignadas esta semana."}
+                title={canPlan ? "La semana todavía no tiene trabajos de este tipo." : "No tienes trabajos asignados de este tipo."}
               />
             </div>
           )}
@@ -2366,6 +2520,15 @@ export function OperationsSection({
         onSave={completeHarvest}
         saving={completing}
         task={harvestTask}
+      />
+
+      <WorkEvidenceModal
+        evidence={evidenceTask ? evidenceForTask(evidenceTask.id) : []}
+        onClose={() => setEvidenceTask(null)}
+        onOpenEvidence={openEvidence}
+        onSave={saveEvidence}
+        saving={saving}
+        task={evidenceTask}
       />
 
       <Modal open={Boolean(blockedTask)} onClose={() => { setBlockedTask(null); setBlockedReason(""); }} title="Reportar bloqueo">

@@ -41,7 +41,7 @@ export async function uploadPrivateCompanyFile({
   supabase,
   type
 }: {
-  bucket: "pest-photos" | "technical-lab-files";
+  bucket: "pest-photos" | "technical-lab-files" | "work-evidence";
   companyId: string;
   file: File;
   supabase: SupabaseClient<any>;
@@ -66,7 +66,7 @@ export async function createPrivateCompanyFileUrl({
   path,
   supabase
 }: {
-  bucket: "pest-photos" | "technical-lab-files";
+  bucket: "pest-photos" | "technical-lab-files" | "work-evidence";
   expiresInSeconds?: number;
   path: string;
   supabase: SupabaseClient<any>;

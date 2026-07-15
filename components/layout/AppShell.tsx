@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Building2,
+  CalendarDays,
   CheckCircle2,
   CloudSun,
   Clock3,
@@ -1057,24 +1058,18 @@ const technicalRecordTabs: Array<{ id: TechnicalRecordTab; label: string }> = [
 
 function TechnicalRecordsSection() {
   const [activeRecord, setActiveRecord] = useState<TechnicalRecordTab>("applications");
-  const openModal = useGreenhouseStore((state) => state.openModal);
-  const manualRecordCopy: Record<TechnicalRecordTab, { label: string; modal: "application" | "nutrition" | "irrigation" | "harvest" }> = {
-    applications: { label: "Registrar aplicación", modal: "application" },
-    nutrition: { label: "Registrar nutrición", modal: "nutrition" },
-    irrigation: { label: "Registrar riego", modal: "irrigation" }
-  };
-  const manualRecord = manualRecordCopy[activeRecord];
+  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
 
   return (
     <section>
       <SectionHeader
         action={(
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal(manualRecord.modal)} variant="secondary">
-            {manualRecord.label}
+          <Button icon={<CalendarDays className="h-4 w-4" />} onClick={() => setActiveSection("calendar")} variant="secondary">
+            Ir a Operación
           </Button>
         )}
         title="Registros técnicos"
-        description="Consulta lo que ya fue realizado. Las nuevas actividades se programan y se completan desde Operación."
+        description="Consulta los resultados de Work ya realizados. Las nuevas capturas se crean o completan desde Operación."
       />
       <div className="mb-7 border-y border-app-border py-3">
         <div className="flex flex-wrap gap-2">
@@ -1089,7 +1084,7 @@ function TechnicalRecordsSection() {
           ))}
         </div>
         <p className="mt-3 text-xs leading-5 text-app-muted">
-          Lo programado se guarda aquí al completarse en Operación. Usa la captura manual únicamente para trabajos que no se programaron a tiempo.
+          Cada registro proviene de un Work. Si algo no se planeó, créalo como trabajo no planeado desde Operación; evita capturarlo de nuevo aquí.
         </p>
       </div>
       {activeRecord === "applications" ? <ApplicationsSection embedded /> : null}
@@ -2251,30 +2246,27 @@ function ActiveSection(props: CopilotSurfaceProps) {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const canOpenSection = navigationItemsForRole(currentUser.role).some((item) => item.id === activeSection);
+  const operationProps = {
+    copilotInsights: props.copilotInsights,
+    operationRefreshKey: props.operationRefreshKey,
+    pendingCompletionTask: props.pendingCompletionTask,
+    onPendingCompletionConsumed: props.onPendingCompletionConsumed,
+    onCreateCopilotTask: props.onCreateCopilotTask,
+    onPrepareCopilotMessage: props.onPrepareCopilotMessage
+  };
 
   if (!canOpenSection) return <OverviewSection {...props} />;
 
   if (activeSection === "overview") return <OverviewSection {...props} />;
   if (activeSection === "greenhouses") return <GreenhousesSection />;
-  if (activeSection === "calendar") {
-    return (
-      <OperationsSection
-        copilotInsights={props.copilotInsights}
-        operationRefreshKey={props.operationRefreshKey}
-        pendingCompletionTask={props.pendingCompletionTask}
-        onPendingCompletionConsumed={props.onPendingCompletionConsumed}
-        onCreateCopilotTask={props.onCreateCopilotTask}
-        onPrepareCopilotMessage={props.onPrepareCopilotMessage}
-      />
-    );
-  }
+  if (activeSection === "calendar") return <OperationsSection {...operationProps} />;
   if (activeSection === "monitoring") return <MonitoringSection />;
   if (activeSection === "records") return <TechnicalRecordsSection />;
-  if (activeSection === "irrigation") return <IrrigationSection />;
-  if (activeSection === "nutrition") return <NutritionSection />;
-  if (activeSection === "applications") return <ApplicationsSection />;
+  if (activeSection === "irrigation") return <OperationsSection {...operationProps} specialtyLabel="Riego" workTypeFilter={["riego"]} />;
+  if (activeSection === "nutrition") return <OperationsSection {...operationProps} specialtyLabel="Nutrición" workTypeFilter={["fertirriego", "fertilizacion"]} />;
+  if (activeSection === "applications") return <OperationsSection {...operationProps} specialtyLabel="Aplicaciones" workTypeFilter={["aplicacion_foliar"]} />;
   if (activeSection === "pests") return <PestsSection />;
-  if (activeSection === "harvest") return <HarvestSection />;
+  if (activeSection === "harvest") return <OperationsSection {...operationProps} specialtyLabel="Cosecha" workTypeFilter={["cosecha"]} />;
   if (activeSection === "inventory") return <InventorySection />;
   if (activeSection === "costs") return <CostsSection />;
   if (activeSection === "reports") return <ReportsSection />;
