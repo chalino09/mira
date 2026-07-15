@@ -1560,8 +1560,7 @@ export function OperationsSection({
         .from("tasks")
         .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
         .eq("company_id", organization.id)
-        .gte("scheduled_date", weekStartKey)
-        .lte("scheduled_date", weekEndKey)
+        .or(`and(scheduled_date.gte.${weekStartKey},scheduled_date.lte.${weekEndKey}),and(scheduled_date.lt.${todayKey},status.in.(pendiente,en_progreso,bloqueada))`)
         .order("scheduled_date", { ascending: true })
         .order("scheduled_time", { ascending: true }),
       supabase
@@ -1648,7 +1647,7 @@ export function OperationsSection({
       detail: person.phone ?? "Sin cuenta"
     })));
     setLoading(false);
-  }, [organization.id, weekEndKey, weekStartKey]);
+  }, [organization.id, todayKey, weekEndKey, weekStartKey]);
 
   useEffect(() => {
     loadOperations();
@@ -2182,7 +2181,13 @@ export function OperationsSection({
     }
   };
 
-  const scopedTasks = workTypeFilter?.length ? tasks.filter((task) => workTypeFilter.includes(task.type)) : tasks;
+  const weekTasks = tasks.filter((task) => task.scheduled_date >= weekStartKey && task.scheduled_date <= weekEndKey);
+  const scopedTasks = workTypeFilter?.length ? weekTasks.filter((task) => workTypeFilter.includes(task.type)) : weekTasks;
+  const globalOverdueTasks = tasks.filter((task) =>
+    task.scheduled_date < todayKey
+    && ["pendiente", "en_progreso", "bloqueada"].includes(task.status)
+    && (!workTypeFilter?.length || workTypeFilter.includes(task.type))
+  );
   const completedCount = scopedTasks.filter((task) => ["completada", "verificada"].includes(task.status)).length;
   const blockedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
   const todayCount = scopedTasks.filter((task) => task.scheduled_date === todayKey && !["completada", "verificada", "cancelada"].includes(task.status)).length;
@@ -2196,7 +2201,7 @@ export function OperationsSection({
     history: ["verificada", "cancelada"]
   };
   const visibleTasks = scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
-  const overdueCount = scopedTasks.filter((task) => task.scheduled_date < todayKey && ["pendiente", "en_progreso", "bloqueada"].includes(task.status)).length;
+  const overdueCount = globalOverdueTasks.length;
   const blockedScopedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
   const awaitingVerificationCount = scopedTasks.filter((task) => task.status === "completada").length;
   const operationViews: Array<{ id: OperationView; label: string; count: number }> = [
@@ -2316,7 +2321,35 @@ export function OperationsSection({
             </div>
           ) : null}
 
-          {canPlan && plan && tasks.length ? (
+          {globalOverdueTasks.length ? (
+            <section className="border-b border-app-border py-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Atención operativa</p>
+                  <h2 className="mt-2 text-xl font-light text-app-text">Trabajos vencidos</h2>
+                </div>
+                <p className="text-xs text-app-muted">Se muestran aunque pertenezcan a semanas anteriores.</p>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {globalOverdueTasks.map((task) => (
+                  <article className="flex flex-col gap-3 border border-[#E3BDBD] bg-[#FFF9F8] p-4 lg:flex-row lg:items-center lg:justify-between" key={task.id}>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2"><StatusBadge tone="red">Vencido</StatusBadge><span className="text-xs text-app-muted">{formatDate(task.scheduled_date)} · {activityLabel(task)}</span></div>
+                      <p className="mt-2 text-sm font-medium text-app-text">{task.title}</p>
+                      <p className="mt-1 text-xs text-app-muted">{greenhouseName(task.greenhouse_id)}{task.blocked_reason ? ` · ${task.blocked_reason}` : ""}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
+                      {task.status !== "en_progreso" ? <Button disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} variant="ghost">Iniciar opcional</Button> : null}
+                      <Button icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title="Adjuntar evidencia opcional" variant="ghost">Evidencia</Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {canPlan && plan && weekTasks.length ? (
             <div className="flex flex-col gap-3 border-b border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-app-muted">
                 {plan.status === "published"
@@ -2416,7 +2449,6 @@ export function OperationsSection({
                             ) : null}
                             {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
                             {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
-                            <button className="mt-3 flex items-center gap-1.5 text-xs font-medium text-app-green" onClick={() => setEvidenceTask(task)} type="button"><Paperclip className="h-3.5 w-3.5" />Evidencia{evidenceForTask(task.id).length ? ` · ${evidenceForTask(task.id).length}` : ""}</button>
                             <div className="mt-3 flex flex-wrap gap-1">
                               {canPlan ? (
                                 <Button
@@ -2428,15 +2460,16 @@ export function OperationsSection({
                                   variant="ghost"
                                 />
                               ) : null}
-                              {["pendiente", "bloqueada"].includes(task.status) ? (
-                                <Button aria-label={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar trabajo"} className="h-8 w-8 px-0" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar trabajo"} variant="ghost" />
-                              ) : null}
                               {["pendiente", "en_progreso"].includes(task.status) ? (
                                 <>
                                   <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
-                                  <Button aria-label="Completar actividad" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} title="Completar actividad" variant="ghost" />
+                                  <Button disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
                                 </>
                               ) : null}
+                              {["pendiente", "bloqueada"].includes(task.status) ? (
+                                <Button disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar sólo si seguirá en curso"} variant="ghost">{task.status === "bloqueada" ? "Reanudar" : "Iniciar"}</Button>
+                              ) : null}
+                              <Button aria-label="Adjuntar evidencia opcional" className="h-8 w-8 px-0" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost" />
                               {canPlan && task.status === "completada" ? (
                                 <>
                                   <Button aria-label="Verificar trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} title="Verificar trabajo" variant="ghost" />
