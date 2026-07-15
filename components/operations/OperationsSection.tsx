@@ -1526,6 +1526,7 @@ export function OperationsSection({
   const [reopenReason, setReopenReason] = useState("");
   const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
   const [operationView, setOperationView] = useState<OperationView>("plan");
+  const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
 
   const canPlan = currentUser.role === "owner" || currentUser.role === "admin";
@@ -2315,7 +2316,7 @@ export function OperationsSection({
 
           {overdueCount || blockedScopedCount || awaitingVerificationCount ? (
             <div className="grid gap-2 border-b border-app-border py-4 md:grid-cols-3">
-              {overdueCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOperationView("execution")} type="button"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{overdueCount}</strong> trabajo{overdueCount === 1 ? "" : "s"} con fecha vencida</span></button> : null}
+              {overdueCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOverdueExpanded(true)} type="button"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{overdueCount}</strong> trabajo{overdueCount === 1 ? "" : "s"} con fecha vencida</span></button> : null}
               {blockedScopedCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOperationView("execution")} type="button"><Ban className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{blockedScopedCount}</strong> bloqueo{blockedScopedCount === 1 ? "" : "s"} por resolver</span></button> : null}
               {awaitingVerificationCount ? <button className="flex items-start gap-2 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-left" onClick={() => setOperationView("verification")} type="button"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-app-green" /><span className="text-sm text-app-green"><strong>{awaitingVerificationCount}</strong> trabajo{awaitingVerificationCount === 1 ? "" : "s"} esperando verificación</span></button> : null}
             </div>
@@ -2326,11 +2327,12 @@ export function OperationsSection({
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Atención operativa</p>
-                  <h2 className="mt-2 text-xl font-light text-app-text">Trabajos vencidos</h2>
+                  <h2 className="mt-2 text-xl font-light text-app-text">{overdueCount} trabajo{overdueCount === 1 ? "" : "s"} vencido{overdueCount === 1 ? "" : "s"}</h2>
                 </div>
-                <p className="text-xs text-app-muted">Se muestran aunque pertenezcan a semanas anteriores.</p>
+                <Button onClick={() => setOverdueExpanded((current) => !current)} variant="secondary">{overdueExpanded ? "Ocultar vencidos" : "Ver vencidos"}</Button>
               </div>
-              <div className="mt-4 grid gap-3">
+              <p className="mt-2 text-xs text-app-muted">Se muestran sólo cuando su fecha ya pasó, aunque pertenezcan a semanas anteriores.</p>
+              {overdueExpanded ? <div className="mt-4 grid gap-3">
                 {globalOverdueTasks.map((task) => (
                   <article className="flex flex-col gap-3 border border-[#E3BDBD] bg-[#FFF9F8] p-4 lg:flex-row lg:items-center lg:justify-between" key={task.id}>
                     <div className="min-w-0">
@@ -2345,7 +2347,7 @@ export function OperationsSection({
                     </div>
                   </article>
                 ))}
-              </div>
+              </div> : null}
             </section>
           ) : null}
 
