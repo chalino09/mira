@@ -43,6 +43,7 @@ const knownMessages: Record<string, string> = {
   technical_completion_required: "Este trabajo requiere sus datos técnicos antes de completarse.",
   work_reopen_reason_required: "Escribe el motivo para reabrir el trabajo.",
   inventory_item_name_required: "Escribe el nombre del artículo.",
+  invalid_inventory_product: "El producto seleccionado ya no está disponible en el catálogo.",
   inventory_unit_required: "Indica la unidad base del artículo.",
   inventory_quantity_required: "Indica una cantidad mayor a cero.",
   inventory_receipt_quantity_invalid: "La entrada debe tener una cantidad positiva.",

@@ -14,6 +14,7 @@ import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 
 type InventoryItem = {
   id: string;
+  product_id: string | null;
   name: string;
   base_unit: string;
   kind: "material" | "water" | "energy" | "labor";
@@ -68,6 +69,8 @@ export function InventorySection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeForm, setActiveForm] = useState<InventoryForm>(null);
+  const [entryTarget, setEntryTarget] = useState("");
+  const [entryUnit, setEntryUnit] = useState("");
   const canManage = currentUser.role === "owner" || currentUser.role === "admin";
 
   const loadInventory = useCallback(async () => {
@@ -75,9 +78,9 @@ export function InventorySection() {
     if (!supabase || !organization.id) return;
     setLoading(true);
     const [itemsResponse, productsResponse, balancesResponse, movementsResponse] = await Promise.all([
-      supabase.from("inventory_items").select("id, name, base_unit, kind, cost_category").eq("company_id", organization.id).eq("is_active", true).order("name"),
+      supabase.from("inventory_items").select("id, product_id, name, base_unit, kind, cost_category").eq("company_id", organization.id).eq("is_active", true).order("name"),
       supabase.from("products").select("id, name").eq("company_id", organization.id).order("name"),
-      supabase.from("inventory_balances").select("id, quantity, average_unit_cost, inventory_item:inventory_items(id, name, base_unit, kind, cost_category)").eq("company_id", organization.id).order("updated_at", { ascending: false }),
+      supabase.from("inventory_balances").select("id, quantity, average_unit_cost, inventory_item:inventory_items(id, product_id, name, base_unit, kind, cost_category)").eq("company_id", organization.id).order("updated_at", { ascending: false }),
       supabase.from("inventory_movements").select("id, movement_type, quantity, unit_cost, occurred_at, note, inventory_item:inventory_items(name, base_unit)").eq("company_id", organization.id).order("created_at", { ascending: false }).limit(20)
     ]);
     const error = itemsResponse.error ?? productsResponse.error ?? balancesResponse.error ?? movementsResponse.error;
@@ -102,6 +105,25 @@ export function InventorySection() {
   useEffect(() => { void loadInventory(); }, [loadInventory]);
 
   const totalValue = useMemo(() => balances.reduce((sum, balance) => sum + Number(balance.quantity) * Number(balance.average_unit_cost), 0), [balances]);
+  const selectedEntryProductId = entryTarget.startsWith("product:") ? entryTarget.slice("product:".length) : null;
+  const selectedEntryItemId = entryTarget.startsWith("item:") ? entryTarget.slice("item:".length) : null;
+  const selectedEntryItem = selectedEntryProductId
+    ? items.find((item) => item.product_id === selectedEntryProductId)
+    : items.find((item) => item.id === selectedEntryItemId);
+  const manualItems = items.filter((item) => !item.product_id);
+
+  const openEntry = () => {
+    setEntryTarget("");
+    setEntryUnit("");
+    setActiveForm("entry");
+  };
+
+  const selectEntryTarget = (value: string) => {
+    setEntryTarget(value);
+    const productId = value.startsWith("product:") ? value.slice("product:".length) : null;
+    const itemId = value.startsWith("item:") ? value.slice("item:".length) : null;
+    setEntryUnit(productId ? items.find((item) => item.product_id === productId)?.base_unit ?? "" : items.find((item) => item.id === itemId)?.base_unit ?? "");
+  };
 
   const run = async (callback: () => Promise<void>) => {
     setSaving(true);
@@ -139,17 +161,21 @@ export function InventorySection() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     void run(async () => {
-      const { error } = await getSupabaseBrowserClient()!.rpc("receive_inventory", {
+      const common = {
         target_company_id: organization.id,
-        target_item_id: String(form.get("itemId") ?? ""),
         target_quantity: Number(form.get("quantity")),
         target_unit_cost: Number(form.get("unitCost")),
         target_occurred_at: String(form.get("date") ?? ""),
         target_idempotency_key: requestKey("receipt"),
         target_note: String(form.get("note") ?? "") || null
-      });
+      };
+      const { error } = selectedEntryProductId
+        ? await getSupabaseBrowserClient()!.rpc("receive_product_inventory", { ...common, target_product_id: selectedEntryProductId, target_base_unit: entryUnit })
+        : await getSupabaseBrowserClient()!.rpc("receive_inventory", { ...common, target_item_id: selectedEntryItemId });
       if (error) throw error;
       event.currentTarget.reset();
+      setEntryTarget("");
+      setEntryUnit("");
       setActiveForm(null);
       setNotice({ tone: "green", message: "Entrada registrada y costo promedio actualizado." });
     });
@@ -214,8 +240,8 @@ export function InventorySection() {
           <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar un Work.</p>
         </div>
         {canManage ? <div className="flex flex-wrap gap-2">
-          <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={() => setActiveForm("entry")} variant="primary">Registrar entrada</Button>
-          <Button onClick={() => setActiveForm("item")} variant="secondary">Nuevo producto</Button>
+          <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={openEntry} variant="primary">Registrar entrada</Button>
+          <Button onClick={() => setActiveForm("item")} variant="secondary">Otro recurso</Button>
           <Button onClick={() => setActiveForm("adjustment")} variant="ghost">Ajustar</Button>
         </div> : null}
       </div>
@@ -230,27 +256,30 @@ export function InventorySection() {
 
       <Modal open={activeForm === "entry"} onClose={() => setActiveForm(null)} title="Registrar entrada" panelClassName="sm:max-w-xl">
         <form className="grid gap-5" onSubmit={receive}>
-          {items.length ? <>
-            <Field label="Artículo"><SelectInput name="itemId" required defaultValue=""><option disabled value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.base_unit}</option>)}</SelectInput></Field>
+          {products.length || manualItems.length ? <>
+            <p className="text-sm leading-6 text-app-muted">Elige un producto de Aplicaciones. Se agrega al almacén automáticamente con su primera entrada.</p>
+            <Field label="Producto"><SelectInput name="entryTarget" onChange={(event) => selectEntryTarget(event.target.value)} required value={entryTarget}><option disabled value="">Selecciona</option>{products.length ? <optgroup label="Productos de Aplicaciones">{products.map((product) => <option key={product.id} value={`product:${product.id}`}>{product.name}</option>)}</optgroup> : null}{manualItems.length ? <optgroup label="Otros recursos">{manualItems.map((item) => <option key={item.id} value={`item:${item.id}`}>{item.name}</option>)}</optgroup> : null}</SelectInput></Field>
             <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={selectedEntryItem ? "Unidad" : "Unidad (primera entrada)"}><TextInput name="unit" onChange={(event) => setEntryUnit(event.target.value)} placeholder="kg, L, h" readOnly={Boolean(selectedEntryItem)} required value={entryUnit} /></Field>
               <Field label="Cantidad"><FormattedNumberInput min="0.0001" name="quantity" required /></Field>
-              <Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field>
             </div>
-            <Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field>
+              <Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field>
+            </div>
             <Field label="Nota (opcional)"><TextInput name="note" placeholder="Proveedor, lote o referencia" /></Field>
-          </> : <p className="text-sm leading-6 text-app-muted">Primero agrega el producto que recibiste al almacén.</p>}
+          </> : <p className="text-sm leading-6 text-app-muted">No hay productos disponibles todavía.</p>}
           <div className="flex justify-end gap-2 border-t border-app-border pt-4">
             <Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button>
-            {items.length ? <Button disabled={saving} type="submit" variant="primary">Registrar entrada</Button> : <Button onClick={() => setActiveForm("item")} type="button" variant="primary">Agregar producto</Button>}
+            {products.length || manualItems.length ? <Button disabled={saving || !entryTarget} type="submit" variant="primary">Registrar entrada</Button> : <Button onClick={() => setActiveForm("item")} type="button" variant="primary">Agregar recurso</Button>}
           </div>
         </form>
       </Modal>
 
-      <Modal open={activeForm === "item"} onClose={() => setActiveForm(null)} title="Nuevo producto de inventario" panelClassName="sm:max-w-xl">
+      <Modal open={activeForm === "item"} onClose={() => setActiveForm(null)} title="Otro recurso de inventario" panelClassName="sm:max-w-xl">
         <form className="grid gap-5" onSubmit={createItem}>
-          <p className="text-sm leading-6 text-app-muted">Vincúlalo al catálogo únicamente si debe descontarse automáticamente al completar un Work.</p>
-          <Field label="Nombre"><TextInput name="name" placeholder="Ej. Fertilizante A" required /></Field>
-          <Field label="Producto del catálogo (opcional)"><SelectInput defaultValue="" name="productId"><option value="">No vincular</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectInput></Field>
+          <p className="text-sm leading-6 text-app-muted">Úsalo para agua, energía, mano de obra u otro recurso que no provenga del catálogo de Aplicaciones.</p>
+          <Field label="Nombre"><TextInput name="name" placeholder="Ej. Agua de riego" required /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Unidad"><TextInput name="unit" placeholder="kg, L, h" required /></Field>
             <Field label="Tipo"><SelectInput defaultValue="material" name="kind"><option value="material">Material</option><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
