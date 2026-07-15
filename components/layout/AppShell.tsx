@@ -19,6 +19,7 @@ import {
   Plus,
   Ruler,
   Save,
+  Search,
   ShieldCheck,
   Sprout,
   Thermometer,
@@ -53,7 +54,7 @@ import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
-import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute } from "@/lib/routes";
+import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
 import {
   buildCopilotPulse,
@@ -64,6 +65,8 @@ import {
   type CopilotSuggestedAction
 } from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
+import { loadWorkspaceViewData, requiresWorkspaceViewData } from "@/lib/view-data";
+import { cacheViewData, getCachedViewData, invalidateViewDataCache } from "@/lib/view-data-cache";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFile } from "@/lib/storage";
@@ -197,18 +200,62 @@ function useFilteredData() {
   };
 }
 
-function dateLabel(date: string) {
-  return formatDate(date).replace(".", "");
+function useListNavigation() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const organization = useGreenhouseStore((state) => state.organization);
+  const route = useMemo(() => parseAppRoute(pathname, new URLSearchParams(searchParams.toString())), [pathname, searchParams]);
+  const updateList = useCallback((patch: Partial<ListQueryState>) => {
+    router.push(appRoute(organization.slug ?? organization.name, {
+      section: route.section,
+      greenhouseId: route.greenhouseId,
+      period: route.period,
+      weekStart: route.weekStart,
+      list: { ...route.list, ...patch }
+    }));
+  }, [organization.name, organization.slug, route, router]);
+  return { list: route.list ?? {}, updateList };
 }
 
-function costByCategory(costs: CostRecord[]) {
-  return Object.values(
-    costs.reduce<Record<string, { category: string; amount: number }>>((acc, cost) => {
-      acc[cost.category] = acc[cost.category] ?? { category: cost.category, amount: 0 };
-      acc[cost.category].amount += cost.amount;
-      return acc;
-    }, {})
+function ListToolbar({ children, query, onSearch }: { children?: React.ReactNode; query?: string; onSearch: (query: string) => void }) {
+  const [value, setValue] = useState(query ?? "");
+  useEffect(() => setValue(query ?? ""), [query]);
+  return (
+    <div className="mb-5 flex flex-col gap-3 border-y border-app-border py-3 sm:flex-row sm:items-center">
+      <form
+        className="flex min-w-0 flex-1 items-center gap-2"
+        onSubmit={(event) => { event.preventDefault(); onSearch(value.trim()); }}
+      >
+        <Search className="h-4 w-4 shrink-0 text-app-muted" />
+        <TextInput aria-label="Buscar en la vista" className="h-10" onChange={(event) => setValue(event.target.value)} placeholder="Buscar en esta vista" value={value} />
+        <Button className="h-10" type="submit" variant="secondary">Buscar</Button>
+        {query ? <Button className="h-10" onClick={() => { setValue(""); onSearch(""); }} type="button" variant="ghost">Limpiar</Button> : null}
+      </form>
+      {children ? <div className="flex flex-wrap gap-2">{children}</div> : null}
+    </div>
   );
+}
+
+function ListPagination({ page, pageSize, total, onPageChange }: { page: number; pageSize: number; total: number; onPageChange: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    if (page > pages) onPageChange(pages);
+  }, [onPageChange, page, pages]);
+  return (
+    <div className="mt-5 flex flex-col gap-3 border-y border-app-border py-3 text-xs text-app-muted sm:flex-row sm:items-center sm:justify-between">
+      <p>{total === 0 ? "0 registros" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} de ${total}`}</p>
+      <div className="flex items-center gap-2">
+        <Button disabled={page <= 1} onClick={() => onPageChange(page - 1)} variant="secondary">Anterior</Button>
+        <span>Página {page} de {pages}</span>
+        <Button disabled={page >= pages} onClick={() => onPageChange(page + 1)} variant="secondary">Siguiente</Button>
+      </div>
+    </div>
+  );
+}
+
+function dateLabel(date: string) {
+  return formatDate(date).replace(".", "");
 }
 
 async function completeTaskRecord(taskId: string, completeTask: (id: string, status?: Task["status"]) => void, updateNote?: string | null) {
@@ -697,7 +744,8 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
 }
 
 function IrrigationSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseIrrigation, openModal } = useFilteredData();
+  const { greenhouseIrrigation, openModal, viewDataMeta } = useFilteredData();
+  const { list, updateList } = useListNavigation();
   const totalLiters = greenhouseIrrigation.reduce((sum, record) => sum + record.liters, 0);
   const averageDuration = greenhouseIrrigation.length
     ? Math.round(greenhouseIrrigation.reduce((sum, record) => sum + record.durationMin, 0) / greenhouseIrrigation.length)
@@ -734,15 +782,19 @@ function IrrigationSection({ embedded = false }: { embedded?: boolean }) {
         <IrrigationChart data={irrigationChartData} />
         <DataTable<IrrigationRecord>
           columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
-            { key: "duration", label: "Duración", render: (item) => `${item.durationMin} min` },
-            { key: "liters", label: "Litros", render: (item) => formatNumber(item.liters) },
+            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
+            { key: "duration", label: "Duración", render: (item) => `${item.durationMin} min`, sortable: embedded },
+            { key: "liters", label: "Litros", render: (item) => formatNumber(item.liters), sortable: embedded },
             { key: "sector", label: "Sector", render: (item) => item.sector },
             { key: "ph", label: "pH", render: (item) => item.ph ?? "--" },
             { key: "ec", label: "CE", render: (item) => item.ec ?? "--" },
             { key: "responsible", label: "Responsable", render: (item) => item.responsible }
           ]}
           data={greenhouseIrrigation}
+          getRowKey={(item) => item.id}
+          sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
+          onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
+          pagination={embedded && viewDataMeta?.resource === "irrigation" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
         />
       </div>
     </section>
@@ -750,7 +802,8 @@ function IrrigationSection({ embedded = false }: { embedded?: boolean }) {
 }
 
 function NutritionSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseNutrition, openModal } = useFilteredData();
+  const { greenhouseNutrition, openModal, viewDataMeta } = useFilteredData();
+  const { list, updateList } = useListNavigation();
   const latestNutrition = greenhouseNutrition[0];
   const averagePh = greenhouseNutrition.length
     ? greenhouseNutrition.reduce((sum, record) => sum + record.ph, 0) / greenhouseNutrition.length
@@ -773,14 +826,18 @@ function NutritionSection({ embedded = false }: { embedded?: boolean }) {
         </div>
         <DataTable<NutritionRecord>
           columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
-            { key: "product", label: "Producto", render: (item) => item.product },
+            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
+            { key: "product", label: "Producto", render: (item) => item.product, sortable: embedded },
             { key: "dose", label: "Dosis", render: (item) => item.dose },
-            { key: "method", label: "Método", render: (item) => item.method },
+            { key: "method", label: "Método", render: (item) => item.method, sortable: embedded },
             { key: "objective", label: "Objetivo", render: (item) => item.objective },
             { key: "ph", label: "pH / CE", render: (item) => `${item.ph} / ${item.ec}` }
           ]}
           data={greenhouseNutrition}
+          getRowKey={(item) => item.id}
+          sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
+          onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
+          pagination={embedded && viewDataMeta?.resource === "nutrition" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
         />
       </div>
     </section>
@@ -788,7 +845,8 @@ function NutritionSection({ embedded = false }: { embedded?: boolean }) {
 }
 
 function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseApplications, openModal } = useFilteredData();
+  const { greenhouseApplications, openModal, viewDataMeta } = useFilteredData();
+  const { list, updateList } = useListNavigation();
 
   return (
     <section>
@@ -801,15 +859,19 @@ function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
       ) : null}
       <DataTable<ApplicationRecord>
         columns={[
-          { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
-          { key: "category", label: "Tipo", render: (item) => <StatusBadge tone="green">{item.category}</StatusBadge> },
-          { key: "product", label: "Producto", render: (item) => item.product },
+          { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
+          { key: "category", label: "Tipo", render: (item) => <StatusBadge tone="green">{item.category}</StatusBadge>, sortable: embedded },
+          { key: "product", label: "Producto", render: (item) => item.product, sortable: embedded },
           { key: "composition", label: "Composición", render: (item) => item.composition },
           { key: "dose", label: "Dosis", render: (item) => item.dose },
           { key: "area", label: "Área", render: (item) => item.area },
           { key: "safety", label: "Cosecha / reentrada", render: (item) => `${item.safetyInterval || "--"} · ${item.reentry || "--"}` }
         ]}
         data={greenhouseApplications}
+        getRowKey={(item) => item.id}
+        sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
+        onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
+        pagination={embedded && viewDataMeta?.resource === "applications" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
       />
     </section>
   );
@@ -822,8 +884,10 @@ function PestsSection() {
     greenhousePests,
     openModal,
     organization,
-    updatePest
+    updatePest,
+    viewDataMeta
   } = useFilteredData();
+  const { list, updateList } = useListNavigation();
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [editingAlert, setEditingAlert] = useState<PestAlert | null>(null);
   const [followingAlert, setFollowingAlert] = useState<PestAlert | null>(null);
@@ -997,6 +1061,33 @@ function PestsSection() {
         description="Monitoreo sanitario, incidencia, zonas afectadas, acciones tomadas, seguimiento y reaplicación."
       />
       {notice ? <InlineNotice tone={notice.tone}>{notice.message}</InlineNotice> : null}
+      <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
+        <SelectInput aria-label="Estado sanitario" className="h-10" value={list.status ?? ""} onChange={(event) => updateList({ status: event.target.value || undefined, page: undefined })}>
+          <option value="">Todos los estados</option>
+          <option value="open">Abierta</option>
+          <option value="review_required">Revisión requerida</option>
+          <option value="in_management">En manejo</option>
+          <option value="under_watch">Bajo vigilancia</option>
+          <option value="sanitary_close">Cierre sanitario</option>
+        </SelectInput>
+        <SelectInput aria-label="Incidencia sanitaria" className="h-10" value={list.severity ?? ""} onChange={(event) => updateList({ severity: event.target.value || undefined, page: undefined })}>
+          <option value="">Todas las incidencias</option>
+          <option value="baja">Baja</option>
+          <option value="media">Media</option>
+          <option value="alta">Alta</option>
+        </SelectInput>
+        <SelectInput
+          aria-label="Orden sanitario"
+          className="h-10"
+          value={`${list.sort ?? "date"}:${list.dir ?? "desc"}`}
+          onChange={(event) => { const [sort, dir] = event.target.value.split(":"); updateList({ sort, dir: dir as "asc" | "desc", page: undefined }); }}
+        >
+          <option value="date:desc">Más recientes</option>
+          <option value="date:asc">Más antiguos</option>
+          <option value="problem:asc">Problema A–Z</option>
+          <option value="severity:desc">Mayor incidencia</option>
+        </SelectInput>
+      </ListToolbar>
       {greenhousePests.length ? (
         <div className="grid gap-6">
           {greenhousePests.map((alert) => (
@@ -1104,6 +1195,7 @@ function PestsSection() {
       ) : (
         <EmptyState icon={AlertTriangle} title="No hay alertas sanitarias para esta área productiva." />
       )}
+      {viewDataMeta?.resource === "pests" ? <ListPagination {...viewDataMeta} onPageChange={(page) => updateList({ page })} /> : null}
       <Modal title="Editar alerta sanitaria" open={Boolean(editingAlert)} onClose={() => setEditingAlert(null)}>
         {editingAlert ? (
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleEditAlert}>
@@ -1283,7 +1375,8 @@ const technicalRecordTabs: Array<{ id: TechnicalRecordTab; label: string }> = [
 ];
 
 function TechnicalRecordsSection() {
-  const [activeRecord, setActiveRecord] = useState<TechnicalRecordTab>("applications");
+  const { list, updateList } = useListNavigation();
+  const activeRecord: TechnicalRecordTab = list.tab ?? "applications";
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
 
   return (
@@ -1302,7 +1395,7 @@ function TechnicalRecordsSection() {
           {technicalRecordTabs.map((tab) => (
             <Button
               key={tab.id}
-              onClick={() => setActiveRecord(tab.id)}
+              onClick={() => updateList({ tab: tab.id, page: undefined, sort: undefined, dir: undefined })}
               variant={activeRecord === tab.id ? "primary" : "ghost"}
             >
               {tab.label}
@@ -1313,6 +1406,7 @@ function TechnicalRecordsSection() {
           Cada registro proviene de un Work. Si algo no se planeó, créalo como trabajo no planeado desde Operación; evita capturarlo de nuevo aquí.
         </p>
       </div>
+      <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })} />
       {activeRecord === "applications" ? <ApplicationsSection embedded /> : null}
       {activeRecord === "nutrition" ? <NutritionSection embedded /> : null}
       {activeRecord === "irrigation" ? <IrrigationSection embedded /> : null}
@@ -1321,11 +1415,12 @@ function TechnicalRecordsSection() {
 }
 
 function CostsSection() {
-  const { greenhouse, greenhouseCosts, greenhouseHarvest, openModal } = useFilteredData();
-  const totalCost = greenhouseCosts.reduce((sum, item) => sum + item.amount, 0);
-  const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
+  const { costListRecords, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
+  const { list, updateList } = useListNavigation();
+  const totalCost = viewAggregates?.totalCost ?? 0;
+  const totalKg = viewAggregates?.totalHarvestKg ?? 0;
   const costPerKg = totalKg ? totalCost / totalKg : 0;
-  const costChartData = costByCategory(greenhouseCosts);
+  const costChartData = viewAggregates?.costByCategory ?? [];
   const budgetAmount = greenhouse?.budgetAmount ?? null;
   const remainingBudget = budgetAmount === null ? null : budgetAmount - totalCost;
   const budgetUsed = budgetAmount && budgetAmount > 0 ? Math.min(100, Math.round((totalCost / budgetAmount) * 100)) : null;
@@ -1342,6 +1437,18 @@ function CostsSection() {
           Presupuesto del ciclo pendiente de configurar. Puedes seguir operando y capturando costos; cuando lo agregues al área productiva se activará el comparativo.
         </div>
       ) : null}
+      <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
+        <SelectInput aria-label="Categoría de costo" className="h-10" value={list.status ?? ""} onChange={(event) => updateList({ status: event.target.value || undefined, page: undefined })}>
+          <option value="">Todas las categorías</option>
+          <option value="mano_obra">Mano de obra</option>
+          <option value="fertilizantes">Fertilizantes</option>
+          <option value="agroinsumos">Agroinsumos</option>
+          <option value="agua">Agua</option>
+          <option value="energia">Energía</option>
+          <option value="mantenimiento">Mantenimiento</option>
+          <option value="transporte">Transporte</option>
+        </SelectInput>
+      </ListToolbar>
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
         <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en área" : `${budgetUsed}% usado`} tone="soft" />
@@ -1352,12 +1459,16 @@ function CostsSection() {
         <CostChart data={costChartData} />
         <DataTable<CostRecord>
           columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
-            { key: "category", label: "Categoría", render: (item) => item.category },
-            { key: "amount", label: "Monto", render: (item) => formatCurrency(item.amount) },
+            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: true },
+            { key: "category", label: "Categoría", render: (item) => item.category, sortable: true },
+            { key: "amount", label: "Monto", render: (item) => formatCurrency(item.amount), sortable: true },
             { key: "notes", label: "Notas", render: (item) => item.notes }
           ]}
-          data={greenhouseCosts}
+          data={costListRecords}
+          getRowKey={(item) => item.id}
+          sort={{ key: list.sort ?? "date", dir: list.dir ?? "desc" }}
+          onSort={(key, dir) => updateList({ sort: key, dir, page: undefined })}
+          pagination={viewDataMeta?.resource === "costs" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
         />
       </div>
     </section>
@@ -1365,15 +1476,13 @@ function CostsSection() {
 }
 
 function ReportsSection() {
-  const { greenhouseHarvest, greenhouseCosts, greenhouseIrrigation } = useFilteredData();
-  const harvestChartData = greenhouseHarvest
-    .slice(0, 7)
-    .reverse()
-    .map((record) => ({ label: dateLabel(record.date), kg: record.kilograms }));
-  const costChartData = costByCategory(greenhouseCosts);
-  const irrigationChartData = greenhouseIrrigation
-    .slice(0, 7)
-    .reverse()
+  const viewAggregates = useGreenhouseStore((state) => state.viewAggregates);
+  const harvestChartData = (viewAggregates?.harvestDaily ?? [])
+    .slice(-7)
+    .map((record) => ({ label: dateLabel(record.date), kg: record.kg }));
+  const costChartData = viewAggregates?.costByCategory ?? [];
+  const irrigationChartData = (viewAggregates?.irrigationDaily ?? [])
+    .slice(-7)
     .map((record) => ({ label: dateLabel(record.date), litros: record.liters }));
 
   return (
@@ -1458,30 +1567,6 @@ function SettingRow({
       </div>
     </div>
   );
-}
-
-function getUniqueProducts(applications: ApplicationRecord[], nutrition: NutritionRecord[]) {
-  const products = new Map<string, { name: string; category: string; dose: string; detail: string }>();
-
-  applications.forEach((record) => {
-    products.set(`${record.category}-${record.product}`, {
-      name: record.product,
-      category: record.category,
-      dose: record.dose,
-      detail: record.composition || record.area || "Aplicación registrada"
-    });
-  });
-
-  nutrition.forEach((record) => {
-    products.set(`Nutrición-${record.product}`, {
-      name: record.product,
-      category: "Nutrición",
-      dose: record.dose,
-      detail: `${record.method} · ${record.objective}`
-    });
-  });
-
-  return Array.from(products.values());
 }
 
 function greenhouseSurfaceTotal(greenhouses: Greenhouse[]) {
@@ -1576,8 +1661,6 @@ function SettingsSection() {
     currentUser,
     crops,
     greenhouses,
-    applicationRecords,
-    nutritionRecords,
     openModal,
     setActiveSection,
     setSelectedGreenhouseId,
@@ -1597,6 +1680,9 @@ function SettingsSection() {
   const [isSavingStaff, setIsSavingStaff] = useState(false);
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [products, setProducts] = useState<Array<{ id: string; name: string; category: string; dose: string; detail: string }>>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productsNotice, setProductsNotice] = useState("");
   const [unitSettings, setUnitSettings] = useState({
     surface: "m2 / ha",
     water: "L",
@@ -1605,13 +1691,41 @@ function SettingsSection() {
     solution: "Opcional",
     currency: "MXN"
   });
-  const products = getUniqueProducts(applicationRecords, nutritionRecords);
   const totalSurface = greenhouseSurfaceTotal(greenhouses);
   const canManageUsers = currentUser.role === "owner" || currentUser.role === "admin";
   const canManageRoles = currentUser.role === "owner";
   const inviteRoleOptions: MemberRole[] = canManageRoles ? memberRoles : ["manager"];
   const activeMemberCount = members.filter((member) => member.status === "active").length;
   const activeOwnerCount = members.filter((member) => member.role === "owner" && member.status === "active").length;
+
+  const loadProducts = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !organization.id) return;
+    setIsLoadingProducts(true);
+    setProductsNotice("");
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name, category, composition, default_dose")
+      .eq("company_id", organization.id)
+      .order("name", { ascending: true });
+    if (error) {
+      setProductsNotice(appErrorMessage(error, "No se pudo cargar el catálogo."));
+      setIsLoadingProducts(false);
+      return;
+    }
+    setProducts((data ?? []).map((product) => ({
+      id: product.id,
+      name: product.name,
+      category: product.category ?? "Catálogo",
+      dose: product.default_dose ?? "",
+      detail: product.composition ?? "Sin composición registrada"
+    })));
+    setIsLoadingProducts(false);
+  }, [organization.id]);
+
+  useEffect(() => {
+    if (activeSetting === "catalog") void loadProducts();
+  }, [activeSetting, loadProducts]);
 
   const loadMembers = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -2387,11 +2501,21 @@ function SettingsSection() {
           kicker="Catálogo"
           title="Catálogo de productos"
         >
-          {products.length ? (
+          {isLoadingProducts ? (
+            <div className="animate-pulse border-y border-app-border py-5">
+              <div className="h-4 w-48 bg-app-border" />
+              <div className="mt-4 h-4 w-full bg-app-border" />
+            </div>
+          ) : productsNotice ? (
+            <div className="border-y border-app-border py-5">
+              <p className="text-sm text-app-muted">{productsNotice}</p>
+              <Button className="mt-3" onClick={() => void loadProducts()} variant="ghost">Reintentar</Button>
+            </div>
+          ) : products.length ? (
             <div className="border-b border-app-border">
               {products.slice(0, 5).map((product) => (
                 <SettingRow
-                  key={`${product.category}-${product.name}`}
+                  key={product.id}
                   detail={`${product.category} · ${product.detail}`}
                   label={product.name}
                   value={product.dose || "Sin dosis"}
@@ -2499,6 +2623,123 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "costs") return <CostsSection />;
   if (activeSection === "reports") return <ReportsSection />;
   return <SettingsSection />;
+}
+
+function ViewDataBoundary({ children, entity, list }: { children: React.ReactNode; entity?: EntityRoute; list?: ListQueryState }) {
+  const router = useRouter();
+  const section = useGreenhouseStore((state) => state.activeSection);
+  const greenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const period = useGreenhouseStore((state) => state.selectedPeriod);
+  const organization = useGreenhouseStore((state) => state.organization);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const replaceViewData = useGreenhouseStore((state) => state.replaceViewData);
+  const [retryKey, setRetryKey] = useState(0);
+  const entityKey = entity ? `${entity.type}:${"pestPublicId" in entity ? entity.pestPublicId : "lotPublicId" in entity ? entity.lotPublicId : entity.greenhousePublicId}` : "";
+  const listKey = JSON.stringify(list ?? {});
+  const required = requiresWorkspaceViewData(section, entity);
+  const cacheKey = [organization.id, section, greenhouseId, period, entityKey, listKey].join(":");
+  const requestKey = [cacheKey, retryKey].join(":");
+  const [loadState, setLoadState] = useState<{ key: string; status: "idle" | "loading" | "refreshing" | "ready" | "stale" | "error"; error: string }>({
+    key: "",
+    status: "idle",
+    error: ""
+  });
+
+  useEffect(() => {
+    if (!required || !organization.id) {
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setLoadState({ key: requestKey, status: "error", error: "No se pudo conectar con Supabase." });
+      return;
+    }
+
+    let active = true;
+    const cached = retryKey === 0 ? getCachedViewData(cacheKey) : null;
+    if (cached?.isFresh) {
+      replaceViewData(cached.data, cached.meta);
+      setLoadState({ key: requestKey, status: "ready", error: "" });
+      return () => { active = false; };
+    }
+
+    if (cached) {
+      replaceViewData(cached.data, cached.meta);
+      setLoadState({ key: requestKey, status: "refreshing", error: "" });
+    } else {
+      setLoadState({ key: requestKey, status: "loading", error: "" });
+    }
+    void loadWorkspaceViewData({
+      supabase,
+      companyId: organization.id,
+      currentUserName: currentUser.fullName,
+      section,
+      greenhouseId,
+      period,
+      entity,
+      list
+    }).then(({ data, meta }) => {
+      if (!active) return;
+      cacheViewData(cacheKey, data, meta);
+      replaceViewData(data, meta);
+      setLoadState({ key: requestKey, status: "ready", error: "" });
+    }).catch((caught) => {
+      if (!active) return;
+      if ((caught as { code?: string })?.code === "PGRST103" && list?.page) {
+        router.replace(appRoute(organization.slug ?? organization.name, {
+          section,
+          greenhouseId,
+          period,
+          list: { ...list, page: undefined }
+        }));
+        return;
+      }
+      setLoadState({
+        key: requestKey,
+        status: cached ? "stale" : "error",
+        error: appErrorMessage(caught, "No se pudo actualizar esta vista.")
+      });
+    });
+
+    return () => { active = false; };
+  }, [cacheKey, currentUser.fullName, entity, entityKey, greenhouseId, list, listKey, organization.id, organization.name, organization.slug, period, replaceViewData, requestKey, required, retryKey, router, section]);
+
+  if (required && (loadState.key !== requestKey || loadState.status === "loading")) {
+    return (
+      <section aria-busy="true" aria-label="Cargando vista" className="animate-pulse py-10">
+        <div className="h-3 w-28 bg-app-border" />
+        <div className="mt-5 h-12 max-w-xl bg-app-border" />
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          {[0, 1, 2].map((item) => <div className="h-32 border border-app-border bg-white" key={item} />)}
+        </div>
+        <div className="mt-6 h-72 border border-app-border bg-white" />
+      </section>
+    );
+  }
+
+  if (required && loadState.status === "error") {
+    return (
+      <section className="py-10">
+        <EmptyState icon={AlertTriangle} title={loadState.error || "No se pudo cargar esta vista."} />
+        <Button className="mt-4" onClick={() => setRetryKey((value) => value + 1)} variant="secondary">
+          Reintentar
+        </Button>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      {required && loadState.key === requestKey && (loadState.status === "refreshing" || loadState.status === "stale") ? (
+        <div aria-live="polite" className="mb-4 flex flex-wrap items-center justify-between gap-3 border-y border-app-border py-3 text-xs text-app-muted">
+          <span>{loadState.status === "refreshing" ? "Actualizando datos…" : `${loadState.error} Mostrando la última información disponible.`}</span>
+          <Button className="h-8 px-3 text-xs" onClick={() => { invalidateViewDataCache(); setRetryKey((value) => value + 1); }} variant="ghost">Reintentar</Button>
+        </div>
+      ) : null}
+      {children}
+    </>
+  );
 }
 
 export function AppShell() {
@@ -2798,9 +3039,9 @@ export function AppShell() {
       <RouteSync />
       <div className="flex min-h-screen">
         <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
-        <div className="min-w-0 flex-1 pl-14 lg:pl-0">
+        <div className="min-w-0 flex-1">
           <Topbar copilotInsightCount={copilotInsights.length} onOpenCopilot={() => setCopilotOpen(true)} />
-          <main className="mx-auto w-full max-w-[1500px] px-4 py-5 lg:px-6">
+          <main className="mx-auto w-full max-w-[1500px] px-4 pb-24 pt-5 lg:px-6 lg:pb-5">
             <div className="mb-4 lg:hidden">
               <p className="text-xs font-medium uppercase text-app-muted">{activeLabel}</p>
               <MiraBrand className="mt-1" markClassName="h-5 w-8" wordClassName="text-lg tracking-[0.34em]" />
@@ -2808,25 +3049,29 @@ export function AppShell() {
             {copilotNotice ? <InlineNotice tone={copilotNotice.tone}>{copilotNotice.message}</InlineNotice> : null}
             {routeAccessDenied ? (
               <RouteAccessDenied />
-            ) : activeRoute.entity ? (
-              <EntityRouteView route={activeRoute.entity} />
             ) : (
-              <ActiveSection
-                copilotInsights={copilotInsights}
-                operationRefreshKey={operationRefreshKey}
-                operationWeekStart={activeRoute.weekStart}
-                onOperationWeekChange={setOperationWeek}
-                pendingCompletionTask={pendingCompletionTask}
-                onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
-                onRequestTechnicalCompletion={(task) => {
-                  setPendingCompletionTask({ id: task.id, date: task.date });
-                  setActiveSection("calendar");
-                  setOperationRefreshKey((current) => current + 1);
-                }}
-                onCreateCopilotTask={createCopilotTaskSuggestion}
-                onOpenCopilot={() => setCopilotOpen(true)}
-                onPrepareCopilotMessage={prepareCopilotMessage}
-              />
+              <ViewDataBoundary entity={activeRoute.entity} list={activeRoute.list}>
+                {activeRoute.entity ? (
+                  <EntityRouteView route={activeRoute.entity} />
+                ) : (
+                  <ActiveSection
+                    copilotInsights={copilotInsights}
+                    operationRefreshKey={operationRefreshKey}
+                    operationWeekStart={activeRoute.weekStart}
+                    onOperationWeekChange={setOperationWeek}
+                    pendingCompletionTask={pendingCompletionTask}
+                    onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
+                    onRequestTechnicalCompletion={(task) => {
+                      setPendingCompletionTask({ id: task.id, date: task.date });
+                      setActiveSection("calendar");
+                      setOperationRefreshKey((current) => current + 1);
+                    }}
+                    onCreateCopilotTask={createCopilotTaskSuggestion}
+                    onOpenCopilot={() => setCopilotOpen(true)}
+                    onPrepareCopilotMessage={prepareCopilotMessage}
+                  />
+                )}
+              </ViewDataBoundary>
             )}
           </main>
         </div>

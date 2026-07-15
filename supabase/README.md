@@ -134,6 +134,8 @@ Para interpretar correctamente las comas de miles en dosis, energía y horas al 
 
 Para habilitar URLs estables de empresa, invernaderos, ciclos actuales, casos sanitarios y lotes de cosecha, ejecuta `50_public_route_identifiers.sql` después de `49_formatted_numeric_costs.sql`.
 
+Para evitar descargar historiales completos en Costos y Reportes, ejecuta `51_scalable_view_aggregates.sql` después de `50_public_route_identifiers.sql`. Esta migración agrega los índices de las vistas y el RPC de agregados por empresa, invernadero y periodo.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

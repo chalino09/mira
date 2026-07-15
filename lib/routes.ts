@@ -8,6 +8,17 @@ type RouteState = {
   greenhouseId?: string;
   period?: ContextPeriod;
   weekStart?: string;
+  list?: ListQueryState;
+};
+
+export type ListQueryState = {
+  tab?: "applications" | "nutrition" | "irrigation";
+  q?: string;
+  sort?: string;
+  dir?: "asc" | "desc";
+  page?: number;
+  status?: string;
+  severity?: string;
 };
 
 export type EntityRoute =
@@ -97,6 +108,18 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
         : routeSections.get(sectionKey) ?? "overview";
   const greenhouseId = searchParams.get("greenhouse") ?? undefined;
   const periodValue = searchParams.get("period");
+  const tabValue = searchParams.get("tab");
+  const directionValue = searchParams.get("dir");
+  const pageValue = Number(searchParams.get("page") ?? "1");
+  const list: ListQueryState = {
+    tab: tabValue === "nutrition" || tabValue === "irrigation" ? tabValue : tabValue === "applications" ? tabValue : undefined,
+    q: searchParams.get("q")?.trim().slice(0, 100) || undefined,
+    sort: searchParams.get("sort")?.trim().slice(0, 40) || undefined,
+    dir: directionValue === "asc" ? "asc" : directionValue === "desc" ? "desc" : undefined,
+    page: Number.isInteger(pageValue) && pageValue > 1 ? pageValue : undefined,
+    status: searchParams.get("status")?.trim().slice(0, 40) || undefined,
+    severity: searchParams.get("severity")?.trim().slice(0, 20) || undefined
+  };
 
   return {
     organizationSlug,
@@ -105,13 +128,14 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
     entity,
     greenhouseId,
     period: periodValue && periods.has(periodValue as ContextPeriod) ? periodValue as ContextPeriod : undefined,
-    weekStart: isDateKey(calendarWeek) ? calendarWeek : undefined
+    weekStart: isDateKey(calendarWeek) ? calendarWeek : undefined,
+    list
   };
 }
 
 export function appRoute(
   organizationName: string,
-  { section, greenhouseId, period, weekStart }: RouteState
+  { section, greenhouseId, period, weekStart, list }: RouteState
 ) {
   const segments = [...sectionSegments[section]];
   if (section === "calendar") {
@@ -123,6 +147,13 @@ export function appRoute(
     query.set("greenhouse", greenhouseId);
   }
   if (supportsPeriod(section) && period) query.set("period", period);
+  if (list?.tab && list.tab !== "applications") query.set("tab", list.tab);
+  if (list?.q) query.set("q", list.q);
+  if (list?.sort) query.set("sort", list.sort);
+  if (list?.dir) query.set("dir", list.dir);
+  if (list?.page && list.page > 1) query.set("page", String(list.page));
+  if (list?.status) query.set("status", list.status);
+  if (list?.severity) query.set("severity", list.severity);
   const queryString = query.toString();
 
   return `/${organizationRouteSlug(organizationName)}${segments.length ? `/${segments.join("/")}` : ""}${queryString ? `?${queryString}` : ""}`;

@@ -36,9 +36,12 @@ export function RouteSync() {
     if (targetsAnotherOrganization) return;
 
     if (isNewLocation) {
-      handledLocation.current = location;
       if (route.entity) {
-        if (activeSection !== route.section) setActiveSection(route.section);
+        if (activeSection !== route.section) {
+          setActiveSection(route.section);
+          return;
+        }
+        handledLocation.current = location;
         return;
       }
       const needsCanonicalPath = route.organizationSlug !== canonicalOrganization
@@ -46,11 +49,13 @@ export function RouteSync() {
         || (route.section === "calendar" && !route.weekStart);
 
       if (needsCanonicalPath) {
+        handledLocation.current = location;
         router.replace(appRoute(organizationRouteName, {
           section: route.isKnown ? route.section : "overview",
           greenhouseId: selectedGreenhouseId,
           period: selectedPeriod,
-          weekStart: route.weekStart
+          weekStart: route.weekStart,
+          list: route.list
         }));
         return;
       }
@@ -65,22 +70,28 @@ export function RouteSync() {
         : greenhouses.some((greenhouse) => greenhouse.id === route.greenhouseId);
       if (supportsGreenhouse(route.section) && route.greenhouseId && routeGreenhouseIsVisible && route.greenhouseId !== selectedGreenhouseId) {
         setSelectedGreenhouseId(route.greenhouseId);
+        return;
       }
       if (supportsPeriod(route.section) && route.period && route.period !== selectedPeriod) {
         setSelectedPeriod(route.period);
+        return;
       }
 
       if (
         (supportsGreenhouse(route.section) && (!route.greenhouseId || !routeGreenhouseIsVisible))
         || (supportsPeriod(route.section) && !route.period)
       ) {
+        handledLocation.current = location;
         router.replace(appRoute(organizationRouteName, {
           section: activeSection,
           greenhouseId: selectedGreenhouseId,
           period: selectedPeriod,
-          weekStart: route.weekStart
+          weekStart: route.weekStart,
+          list: route.list
         }));
+        return;
       }
+      handledLocation.current = location;
       return;
     }
 
@@ -90,7 +101,8 @@ export function RouteSync() {
       section: activeSection,
       greenhouseId: selectedGreenhouseId,
       period: selectedPeriod,
-      weekStart: route.weekStart
+      weekStart: route.weekStart,
+      list: route.list
     });
     if (location !== canonicalPath) router.push(canonicalPath);
   }, [

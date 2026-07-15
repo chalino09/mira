@@ -1,11 +1,11 @@
 "use client";
 
 import { Building2, CalendarDays, Plus, Search } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MiraCopilotCommand } from "@/components/copilot/MiraCopilot";
 import { Button } from "@/components/ui/Button";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
-import { appRoute } from "@/lib/routes";
+import { appRoute, parseAppRoute } from "@/lib/routes";
 import { weekOfYear } from "@/lib/date";
 import { useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
@@ -18,6 +18,8 @@ export function Topbar({
   onOpenCopilot?: () => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const crops = useGreenhouseStore((state) => state.crops);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
@@ -40,10 +42,13 @@ export function Topbar({
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
   const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {
+    const currentRoute = parseAppRoute(pathname, new URLSearchParams(searchParams.toString()));
+    const staysInSection = (next.section ?? activeSection) === activeSection;
     router.push(appRoute(organization.slug ?? organization.name, {
       section: next.section ?? activeSection,
       greenhouseId: next.greenhouseId ?? selectedGreenhouseId,
-      period: next.period ?? selectedPeriod
+      period: next.period ?? selectedPeriod,
+      list: staysInSection ? { ...currentRoute.list, page: undefined } : undefined
     }));
   };
 

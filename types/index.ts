@@ -295,6 +295,21 @@ export type CostRecord = {
   notes: string;
 };
 
+export type ViewOperationalAggregates = {
+  totalCost: number;
+  costByCategory: Array<{ category: CostRecord["category"]; amount: number }>;
+  totalHarvestKg: number;
+  totalHarvestBoxes: number;
+  commercialKg: number;
+  estimatedRevenue: number;
+  averagePrice: number;
+  harvestDaily: Array<{ date: string; kg: number }>;
+  totalIrrigationLiters: number;
+  averageIrrigationDuration: number;
+  averageEc: number | null;
+  irrigationDaily: Array<{ date: string; liters: number }>;
+};
+
 export type Activity = {
   id: string;
   greenhouseId: string;

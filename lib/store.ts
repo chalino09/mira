@@ -20,12 +20,34 @@ import type {
   PestAlertUpdate,
   SectionId,
   Task,
+  ViewOperationalAggregates,
   ViewContext
 } from "@/types";
 import type { NutritionObservationRule, NutritionReferenceRange } from "@/lib/nutrition-monitoring";
+import { invalidateViewDataCache } from "@/lib/view-data-cache";
 import { makeId } from "@/lib/utils";
 
 type WithOptionalId<T extends { id: string }> = Omit<T, "id"> & Partial<Pick<T, "id">>;
+
+export type WorkspaceViewData = Partial<Pick<AppState,
+  | "tasks"
+  | "irrigationRecords"
+  | "nutritionRecords"
+  | "applicationRecords"
+  | "pestAlerts"
+  | "harvestRecords"
+  | "costRecords"
+  | "costListRecords"
+  | "viewAggregates"
+  | "activities"
+>>;
+
+export type ViewDataMeta = {
+  resource: "applications" | "nutrition" | "irrigation" | "pests" | "costs";
+  page: number;
+  pageSize: number;
+  total: number;
+};
 
 type AppState = {
   activeSection: SectionId;
@@ -47,7 +69,10 @@ type AppState = {
   pestAlerts: PestAlert[];
   harvestRecords: HarvestRecord[];
   costRecords: CostRecord[];
+  costListRecords: CostRecord[];
+  viewAggregates: ViewOperationalAggregates | null;
   activities: Activity[];
+  viewDataMeta: ViewDataMeta | null;
   setActiveSection: (section: SectionId) => void;
   setSelectedGreenhouseId: (id: string) => void;
   setSelectedPeriod: (period: ContextPeriod) => void;
@@ -67,6 +92,7 @@ type AppState = {
   addPestUpdate: (alertId: string, update: WithOptionalId<PestAlertUpdate>, patch?: Partial<PestAlert>) => void;
   addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
   addCost: (record: WithOptionalId<CostRecord>) => void;
+  replaceViewData: (data: WorkspaceViewData, meta?: ViewDataMeta | null) => void;
   hydrateWorkspace: (data: {
     organization: Organization;
     currentUser: CurrentUser;
@@ -75,14 +101,6 @@ type AppState = {
     nutritionReferenceRanges: NutritionReferenceRange[];
     nutritionObservationRules: NutritionObservationRule[];
     greenhouses: Greenhouse[];
-    tasks: Task[];
-    irrigationRecords: IrrigationRecord[];
-    nutritionRecords: NutritionRecord[];
-    applicationRecords: ApplicationRecord[];
-    pestAlerts: PestAlert[];
-    harvestRecords: HarvestRecord[];
-    costRecords: CostRecord[];
-    activities: Activity[];
   }) => void;
 };
 
@@ -116,7 +134,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   pestAlerts: [],
   harvestRecords: [],
   costRecords: [],
+  costListRecords: [],
+  viewAggregates: null,
   activities: [],
+  viewDataMeta: null,
   setActiveSection: (section) => set((state) => {
     const allowsAll = !["overview", "monitoring"].includes(section);
     const savedContext = state.viewContexts[section];
@@ -144,9 +165,11 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
     }
   })),
   updateOrganization: (organization) => set({ organization }),
+  replaceViewData: (data, meta = null) => set({ ...data, viewDataMeta: meta }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
-  hydrateWorkspace: (data) =>
+  hydrateWorkspace: (data) => {
+    invalidateViewDataCache();
     set((state) => {
       const allowsAll = !["overview", "monitoring"].includes(state.activeSection);
       const selectedGreenhouseId = (allowsAll && state.selectedGreenhouseId === allGreenhousesId) || data.greenhouses.some((item) => item.id === state.selectedGreenhouseId)
@@ -161,17 +184,22 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         nutritionObservationRules: data.nutritionObservationRules,
         greenhouses: data.greenhouses,
         selectedGreenhouseId,
-        tasks: data.tasks,
-        irrigationRecords: data.irrigationRecords,
-        nutritionRecords: data.nutritionRecords,
-        applicationRecords: data.applicationRecords,
-        pestAlerts: data.pestAlerts,
-        harvestRecords: data.harvestRecords,
-        costRecords: data.costRecords,
-        activities: data.activities
+        tasks: [],
+        irrigationRecords: [],
+        nutritionRecords: [],
+        applicationRecords: [],
+        pestAlerts: [],
+        harvestRecords: [],
+        costRecords: [],
+        costListRecords: [],
+        viewAggregates: null,
+        activities: [],
+        viewDataMeta: null
       };
-    }),
-  addTask: (task) =>
+    });
+  },
+  addTask: (task) => {
+    invalidateViewDataCache();
     set((state) => ({
       tasks: [{ ...task, id: task.id ?? makeId("task") }, ...state.tasks],
       activities: [
@@ -185,14 +213,18 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
-  completeTask: (id, status = "Completada") =>
+    }));
+  },
+  completeTask: (id, status = "Completada") => {
+    invalidateViewDataCache();
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === id ? { ...task, status } : task
       )
-    })),
-  addIrrigation: (record) =>
+    }));
+  },
+  addIrrigation: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       irrigationRecords: [{ ...record, id: record.id ?? makeId("riego") }, ...state.irrigationRecords],
       activities: [
@@ -206,7 +238,8 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
+    }));
+  },
   addGreenhouse: (greenhouse) =>
     set((state) => ({
       greenhouses: [greenhouse, ...state.greenhouses],
@@ -219,7 +252,8 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
       selectedGreenhouseId: greenhouse.id,
       modal: null
     })),
-  addNutrition: (record) =>
+  addNutrition: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       nutritionRecords: [{ ...record, id: record.id ?? makeId("nut") }, ...state.nutritionRecords],
       activities: [
@@ -233,8 +267,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
-  addApplication: (record) =>
+    }));
+  },
+  addApplication: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       applicationRecords: [{ ...record, id: record.id ?? makeId("app") }, ...state.applicationRecords],
       activities: [
@@ -248,8 +284,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
-  addApplicationRecords: (records) =>
+    }));
+  },
+  addApplicationRecords: (records) => {
+    invalidateViewDataCache();
     set((state) => ({
       applicationRecords: [
         ...records.map((record) => ({ ...record, id: record.id ?? makeId("app") })),
@@ -267,8 +305,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
             ...state.activities
           ]
         : state.activities
-    })),
-  addPest: (record) =>
+    }));
+  },
+  addPest: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       pestAlerts: [{ ...record, id: record.id ?? makeId("pest") }, ...state.pestAlerts],
       activities: [
@@ -282,12 +322,16 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
-  updatePest: (record) =>
+    }));
+  },
+  updatePest: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       pestAlerts: state.pestAlerts.map((alert) => (alert.id === record.id ? record : alert))
-    })),
-  addPestUpdate: (alertId, update, patch = {}) =>
+    }));
+  },
+  addPestUpdate: (alertId, update, patch = {}) => {
+    invalidateViewDataCache();
     set((state) => ({
       pestAlerts: state.pestAlerts.map((alert) =>
         alert.id === alertId
@@ -308,8 +352,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         },
         ...state.activities
       ]
-    })),
-  addHarvest: (record) =>
+    }));
+  },
+  addHarvest: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       harvestRecords: [{ ...record, id: record.id ?? makeId("harv") }, ...state.harvestRecords],
       activities: [
@@ -325,8 +371,10 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    })),
-  addCost: (record) =>
+    }));
+  },
+  addCost: (record) => {
+    invalidateViewDataCache();
     set((state) => ({
       costRecords: [{ ...record, id: record.id ?? makeId("cost") }, ...state.costRecords],
       activities: [
@@ -340,7 +388,8 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         ...state.activities
       ],
       modal: null
-    }))
+    }));
+  }
 }), {
   name: "mira-view-context",
   partialize: (state) => ({

@@ -23,26 +23,16 @@ import type {
 } from "@/lib/nutrition-monitoring";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { organizationRouteSlug, publicEntityId } from "@/lib/routes";
-import { createPrivateCompanyFileUrls } from "@/lib/storage";
 import { useGreenhouseStore } from "@/lib/store";
 import { parseNumericInput } from "@/lib/utils";
 import type {
-  Activity,
-  ApplicationRecord,
-  CostRecord,
   CropCatalogItem,
   CropStage,
   CropStageCatalog,
   CurrentUser,
   Greenhouse,
-  HarvestRecord,
-  IrrigationRecord,
-  NutritionRecord,
   Organization,
-  PestAlert,
-  RiskLevel,
-  Task,
-  TaskType
+  RiskLevel
 } from "@/types";
 
 type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error" | "access-paused";
@@ -88,33 +78,6 @@ function mapRiskLevel(level?: string | null): RiskLevel {
   if (level === "media") return "Media";
   if (level === "alta") return "Alta";
   return "Baja";
-}
-
-function mapPestCaseStatus(status?: string | null) {
-  if (status === "review_required") return "Revisión requerida";
-  if (status === "in_management") return "En manejo";
-  if (status === "under_watch") return "Bajo vigilancia";
-  if (status === "sanitary_close") return "Cierre sanitario";
-  return "Abierta";
-}
-
-function mapPestUpdateStatus(status?: string | null) {
-  if (status === "under_observation") return "En observación";
-  if (status === "treatment_applied") return "Tratamiento aplicado";
-  if (status === "under_watch") return "Bajo vigilancia";
-  if (status === "no_progress") return "Sin avance";
-  if (status === "visible_improvement") return "Mejoría visible";
-  if (status === "sanitary_close") return "Cierre sanitario";
-  return "Revisión requerida";
-}
-
-function mapPestActionType(action?: string | null) {
-  if (action === "sanitary_pruning") return "Poda/deshoje sanitario";
-  if (action === "application") return "Aplicación";
-  if (action === "cleaning") return "Limpieza";
-  if (action === "zone_isolation") return "Aislamiento de zona";
-  if (action === "other") return "Otro";
-  return "Revisión";
 }
 
 function mapCrops(rows: any[] | null | undefined): CropCatalogItem[] {
@@ -184,87 +147,6 @@ function mapNutritionRules(rows: any[] | null | undefined): NutritionObservation
   }));
 }
 
-function mapTaskType(type?: string | null, technicalPlan?: Record<string, any> | null): TaskType {
-  const labels: Record<string, TaskType> = {
-    riego: "Riego",
-    fertirriego: "Fertirriego",
-    fertilizacion: "Fertilización",
-    aplicacion_foliar: "Aplicación foliar",
-    revision_plagas: "Revisión de plagas y enfermedades",
-    poda: "Deschuponado",
-    tutoreo: "Manejo de rafia",
-    deshoje: "Deshoje",
-    cosecha: "Cosecha",
-    limpieza: "Limpieza",
-    mantenimiento: "Mantenimiento",
-    otro: technicalPlan?.cycleWorkType ? "Preparación de ciclo" : "Otra"
-  };
-
-  return labels[type ?? ""] ?? "Riego";
-}
-
-function mapTaskStatus(status?: string | null): Task["status"] {
-  if (status === "en_progreso") return "En ejecución";
-  if (status === "bloqueada") return "Bloqueada";
-  if (status === "completada") return "Completada";
-  if (status === "verificada") return "Verificada";
-  if (status === "cancelada") return "Cancelada";
-  return "Pendiente";
-}
-
-function mapApplicationCategory(category?: string | null): ApplicationRecord["category"] {
-  const labels: Record<string, ApplicationRecord["category"]> = {
-    fertilizante: "Fertilizante",
-    bioestimulante: "Bioestimulante",
-    corrector: "Corrector",
-    acondicionador_agua: "Acondicionador de agua",
-    adyuvante_coadyuvante: "Adyuvante / Coadyuvante",
-    microorganismos: "Microorganismos",
-    fungicida: "Fungicida",
-    insecticida: "Insecticida",
-    acaricida: "Acaricida",
-    nematicida: "Nematicida",
-    bactericida: "Bactericida",
-    sanitizante_desinfectante: "Sanitizante / Desinfectante",
-    regulador_crecimiento: "Regulador de crecimiento"
-  };
-
-  return labels[category ?? ""] ?? "Bioestimulante";
-}
-
-function mapNutritionMethod(method?: string | null): NutritionRecord["method"] {
-  if (method === "foliar") return "Foliar";
-  if (method === "drench") return "Drench";
-  return "Fertirriego";
-}
-
-function mapNutritionObjective(objective?: string | null): NutritionRecord["objective"] {
-  if (objective === "desarrollo") return "Desarrollo";
-  if (objective === "floracion") return "Floración";
-  if (objective === "cuajado") return "Cuajado";
-  if (objective === "engorde") return "Engorde";
-  if (objective === "calidad") return "Calidad";
-  return "Raíz";
-}
-
-function mapCostCategory(category?: string | null): CostRecord["category"] {
-  const labels: Record<string, CostRecord["category"]> = {
-    mano_obra: "Mano de obra",
-    fertilizantes: "Fertilizantes",
-    agroinsumos: "Agroinsumos",
-    agua: "Agua",
-    energia: "Energía",
-    plasticos: "Plásticos",
-    mantenimiento: "Mantenimiento",
-    transporte: "Transporte",
-    refrescos: "Refrescos",
-    renta: "Renta",
-    gasolina: "Gasolina"
-  };
-
-  return labels[category ?? ""] ?? "Agroinsumos";
-}
-
 function daysSince(date?: string | null) {
   if (!date) return 0;
   const start = new Date(`${date}T12:00:00`);
@@ -330,21 +212,21 @@ function AuthCard({
   ];
 
   return (
-    <main className="min-h-screen bg-app-background px-5 py-8 text-app-text">
-      <div className="mx-auto flex min-h-[calc(100vh-64px)] w-full max-w-6xl items-center">
-        <section className="grid w-full gap-12 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-center">
-          <div>
+    <main className="min-h-screen bg-app-background px-4 py-4 text-app-text sm:px-5 sm:py-8">
+      <div className="mx-auto flex min-h-[calc(100vh-32px)] w-full max-w-6xl items-start lg:min-h-[calc(100vh-64px)] lg:items-center">
+        <section className="grid w-full gap-8 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-center lg:gap-12">
+          <div className="order-2 lg:order-1">
             <MiraBrand markClassName="h-6 w-10" wordClassName="text-[13px] tracking-[0.38em]" />
             {kicker !== "mira" ? (
               <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.32em] text-app-muted">
                 {kicker}
               </p>
             ) : null}
-            <h1 className="mt-5 max-w-4xl text-6xl font-light leading-[0.96] tracking-normal text-app-text sm:text-7xl">
+            <h1 className="mt-4 max-w-4xl text-3xl font-light leading-tight tracking-normal text-app-text sm:text-4xl lg:mt-5 lg:text-6xl lg:leading-[0.96] xl:text-7xl">
               {title}
             </h1>
-            <AtmosphericMapVisual className="mt-10 max-w-2xl" variant="login" />
-            <div className="mt-14 grid max-w-2xl gap-0 border-y border-app-border py-6 sm:grid-cols-3">
+            <AtmosphericMapVisual className="mt-10 hidden max-w-2xl lg:block" variant="login" />
+            <div className="mt-8 hidden max-w-2xl gap-0 border-y border-app-border py-6 sm:grid-cols-3 lg:grid lg:mt-14">
               {signals.map((item, index) => (
                 <div
                   key={item.label}
@@ -358,7 +240,7 @@ function AuthCard({
               ))}
             </div>
           </div>
-          <div className="border-y border-app-border bg-white/40 px-1 py-6">{children}</div>
+          <div className="order-1 border-y border-app-border bg-white/40 px-1 py-5 lg:order-2 lg:py-6">{children}</div>
         </section>
       </div>
     </main>
@@ -1049,7 +931,7 @@ export function AuthGate() {
           .maybeSingle(),
         supabase
           .from("greenhouses")
-          .select("*")
+          .select("id, public_id, name, location, latitude, longitude, location_accuracy_m, surface_m2, budget_amount, crop_id, crop_variety, tomato_variety, transplant_date, plants_count, stem_count, is_grafted, crop_stage, manager_user_id, manager_staff_id, beds_count, health_status, created_at")
           .eq("company_id", membership.company_id)
           .order("created_at", { ascending: true }),
         supabase
@@ -1123,9 +1005,6 @@ export function AuthGate() {
       const visibleGreenhouseRows = canSeeAllGreenhouses
         ? (greenhouseRows ?? [])
         : (greenhouseRows ?? []).filter((greenhouse: any) => greenhouse.manager_user_id === currentUser.id);
-      const visibleGreenhouseIds = visibleGreenhouseRows.map((greenhouse: any) => greenhouse.id);
-      const emptyGreenhouseId = "00000000-0000-0000-0000-000000000000";
-      const greenhouseScope = visibleGreenhouseIds.length ? visibleGreenhouseIds : [emptyGreenhouseId];
 
       const managerUserIds = Array.from(
         new Set(visibleGreenhouseRows.map((greenhouse: any) => greenhouse.manager_user_id).filter(Boolean))
@@ -1162,70 +1041,6 @@ export function AuthGate() {
       const managerProfileMap = new Map((managerProfilesResponse.data ?? []).map((manager: any) => [manager.id, manager]));
       const managerStaffMap = new Map((managerStaffResponse.data ?? []).map((staff: any) => [staff.id, staff]));
 
-      const [
-        tasksResponse,
-        irrigationResponse,
-        nutritionResponse,
-        applicationResponse,
-        pestResponse,
-        pestUpdatesResponse,
-        harvestResponse,
-        costResponse
-      ] = await Promise.all([
-        (canSeeAllGreenhouses
-          ? supabase.from("tasks").select("*").eq("company_id", membership.company_id)
-          : supabase.from("tasks").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("scheduled_date", { ascending: true }),
-        (canSeeAllGreenhouses
-          ? supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id)
-          : supabase.from("irrigation_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("occurred_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id)
-          : supabase.from("nutrition_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("occurred_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("application_records").select("*").eq("company_id", membership.company_id)
-          : supabase.from("application_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("occurred_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id)
-          : supabase.from("pest_alerts").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("detected_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("pest_alert_updates").select("*").eq("company_id", membership.company_id)
-          : supabase.from("pest_alert_updates").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("created_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("harvest_records").select("*").eq("company_id", membership.company_id)
-          : supabase.from("harvest_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("occurred_at", { ascending: false }),
-        (canSeeAllGreenhouses
-          ? supabase.from("cost_records").select("*").eq("company_id", membership.company_id)
-          : supabase.from("cost_records").select("*").eq("company_id", membership.company_id).in("greenhouse_id", greenhouseScope)
-        ).order("occurred_at", { ascending: false })
-      ]);
-
-      throwInitialLoadError(tasksResponse.error, "No se pudieron cargar las tareas.");
-      throwInitialLoadError(irrigationResponse.error, "No se pudieron cargar los riegos.");
-      throwInitialLoadError(nutritionResponse.error, "No se pudieron cargar las nutriciones.");
-      throwInitialLoadError(applicationResponse.error, "No se pudieron cargar las aplicaciones.");
-      throwInitialLoadError(pestResponse.error, "No se pudieron cargar las alertas sanitarias.");
-      if (pestUpdatesResponse.error && !["42P01", "PGRST205"].includes(pestUpdatesResponse.error.code ?? "")) {
-        throwInitialLoadError(pestUpdatesResponse.error, "No se pudo cargar el historial sanitario.");
-      }
-      throwInitialLoadError(harvestResponse.error, "No se pudieron cargar las cosechas.");
-      throwInitialLoadError(costResponse.error, "No se pudieron cargar los costos.");
-
-      const taskRows = tasksResponse.data;
-      const irrigationRows = irrigationResponse.data;
-      const nutritionRows = nutritionResponse.data;
-      const applicationRows = applicationResponse.data;
-      const pestRows = pestResponse.data;
-      const pestUpdateRows = pestUpdatesResponse.error ? [] : pestUpdatesResponse.data;
-      const harvestRows = harvestResponse.data;
-      const costRows = costResponse.data;
-
       const mappedGreenhouses: Greenhouse[] = visibleGreenhouseRows.map((greenhouse: any) => {
         const managerProfile = greenhouse.manager_user_id ? managerProfileMap.get(greenhouse.manager_user_id) : null;
         const managerStaff = greenhouse.manager_staff_id ? managerStaffMap.get(greenhouse.manager_staff_id) : null;
@@ -1261,170 +1076,6 @@ export function AuthGate() {
         };
       });
 
-      const tasks: Task[] = (taskRows ?? []).map((task: any) => ({
-        id: task.id,
-        greenhouseId: task.greenhouse_id,
-        type: mapTaskType(task.type, task.technical_plan),
-        title: task.title,
-        date: task.scheduled_date,
-        time: task.scheduled_time?.slice(0, 5) ?? "",
-        status: mapTaskStatus(task.status),
-        responsible: currentUser.fullName
-      }));
-
-      const irrigationRecords: IrrigationRecord[] = (irrigationRows ?? []).map((record: any) => ({
-        id: record.id,
-        sourceTaskId: record.source_task_id ?? undefined,
-        greenhouseId: record.greenhouse_id,
-        date: record.occurred_at,
-        durationMin: record.duration_min ?? 0,
-        liters: Number(record.estimated_liters ?? 0),
-        sector: record.sector ?? "",
-        ph: record.ph === null ? null : Number(record.ph),
-        ec: record.ec === null ? null : Number(record.ec),
-        notes: record.notes ?? "",
-        responsible: currentUser.fullName
-      }));
-
-      const nutritionRecords: NutritionRecord[] = (nutritionRows ?? []).map((record: any) => ({
-        id: record.id,
-        sourceTaskId: record.source_task_id ?? undefined,
-        greenhouseId: record.greenhouse_id,
-        date: record.occurred_at,
-        product: record.product_name,
-        dose: record.dose,
-        method: mapNutritionMethod(record.method),
-        ph: Number(record.ph ?? 0),
-        ec: Number(record.ec ?? 0),
-        stage: mapCropStage(record.crop_stage),
-        objective: mapNutritionObjective(record.objective),
-        notes: record.notes ?? ""
-      }));
-
-      const applicationRecords: ApplicationRecord[] = (applicationRows ?? []).map((record: any) => ({
-        id: record.id,
-        sourceTaskId: record.source_task_id ?? undefined,
-        greenhouseId: record.greenhouse_id,
-        date: record.occurred_at,
-        category: mapApplicationCategory(record.category),
-        product: record.product_name,
-        composition: record.composition ?? "",
-        dose: record.dose,
-        area: record.applied_area ?? "",
-        responsible: currentUser.fullName,
-        safetyInterval: record.safety_interval ?? "",
-        reentry: record.reentry_interval ?? "",
-        notes: record.notes ?? ""
-      }));
-
-      const pestPhotoPaths = (pestRows ?? [])
-        .map((record: any) => String(record.photo_storage_path ?? "").trim())
-        .filter(Boolean);
-      const pestUpdatePhotoPaths = (pestUpdateRows ?? [])
-        .map((record: any) => String(record.photo_storage_path ?? "").trim())
-        .filter(Boolean);
-      let pestPhotoUrls = new Map<string, string>();
-      const allPestPhotoPaths = [...pestPhotoPaths, ...pestUpdatePhotoPaths];
-      if (allPestPhotoPaths.length) {
-        try {
-          pestPhotoUrls = await createPrivateCompanyFileUrls({
-            bucket: "pest-photos",
-            paths: allPestPhotoPaths,
-            supabase
-          });
-        } catch (error) {
-          throw new Error(appErrorMessage(error, "No se pudieron cargar las fotos de plagas."));
-        }
-      }
-
-      const pestUpdatesByAlert = new Map<string, any[]>();
-      for (const update of pestUpdateRows ?? []) {
-        const current = pestUpdatesByAlert.get(update.pest_alert_id) ?? [];
-        current.push(update);
-        pestUpdatesByAlert.set(update.pest_alert_id, current);
-      }
-
-      const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
-        id: record.id,
-        publicId: record.public_id ?? publicEntityId("pest", record.id),
-        greenhouseId: record.greenhouse_id,
-        problem: record.problem,
-        severity: mapRiskLevel(record.severity),
-        zone: record.affected_zone ?? "",
-        detectedAt: record.detected_at,
-        action: record.action_taken ?? "",
-        followUp: record.follow_up ?? "",
-        caseStatus: mapPestCaseStatus(record.case_status),
-        photoStoragePath: record.photo_storage_path ?? undefined,
-        photoUrl: record.photo_storage_path
-          ? pestPhotoUrls.get(record.photo_storage_path) ?? undefined
-          : record.photo_url ?? undefined,
-        updates: (pestUpdatesByAlert.get(record.id) ?? []).map((update: any) => ({
-          id: update.id,
-          alertId: update.pest_alert_id,
-          greenhouseId: update.greenhouse_id,
-          status: mapPestUpdateStatus(update.update_status),
-          severity: mapRiskLevel(update.severity),
-          actionType: mapPestActionType(update.action_type),
-          notes: update.notes ?? "",
-          nextReviewDate: update.next_review_date ?? undefined,
-          photoStoragePath: update.photo_storage_path ?? undefined,
-          photoUrl: update.photo_storage_path ? pestPhotoUrls.get(update.photo_storage_path) ?? undefined : undefined,
-          createdAt: update.created_at
-        }))
-      }));
-
-      const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({
-        id: record.id,
-        publicId: record.public_id ?? publicEntityId("lot", record.id),
-        sourceTaskId: record.source_task_id ?? undefined,
-        greenhouseId: record.greenhouse_id,
-        date: record.occurred_at,
-        kilograms: Number(record.kilograms ?? 0),
-        boxCount: Number(record.box_count ?? 0),
-        boxWeightKg: Number(record.box_weight_kg ?? 20),
-        firstQuality: Number(record.first_quality_kg ?? 0),
-        secondQuality: Number(record.second_quality_kg ?? 0),
-        thirdQuality: Number(record.third_quality_kg ?? 0),
-        merma: Number(record.merma_kg ?? record.discard_kg ?? 0),
-        firstQualityBoxes: Number(record.first_quality_boxes ?? 0),
-        secondQualityBoxes: Number(record.second_quality_boxes ?? 0),
-        thirdQualityBoxes: Number(record.third_quality_boxes ?? 0),
-        mermaBoxes: Number(record.merma_boxes ?? record.discard_boxes ?? 0),
-        firstQualityPrice: Number(record.first_quality_price ?? 0),
-        secondQualityPrice: Number(record.second_quality_price ?? 0),
-        thirdQualityPrice: Number(record.third_quality_price ?? 0),
-        estimatedPrice: Number(record.estimated_price ?? 0),
-        destination: record.destination ?? "",
-        notes: record.notes ?? ""
-      }));
-
-      const costRecords: CostRecord[] = (costRows ?? []).map((record: any) => ({
-        id: record.id,
-        greenhouseId: record.greenhouse_id ?? "",
-        date: record.occurred_at,
-        category: mapCostCategory(record.category),
-        amount: Number(record.amount ?? 0),
-        notes: record.notes ?? ""
-      }));
-
-      const activities: Activity[] = [
-        ...harvestRecords.slice(0, 2).map((record) => ({
-          id: `activity-harvest-${record.id}`,
-          greenhouseId: record.greenhouseId,
-          title: "Cosecha registrada",
-          detail: `${record.kilograms.toLocaleString("es-MX")} kg`,
-          time: record.date
-        })),
-        ...irrigationRecords.slice(0, 2).map((record) => ({
-          id: `activity-irrigation-${record.id}`,
-          greenhouseId: record.greenhouseId,
-          title: "Riego registrado",
-          detail: `${record.liters.toLocaleString("es-MX")} L`,
-          time: record.date
-        }))
-      ];
-
       hydrateWorkspace({
         organization,
         currentUser,
@@ -1432,15 +1083,7 @@ export function AuthGate() {
         cropStages,
         nutritionReferenceRanges,
         nutritionObservationRules,
-        greenhouses: mappedGreenhouses,
-        tasks,
-        irrigationRecords,
-        nutritionRecords,
-        applicationRecords,
-        pestAlerts,
-        harvestRecords,
-        costRecords,
-        activities
+        greenhouses: mappedGreenhouses
       });
 
       setState("ready");
