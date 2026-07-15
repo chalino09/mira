@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
-import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
@@ -260,7 +260,7 @@ export function InventorySection() {
             <p className="text-sm leading-6 text-app-muted">Elige un producto de Aplicaciones. Se agrega al almacén automáticamente con su primera entrada.</p>
             <Field label="Producto"><SelectInput name="entryTarget" onChange={(event) => selectEntryTarget(event.target.value)} required value={entryTarget}><option disabled value="">Selecciona</option>{products.length ? <optgroup label="Productos de Aplicaciones">{products.map((product) => <option key={product.id} value={`product:${product.id}`}>{product.name}</option>)}</optgroup> : null}{manualItems.length ? <optgroup label="Otros recursos">{manualItems.map((item) => <option key={item.id} value={`item:${item.id}`}>{item.name}</option>)}</optgroup> : null}</SelectInput></Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={selectedEntryItem ? "Unidad" : "Unidad (primera entrada)"}><TextInput name="unit" onChange={(event) => setEntryUnit(event.target.value)} placeholder="kg, L, h" readOnly={Boolean(selectedEntryItem)} required value={entryUnit} /></Field>
+              <Field label={selectedEntryItem ? "Unidad configurada" : "Unidad (primera entrada)"}><UnitSelectInput disabled={Boolean(selectedEntryItem)} name="unit" onChange={(event) => setEntryUnit(event.target.value)} required value={entryUnit} /></Field>
               <Field label="Cantidad"><FormattedNumberInput min="0.0001" name="quantity" required /></Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -281,7 +281,7 @@ export function InventorySection() {
           <p className="text-sm leading-6 text-app-muted">Úsalo para agua, energía, mano de obra u otro recurso que no provenga del catálogo de Aplicaciones.</p>
           <Field label="Nombre"><TextInput name="name" placeholder="Ej. Agua de riego" required /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Unidad"><TextInput name="unit" placeholder="kg, L, h" required /></Field>
+            <Field label="Unidad"><UnitSelectInput name="unit" required /></Field>
             <Field label="Tipo"><SelectInput defaultValue="material" name="kind"><option value="material">Material</option><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
           </div>
           <Field label="Categoría de costo"><SelectInput defaultValue="agroinsumos" name="category">{categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
@@ -303,7 +303,7 @@ export function InventorySection() {
         <form className="grid gap-5" onSubmit={saveRate}>
           <p className="text-sm leading-6 text-app-muted">Estas tarifas calculan costos de agua, energía y mano de obra al completar un Work.</p>
           <Field label="Recurso"><SelectInput defaultValue="water" name="resource"><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><TextInput defaultValue="L" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><UnitSelectInput defaultValue="L" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
           <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar tarifa</Button></div>
         </form>
       </Modal>

@@ -37,6 +37,14 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
 
 type FormattedInputValue = string | number | null | undefined;
 
+const unitGroups = [
+  { label: "Inventario", values: ["kg", "g", "mg", "t", "L", "mL", "m³", "h", "min", "unidad", "pieza", "caja", "saco", "rollo"] },
+  { label: "Aplicación y nutrición", values: ["ml/L", "g/L", "L/ha", "kg/ha", "ml/20 L", "g/20 L", "cc/L", "%"] },
+  { label: "Mediciones", values: ["ppm", "mg/L", "meq/L", "mmol/L", "mS/cm", "dS/m", "pH", "°C", "°F"] }
+] as const;
+
+const knownUnits = new Set<string>(unitGroups.flatMap((group) => group.values));
+
 type FormattedInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode" | "defaultValue" | "value"> & {
   defaultValue?: FormattedInputValue;
   value?: FormattedInputValue;
@@ -94,6 +102,23 @@ export function SelectInput({ className, children, ...props }: SelectHTMLAttribu
     <select className={cn(fieldClass, "appearance-none", className)} {...props}>
       {children}
     </select>
+  );
+}
+
+export function UnitSelectInput({ value, defaultValue, ...props }: Omit<SelectHTMLAttributes<HTMLSelectElement>, "children">) {
+  const selectedValue = value ?? defaultValue;
+  const legacyUnit = selectedValue == null ? "" : String(selectedValue);
+
+  return (
+    <SelectInput defaultValue={defaultValue} value={value} {...props}>
+      <option disabled value="">Selecciona unidad</option>
+      {!knownUnits.has(legacyUnit) && legacyUnit ? <option value={legacyUnit}>{legacyUnit}</option> : null}
+      {unitGroups.map((group) => (
+        <optgroup key={group.label} label={group.label}>
+          {group.values.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+        </optgroup>
+      ))}
+    </SelectInput>
   );
 }
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, FileText, FlaskConical, Plus, Save, Sprout, Trash2, Upload, WandSparkles } from "lucide-react";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { appErrorMessage } from "@/lib/errors";
@@ -930,7 +930,7 @@ export function TechnicalLabSection() {
                         <TextInput value={parameter.valueText} onChange={(event) => updateEditParameter(parameter.id, { valueText: event.target.value })} />
                       </Field>
                       <Field label="Unidad">
-                        <TextInput value={parameter.unit} onChange={(event) => updateEditParameter(parameter.id, { unit: event.target.value })} />
+                        <UnitSelectInput value={parameter.unit} onChange={(event) => updateEditParameter(parameter.id, { unit: event.target.value })} />
                       </Field>
                       <Field label="Estado">
                         <SelectInput value={parameter.status} onChange={(event) => updateEditParameter(parameter.id, { status: event.target.value as LabValueStatus })}>
@@ -964,7 +964,7 @@ export function TechnicalLabSection() {
                         <TextInput value={parameter.valueSecondaryText} onChange={(event) => updateEditParameter(parameter.id, { valueSecondaryText: event.target.value })} />
                       </Field>
                       <Field label="Unidad 2">
-                        <TextInput value={parameter.secondaryUnit} onChange={(event) => updateEditParameter(parameter.id, { secondaryUnit: event.target.value })} />
+                        <UnitSelectInput value={parameter.secondaryUnit} onChange={(event) => updateEditParameter(parameter.id, { secondaryUnit: event.target.value })} />
                       </Field>
                       <Field label="Rango">
                         <TextInput value={parameter.rangeText} onChange={(event) => updateEditParameter(parameter.id, { rangeText: event.target.value })} />
