@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   Activity,
   ApplicationRecord,
@@ -8,6 +9,7 @@ import type {
   CropCatalogItem,
   CropStageCatalog,
   CurrentUser,
+  ContextPeriod,
   Greenhouse,
   HarvestRecord,
   IrrigationRecord,
@@ -17,7 +19,8 @@ import type {
   PestAlert,
   PestAlertUpdate,
   SectionId,
-  Task
+  Task,
+  ViewContext
 } from "@/types";
 import type { NutritionObservationRule, NutritionReferenceRange } from "@/lib/nutrition-monitoring";
 import { makeId } from "@/lib/utils";
@@ -27,6 +30,8 @@ type WithOptionalId<T extends { id: string }> = Omit<T, "id"> & Partial<Pick<T, 
 type AppState = {
   activeSection: SectionId;
   selectedGreenhouseId: string;
+  selectedPeriod: ContextPeriod;
+  viewContexts: Partial<Record<SectionId, ViewContext>>;
   modal: ModalType;
   organization: Organization;
   currentUser: CurrentUser;
@@ -45,6 +50,7 @@ type AppState = {
   activities: Activity[];
   setActiveSection: (section: SectionId) => void;
   setSelectedGreenhouseId: (id: string) => void;
+  setSelectedPeriod: (period: ContextPeriod) => void;
   updateOrganization: (organization: Organization) => void;
   openModal: (modal: ModalType) => void;
   closeModal: () => void;
@@ -80,9 +86,13 @@ type AppState = {
   }) => void;
 };
 
-export const useGreenhouseStore = create<AppState>((set) => ({
+const allGreenhousesId = "__all__";
+
+export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   activeSection: "overview",
-  selectedGreenhouseId: "",
+  selectedGreenhouseId: allGreenhousesId,
+  selectedPeriod: "month",
+  viewContexts: {},
   modal: null,
   organization: {
     id: "",
@@ -107,30 +117,60 @@ export const useGreenhouseStore = create<AppState>((set) => ({
   harvestRecords: [],
   costRecords: [],
   activities: [],
-  setActiveSection: (section) => set({ activeSection: section }),
-  setSelectedGreenhouseId: (id) => set({ selectedGreenhouseId: id }),
+  setActiveSection: (section) => set((state) => {
+    const allowsAll = !["overview", "monitoring"].includes(section);
+    const savedContext = state.viewContexts[section];
+    const hasValidGreenhouse = savedContext?.greenhouseId === allGreenhousesId
+      ? allowsAll
+      : state.greenhouses.some((greenhouse) => greenhouse.id === savedContext?.greenhouseId);
+    const context = hasValidGreenhouse && savedContext ? savedContext : {
+      greenhouseId: ["overview", "monitoring"].includes(section) ? state.greenhouses[0]?.id ?? "" : allGreenhousesId,
+      period: "month" as ContextPeriod
+    };
+    return { activeSection: section, selectedGreenhouseId: context.greenhouseId, selectedPeriod: context.period };
+  }),
+  setSelectedGreenhouseId: (id) => set((state) => ({
+    selectedGreenhouseId: id,
+    viewContexts: {
+      ...state.viewContexts,
+      [state.activeSection]: { greenhouseId: id, period: state.selectedPeriod }
+    }
+  })),
+  setSelectedPeriod: (period) => set((state) => ({
+    selectedPeriod: period,
+    viewContexts: {
+      ...state.viewContexts,
+      [state.activeSection]: { greenhouseId: state.selectedGreenhouseId, period }
+    }
+  })),
   updateOrganization: (organization) => set({ organization }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
   hydrateWorkspace: (data) =>
-    set(() => ({
-      organization: data.organization,
-      currentUser: data.currentUser,
-      crops: data.crops,
-      cropStages: data.cropStages,
-      nutritionReferenceRanges: data.nutritionReferenceRanges,
-      nutritionObservationRules: data.nutritionObservationRules,
-      greenhouses: data.greenhouses,
-      selectedGreenhouseId: data.greenhouses[0]?.id ?? "",
-      tasks: data.tasks,
-      irrigationRecords: data.irrigationRecords,
-      nutritionRecords: data.nutritionRecords,
-      applicationRecords: data.applicationRecords,
-      pestAlerts: data.pestAlerts,
-      harvestRecords: data.harvestRecords,
-      costRecords: data.costRecords,
-      activities: data.activities
-    })),
+    set((state) => {
+      const allowsAll = !["overview", "monitoring"].includes(state.activeSection);
+      const selectedGreenhouseId = (allowsAll && state.selectedGreenhouseId === allGreenhousesId) || data.greenhouses.some((item) => item.id === state.selectedGreenhouseId)
+        ? state.selectedGreenhouseId
+        : data.greenhouses[0]?.id ?? "";
+      return {
+        organization: data.organization,
+        currentUser: data.currentUser,
+        crops: data.crops,
+        cropStages: data.cropStages,
+        nutritionReferenceRanges: data.nutritionReferenceRanges,
+        nutritionObservationRules: data.nutritionObservationRules,
+        greenhouses: data.greenhouses,
+        selectedGreenhouseId,
+        tasks: data.tasks,
+        irrigationRecords: data.irrigationRecords,
+        nutritionRecords: data.nutritionRecords,
+        applicationRecords: data.applicationRecords,
+        pestAlerts: data.pestAlerts,
+        harvestRecords: data.harvestRecords,
+        costRecords: data.costRecords,
+        activities: data.activities
+      };
+    }),
   addTask: (task) =>
     set((state) => ({
       tasks: [{ ...task, id: task.id ?? makeId("task") }, ...state.tasks],
@@ -301,4 +341,12 @@ export const useGreenhouseStore = create<AppState>((set) => ({
       ],
       modal: null
     }))
+}), {
+  name: "mira-view-context",
+  partialize: (state) => ({
+    activeSection: state.activeSection,
+    selectedGreenhouseId: state.selectedGreenhouseId,
+    selectedPeriod: state.selectedPeriod,
+    viewContexts: state.viewContexts
+  })
 }));

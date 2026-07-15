@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { Building2, CalendarDays, Plus, Search } from "lucide-react";
 import { MiraCopilotCommand } from "@/components/copilot/MiraCopilot";
 import { Button } from "@/components/ui/Button";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
+import { weekOfYear } from "@/lib/date";
 import { useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
 
@@ -17,27 +18,72 @@ export function Topbar({
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const crops = useGreenhouseStore((state) => state.crops);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
   const setSelectedGreenhouseId = useGreenhouseStore((state) => state.setSelectedGreenhouseId);
+  const setSelectedPeriod = useGreenhouseStore((state) => state.setSelectedPeriod);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
+  const activeSection = useGreenhouseStore((state) => state.activeSection);
+  const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
+  const acceptsAll = ["calendar", "records", "pests", "harvest", "costs", "reports"].includes(activeSection);
+  const acceptsPeriod = ["records", "pests", "costs", "reports"].includes(activeSection);
+  const hasContextPeriod = acceptsPeriod || activeSection === "calendar" || activeSection === "harvest";
+  const isCompanyView = ["inventory", "greenhouses", "settings"].includes(activeSection);
+  const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
+  const scopeLabel = isCompanyView
+    ? "Toda la empresa"
+    : selectedGreenhouseId === "__all__"
+      ? `Todos los invernaderos${greenhouses.length ? ` (${greenhouses.length})` : ""}`
+      : selectedGreenhouse ? greenhouseDisplayName(selectedGreenhouse, crops) : "Sin invernadero";
+  const periodLabel = activeSection === "calendar" || activeSection === "harvest"
+    ? `Semana ${weekOfYear()}`
+    : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
 
   return (
     <header className="sticky top-0 z-20 border-b border-app-border bg-app-background/90 px-4 py-2.5 backdrop-blur lg:px-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <select
-            aria-label="Área productiva"
-            className="h-9 min-w-0 rounded-lg border border-app-border bg-white px-3 text-xs font-medium text-app-text outline-none focus:border-app-green focus:ring-2 focus:ring-app-green/10"
-            value={selectedGreenhouseId}
-            onChange={(event) => setSelectedGreenhouseId(event.target.value)}
-          >
-            {greenhouses.map((greenhouse) => (
-              <option key={greenhouse.id} value={greenhouse.id}>
-                {greenhouseDisplayName(greenhouse, crops)}
-              </option>
-            ))}
-          </select>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
+          <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-app-green" />
+            <span className="max-w-28 truncate font-medium text-app-text">{organization.name || "Empresa"}</span>
+            <span aria-hidden="true">→</span>
+            {isCompanyView ? (
+              <span className="font-medium text-app-text">Toda la empresa</span>
+            ) : (
+              <select
+                aria-label="Alcance de invernaderos"
+                className="min-w-0 bg-transparent font-medium text-app-text outline-none"
+                value={selectedGreenhouseId}
+                onChange={(event) => setSelectedGreenhouseId(event.target.value)}
+              >
+                {acceptsAll ? <option value="__all__">Todos los invernaderos</option> : null}
+                {greenhouses.map((greenhouse) => (
+                  <option key={greenhouse.id} value={greenhouse.id}>
+                    {greenhouseDisplayName(greenhouse, crops)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {hasContextPeriod ? (
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted">
+              <CalendarDays className="h-3.5 w-3.5 text-app-green" />
+              {acceptsPeriod ? (
+                <select
+                  aria-label="Periodo"
+                  className="bg-transparent font-medium text-app-text outline-none"
+                  value={selectedPeriod}
+                  onChange={(event) => setSelectedPeriod(event.target.value as typeof selectedPeriod)}
+                >
+                  <option value="week">Semana actual</option>
+                  <option value="month">Mes actual</option>
+                  <option value="all">Todo el historial</option>
+                </select>
+              ) : <span className="font-medium text-app-text">{periodLabel}</span>}
+            </div>
+          ) : null}
+          <span className="hidden text-xs text-app-muted lg:inline">Viendo {scopeLabel}{hasContextPeriod ? ` · ${periodLabel}` : ""}</span>
           <div className="hidden h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:flex">
             <Search className="h-3.5 w-3.5" />
             <span>Buscar registros</span>

@@ -126,6 +126,8 @@ Para registrar directamente una compra desde el catálogo de Aplicaciones, sin c
 
 Para adjuntar evidencia privada a cada Work y usar las vistas operativas unificadas, ejecuta `46_work_evidence_and_operational_alerts.sql` después de `45_inventory_product_intake.sql`.
 
+Para agregar los productos pendientes del catálogo sin duplicar nombres equivalentes, ejecuta `47_pending_product_catalog.sql` después de `46_work_evidence_and_operational_alerts.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

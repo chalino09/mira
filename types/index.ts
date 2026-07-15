@@ -16,6 +16,12 @@ export type SectionId =
   | "reports"
   | "settings";
 
+export type ContextPeriod = "week" | "month" | "all";
+export type ViewContext = {
+  greenhouseId: string;
+  period: ContextPeriod;
+};
+
 export type CropStage = "Floración" | "Cuajado" | "Producción" | "Vegetativo";
 export type RiskLevel = "Baja" | "Media" | "Alta";
 export type TaskType =

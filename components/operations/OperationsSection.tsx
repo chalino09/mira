@@ -30,6 +30,7 @@ import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { harvestValuesFromForm } from "@/lib/harvest";
+import { normalizedProductName } from "@/lib/product-search";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { useGreenhouseStore } from "@/lib/store";
@@ -424,10 +425,6 @@ function rpcRecordIds(data: unknown) {
 
 function emptyMaterial(): MaterialDraft {
   return { productId: "", productName: "", composition: "", dose: "", unit: "", notes: "" };
-}
-
-function normalizedProductName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-MX");
 }
 
 function ProductCombobox({
@@ -1500,6 +1497,7 @@ export function OperationsSection({
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const crops = useGreenhouseStore((state) => state.crops);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const addApplicationRecords = useGreenhouseStore((state) => state.addApplicationRecords);
   const addIrrigation = useGreenhouseStore((state) => state.addIrrigation);
   const addNutrition = useGreenhouseStore((state) => state.addNutrition);
@@ -1558,6 +1556,18 @@ export function OperationsSection({
 
     setLoading(true);
     setSetupRequired(false);
+    let tasksQuery = supabase
+      .from("tasks")
+      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
+      .eq("company_id", organization.id)
+      .or(`and(scheduled_date.gte.${weekStartKey},scheduled_date.lte.${weekEndKey}),and(scheduled_date.lt.${todayKey},status.in.(pendiente,en_progreso,bloqueada))`)
+      .order("scheduled_date", { ascending: true })
+      .order("scheduled_time", { ascending: true });
+
+    if (selectedGreenhouseId !== "__all__") {
+      tasksQuery = tasksQuery.eq("greenhouse_id", selectedGreenhouseId);
+    }
+
     const [planResponse, tasksResponse, membersResponse, staffResponse, productsResponse] = await Promise.all([
       supabase
         .from("weekly_plans")
@@ -1565,13 +1575,7 @@ export function OperationsSection({
         .eq("company_id", organization.id)
         .eq("week_start", weekStartKey)
         .maybeSingle(),
-      supabase
-        .from("tasks")
-        .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
-        .eq("company_id", organization.id)
-        .or(`and(scheduled_date.gte.${weekStartKey},scheduled_date.lte.${weekEndKey}),and(scheduled_date.lt.${todayKey},status.in.(pendiente,en_progreso,bloqueada))`)
-        .order("scheduled_date", { ascending: true })
-        .order("scheduled_time", { ascending: true }),
+      tasksQuery,
       supabase
         .from("company_members")
         .select("user_id")
@@ -1656,7 +1660,7 @@ export function OperationsSection({
       detail: person.phone ?? "Sin cuenta"
     })));
     setLoading(false);
-  }, [organization.id, todayKey, weekEndKey, weekStartKey]);
+  }, [organization.id, selectedGreenhouseId, todayKey, weekEndKey, weekStartKey]);
 
   useEffect(() => {
     loadOperations();

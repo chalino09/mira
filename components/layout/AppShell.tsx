@@ -50,7 +50,7 @@ import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/Form
 import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
-import { startOfIsoWeek } from "@/lib/date";
+import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import {
   buildCopilotPulse,
@@ -158,20 +158,36 @@ function cropPlantDetail(greenhouse: Greenhouse) {
 
 function useFilteredData() {
   const state = useGreenhouseStore();
-  const greenhouse = state.greenhouses.find((item) => item.id === state.selectedGreenhouseId) ?? state.greenhouses[0];
-  const filter = <T extends { greenhouseId: string }>(items: T[]) =>
-    greenhouse ? items.filter((item) => item.greenhouseId === greenhouse.id) : [];
+  const isAllGreenhouses = state.selectedGreenhouseId === "__all__";
+  const greenhouse = isAllGreenhouses
+    ? undefined
+    : state.greenhouses.find((item) => item.id === state.selectedGreenhouseId) ?? state.greenhouses[0];
+  const periodApplies = ["records", "pests", "costs", "reports"].includes(state.activeSection);
+  const today = new Date();
+  const weekStart = dateKey(startOfIsoWeek(today));
+  const weekEnd = dateKey(addDays(startOfIsoWeek(today), 6));
+  const monthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const isInPeriod = (date: string) => {
+    if (!periodApplies || state.selectedPeriod === "all") return true;
+    if (state.selectedPeriod === "week") return date >= weekStart && date <= weekEnd;
+    return date.startsWith(monthPrefix);
+  };
+  const filter = <T extends { greenhouseId: string }>(items: T[], dateFor?: (item: T) => string) =>
+    items.filter((item) =>
+      (isAllGreenhouses || (greenhouse ? item.greenhouseId === greenhouse.id : false))
+      && (!dateFor || isInPeriod(dateFor(item)))
+    );
 
   return {
     ...state,
     greenhouse,
-    greenhouseTasks: filter(state.tasks),
-    greenhouseIrrigation: filter(state.irrigationRecords),
-    greenhouseNutrition: filter(state.nutritionRecords),
-    greenhouseApplications: filter(state.applicationRecords),
-    greenhousePests: filter(state.pestAlerts),
-    greenhouseHarvest: filter(state.harvestRecords),
-    greenhouseCosts: filter(state.costRecords),
+    greenhouseTasks: filter(state.tasks, (item) => item.date),
+    greenhouseIrrigation: filter(state.irrigationRecords, (item) => item.date),
+    greenhouseNutrition: filter(state.nutritionRecords, (item) => item.date),
+    greenhouseApplications: filter(state.applicationRecords, (item) => item.date),
+    greenhousePests: filter(state.pestAlerts, (item) => item.detectedAt),
+    greenhouseHarvest: filter(state.harvestRecords, (item) => item.date),
+    greenhouseCosts: filter(state.costRecords, (item) => item.date),
     greenhouseActivities: filter(state.activities)
   };
 }
@@ -2295,7 +2311,7 @@ export function AppShell() {
   const localCopilotInsights = useMemo(
     () =>
       buildCopilotPulse({
-        activeGreenhouseId: selectedGreenhouseId || null,
+        activeGreenhouseId: selectedGreenhouseId === "__all__" ? null : selectedGreenhouseId || null,
         alerts: pestAlerts,
         greenhouses,
         tasks
@@ -2357,7 +2373,7 @@ export function AppShell() {
       const { data, error } = await supabase.functions.invoke("mira-copilot", {
         body: {
           company_id: organization.id,
-          greenhouse_id: selectedGreenhouseId || null
+          greenhouse_id: selectedGreenhouseId === "__all__" ? null : selectedGreenhouseId || null
         }
       });
       if (error) throw error;
@@ -2399,7 +2415,7 @@ export function AppShell() {
       const { data, error } = await supabase.functions.invoke("mira-chat", {
         body: {
           company_id: organization.id,
-          greenhouse_id: selectedGreenhouseId || null,
+          greenhouse_id: selectedGreenhouseId === "__all__" ? null : selectedGreenhouseId || null,
           conversation_id: copilotConversationId,
           message
         }
@@ -2443,7 +2459,7 @@ export function AppShell() {
 
     const { error } = await supabase.from("copilot_manager_messages").insert({
       company_id: organization.id,
-      greenhouse_id: (insight.greenhouseId ?? selectedGreenhouseId) || null,
+      greenhouse_id: insight.greenhouseId ?? (selectedGreenhouseId === "__all__" ? null : selectedGreenhouseId),
       task_id: insight.sourceType === "operation" ? insight.sourceId ?? null : null,
       message_body: message,
       status: "draft",
@@ -2470,7 +2486,7 @@ export function AppShell() {
       return;
     }
 
-    const targetGreenhouseId = insight.greenhouseId || selectedGreenhouseId;
+    const targetGreenhouseId = insight.greenhouseId || (selectedGreenhouseId === "__all__" ? "" : selectedGreenhouseId);
     const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === targetGreenhouseId);
 
     if (!targetGreenhouseId || !targetGreenhouse) {

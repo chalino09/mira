@@ -15,6 +15,7 @@ import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { harvestValuesFromForm } from "@/lib/harvest";
+import { normalizedProductName } from "@/lib/product-search";
 import { cn, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
@@ -113,10 +114,6 @@ function emptyNutritionProduct(): NutritionProductDraft {
 
 function emptyApplicationProduct(): ApplicationProductDraft {
   return { productId: "", category: "Bioestimulante", product: "", composition: "", dose: "" };
-}
-
-function normalizedProductName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-MX");
 }
 
 function ProductSearchInput({
@@ -618,6 +615,7 @@ export function RecordModal() {
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
+  const defaultGreenhouseId = selectedGreenhouseId === "__all__" ? "" : selectedGreenhouseId;
   const activeCropOptions = crops.filter((crop) => crop.isActive);
   const cropOptions = activeCropOptions.length
     ? activeCropOptions
@@ -626,11 +624,14 @@ export function RecordModal() {
   const draftCrop = cropOptions.find((crop) => crop.id === draftCropId) ?? cropOptions[0];
   const existingVarietyForDraftCrop = selectedGreenhouse?.cropId === draftCropId ? selectedGreenhouse.variety : null;
   const draftVarietyOptions = cropVarietyOptionsForSlug(draftCrop?.slug, existingVarietyForDraftCrop);
-  const greenhouseOptions = greenhouses.map((greenhouse) => (
-    <option key={greenhouse.id} value={greenhouse.id}>
-      {greenhouseDisplayName(greenhouse, crops)}
-    </option>
-  ));
+  const greenhouseOptions = <>
+    {defaultGreenhouseId === "" ? <option disabled value="">Selecciona un invernadero</option> : null}
+    {greenhouses.map((greenhouse) => (
+      <option key={greenhouse.id} value={greenhouse.id}>
+        {greenhouseDisplayName(greenhouse, crops)}
+      </option>
+    ))}
+  </>;
 
   const save = async (handler: () => Promise<void>) => {
     setError("");
@@ -1450,7 +1451,7 @@ export function RecordModal() {
       {modal === "task" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleTask}>
           <Field label="Área productiva">
-            <SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput>
+            <SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput>
           </Field>
           <Field label="Tipo">
             <SelectInput name="type" defaultValue="Riego">
@@ -1471,7 +1472,7 @@ export function RecordModal() {
 
       {modal === "irrigation" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Duración min"><FormattedNumberInput name="durationMin" required defaultValue={0} /></Field>
           <Field label="Litros estimados"><FormattedNumberInput name="liters" required defaultValue={0} /></Field>
@@ -1484,7 +1485,7 @@ export function RecordModal() {
 
       {modal === "nutrition" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -1530,7 +1531,7 @@ export function RecordModal() {
 
       {modal === "application" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -1577,7 +1578,7 @@ export function RecordModal() {
 
       {modal === "pest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handlePest}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="detectedAt" required defaultValue={todayInputValue()} /></Field>
           <Field label="Problema"><TextInput name="problem" required placeholder="Mosquita blanca" /></Field>
           <Field label="Incidencia"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
@@ -1597,7 +1598,7 @@ export function RecordModal() {
 
       {modal === "harvest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <HarvestCaptureFields />
           <Field label="Cliente o destino"><TextInput name="destination" /></Field>
@@ -1607,7 +1608,7 @@ export function RecordModal() {
 
       {modal === "cost" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" defaultValue={selectedGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="grid gap-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
