@@ -1,9 +1,11 @@
 "use client";
 
 import { Building2, CalendarDays, Plus, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { MiraCopilotCommand } from "@/components/copilot/MiraCopilot";
 import { Button } from "@/components/ui/Button";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
+import { appRoute } from "@/lib/routes";
 import { weekOfYear } from "@/lib/date";
 import { useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
@@ -15,13 +17,11 @@ export function Topbar({
   copilotInsightCount?: number;
   onOpenCopilot?: () => void;
 }) {
+  const router = useRouter();
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const crops = useGreenhouseStore((state) => state.crops);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
-  const setSelectedGreenhouseId = useGreenhouseStore((state) => state.setSelectedGreenhouseId);
-  const setSelectedPeriod = useGreenhouseStore((state) => state.setSelectedPeriod);
-  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
@@ -39,6 +39,13 @@ export function Topbar({
   const periodLabel = activeSection === "calendar" || activeSection === "harvest"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
+  const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {
+    router.push(appRoute(organization.slug ?? organization.name, {
+      section: next.section ?? activeSection,
+      greenhouseId: next.greenhouseId ?? selectedGreenhouseId,
+      period: next.period ?? selectedPeriod
+    }));
+  };
 
   return (
     <header className="sticky top-0 z-20 border-b border-app-border bg-app-background/90 px-4 py-2.5 backdrop-blur lg:px-6">
@@ -55,7 +62,7 @@ export function Topbar({
                 aria-label="Alcance de invernaderos"
                 className="min-w-0 bg-transparent font-medium text-app-text outline-none"
                 value={selectedGreenhouseId}
-                onChange={(event) => setSelectedGreenhouseId(event.target.value)}
+                onChange={(event) => navigate({ greenhouseId: event.target.value })}
               >
                 {acceptsAll ? <option value="__all__">Todos los invernaderos</option> : null}
                 {greenhouses.map((greenhouse) => (
@@ -74,7 +81,7 @@ export function Topbar({
                   aria-label="Periodo"
                   className="bg-transparent font-medium text-app-text outline-none"
                   value={selectedPeriod}
-                  onChange={(event) => setSelectedPeriod(event.target.value as typeof selectedPeriod)}
+                  onChange={(event) => navigate({ period: event.target.value as typeof selectedPeriod })}
                 >
                   <option value="week">Semana actual</option>
                   <option value="month">Mes actual</option>
@@ -99,7 +106,7 @@ export function Topbar({
             <Button
               className="h-9 rounded-lg px-3 text-xs"
               icon={<Plus className="h-3.5 w-3.5" />}
-              onClick={() => setActiveSection("calendar")}
+              onClick={() => navigate({ section: "calendar" })}
               variant="secondary"
             >
               Planeación

@@ -25,9 +25,11 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
+import Link from "next/link";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { RouteSync } from "@/components/layout/RouteSync";
 import { CopilotPulseBand, MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
@@ -51,6 +53,7 @@ import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
+import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
 import {
   buildCopilotPulse,
@@ -61,6 +64,7 @@ import {
   type CopilotSuggestedAction
 } from "@/lib/mira-copilot";
 import { useGreenhouseStore } from "@/lib/store";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFile } from "@/lib/storage";
 import { cn, formatCurrency, formatDate, formatNumber, formatPersonName, parseNumericInput } from "@/lib/utils";
@@ -76,6 +80,7 @@ import type {
   PestCaseStatus,
   PestUpdateStatus,
   RiskLevel,
+  SectionId,
   Task
 } from "@/types";
 
@@ -268,6 +273,8 @@ type CopilotSurfaceProps = {
   onOpenCopilot: () => void;
   onPrepareCopilotMessage: (insight: CopilotInsight) => void;
   operationRefreshKey?: number;
+  operationWeekStart?: string;
+  onOperationWeekChange?: (weekStart: string) => void;
   pendingCompletionTask?: { id: string; date: string } | null;
   onPendingCompletionConsumed?: () => void;
   onRequestTechnicalCompletion?: (task: Task) => void;
@@ -445,7 +452,7 @@ function OverviewSection({
 }
 
 function GreenhousesSection() {
-  const { crops, currentUser, greenhouses, openModal, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
+  const { crops, currentUser, greenhouses, openModal, organization, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
   const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
   const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
 
@@ -459,12 +466,19 @@ function GreenhousesSection() {
       <div className="grid gap-10 xl:grid-cols-[minmax(0,1.35fr)_320px]">
         <div className="grid gap-3">
           {greenhouses.map((greenhouse) => (
-            <GreenhouseCard
-              key={greenhouse.id}
-              greenhouse={greenhouse}
-              onSelect={() => setSelectedGreenhouseId(greenhouse.id)}
-              selected={greenhouse.id === selectedGreenhouseId}
-            />
+            <div key={greenhouse.id}>
+              <GreenhouseCard
+                greenhouse={greenhouse}
+                onSelect={() => setSelectedGreenhouseId(greenhouse.id)}
+                selected={greenhouse.id === selectedGreenhouseId}
+              />
+              <Link
+                className="mt-2 inline-flex text-xs font-medium text-app-green underline-offset-4 hover:underline"
+                href={greenhouseRoute(organization.slug ?? organization.name, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
+              >
+                Abrir ficha compartible
+              </Link>
+            </div>
           ))}
         </div>
         {active ? (
@@ -496,6 +510,187 @@ function GreenhousesSection() {
             ) : null}
           </EditorialRail>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function EntityNotFound({ section, label }: { section: SectionId; label: string }) {
+  const organization = useGreenhouseStore((state) => state.organization);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
+
+  return (
+    <section>
+      <SectionHeader
+        title="No encontrado"
+        description={`No encontramos ${label} o no tienes acceso a este recurso.`}
+      />
+      <Link
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+        href={appRoute(organization.slug ?? organization.name, { section, greenhouseId: selectedGreenhouseId, period: selectedPeriod })}
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Volver al módulo
+      </Link>
+    </section>
+  );
+}
+
+function RouteAccessDenied() {
+  const organization = useGreenhouseStore((state) => state.organization);
+
+  return (
+    <section>
+      <SectionHeader
+        title="Acceso restringido"
+        description="No tienes permiso para abrir recursos de esta empresa."
+      />
+      <Link
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+        href={appRoute(organization.slug ?? organization.name, { section: "overview" })}
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Ir a mi espacio
+      </Link>
+    </section>
+  );
+}
+
+function EntityRouteView({ route }: { route: EntityRoute }) {
+  const organization = useGreenhouseStore((state) => state.organization);
+  const crops = useGreenhouseStore((state) => state.crops);
+  const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const pestAlerts = useGreenhouseStore((state) => state.pestAlerts);
+  const harvestRecords = useGreenhouseStore((state) => state.harvestRecords);
+  const organizationRouteName = organization.slug ?? organization.name;
+
+  if (route.type === "greenhouse" || route.type === "cycle") {
+    const greenhouse = greenhouses.find((item) => (item.publicId ?? publicEntityId("gh", item.id)) === route.greenhousePublicId);
+    if (!greenhouse) return <EntityNotFound label="este invernadero" section="greenhouses" />;
+
+    if (route.type === "cycle") {
+      return (
+        <section>
+          <SectionHeader
+            action={(
+              <Link
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+                href={greenhouseRoute(organizationRouteName, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Invernadero
+              </Link>
+            )}
+            title={`Ciclo actual · ${greenhouse.name}`}
+            description="Contexto productivo actual del invernadero, disponible mediante un enlace directo y compartible."
+          />
+          <div className="grid gap-3 md:grid-cols-3">
+            <EditorialObject index="01" label="Cultivo" value={cropLabelForId(greenhouse.cropId, crops)} detail={greenhouse.variety || "Variedad sin configurar"} icon={Sprout} />
+            <EditorialObject index="02" label="Etapa actual" value={greenhouse.stage} detail={greenhouse.transplantDate ? `Trasplante: ${formatDate(greenhouse.transplantDate)}` : "Trasplante sin registrar"} icon={Leaf} />
+            <EditorialObject index="03" label="Días del ciclo" value={formatNumber(greenhouse.daysSinceTransplant)} detail={`${formatNumber(greenhouse.plants)} plantas`} icon={CalendarDays} />
+          </div>
+          <div className="mt-8 max-w-xl"><CropDdtPanel greenhouse={greenhouse} /></div>
+        </section>
+      );
+    }
+
+    return (
+      <section>
+        <SectionHeader
+          action={(
+            <Link
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+              href={currentCycleRoute(organizationRouteName, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
+            >
+              <CalendarDays className="h-4 w-4" />
+              Ver ciclo actual
+            </Link>
+          )}
+          title={greenhouseDisplayName(greenhouse, crops)}
+          description="Ficha compartible del área productiva, su cultivo, responsable y estado actual."
+        />
+        <div className="grid gap-3 md:grid-cols-3">
+          <EditorialObject index="01" label="Ubicación" value={greenhouse.location || "Sin ubicación"} detail={greenhouse.surface} icon={MapPin} />
+          <EditorialObject index="02" label="Responsable" value={greenhouse.manager} detail={`${formatNumber(greenhouse.beds)} camas`} icon={Users} />
+          <EditorialObject index="03" label="Estado sanitario" value={greenhouse.healthStatus} detail={`${formatNumber(greenhouse.plants)} plantas`} icon={ShieldCheck} />
+        </div>
+        <div className="mt-8 max-w-xl"><CropDdtPanel greenhouse={greenhouse} /></div>
+      </section>
+    );
+  }
+
+  if (route.type === "pestCase") {
+    const alert = pestAlerts.find((item) => (item.publicId ?? publicEntityId("pest", item.id)) === route.pestPublicId);
+    if (!alert) return <EntityNotFound label="este caso sanitario" section="pests" />;
+    const greenhouse = greenhouses.find((item) => item.id === alert.greenhouseId);
+
+    return (
+      <section>
+        <SectionHeader
+          action={(
+            <Link
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+              href={appRoute(organizationRouteName, { section: "pests", greenhouseId: alert.greenhouseId, period: "all" })}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Casos sanitarios
+            </Link>
+          )}
+          title={alert.problem}
+          description={`Expediente sanitario detectado el ${formatDate(alert.detectedAt)}${greenhouse ? ` en ${greenhouse.name}` : ""}.`}
+        />
+        <div className="mb-6 flex flex-wrap gap-2">
+          <StatusBadge tone={alert.caseStatus === "Cierre sanitario" ? "green" : "neutral"}>{alert.caseStatus ?? "Abierta"}</StatusBadge>
+          <RiskBadge level={alert.severity} />
+          {alert.zone ? <StatusBadge tone="neutral">{alert.zone}</StatusBadge> : null}
+        </div>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="border border-app-border bg-white p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Acción tomada</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-app-text">{alert.action || "Sin acción registrada"}</p>
+            <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Seguimiento</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-app-text">{alert.followUp || "Sin seguimiento registrado"}</p>
+          </div>
+          <EditorialRail title="Historial">
+            {(alert.updates ?? []).length ? (alert.updates ?? []).map((update, index) => (
+              <EditorialObject key={update.id} index={String(index + 1).padStart(2, "0")} label={update.status} value={update.actionType} detail={update.nextReviewDate ? `Próxima revisión: ${formatDate(update.nextReviewDate)}` : update.notes || "Sin notas"} icon={ActivitySquare} />
+            )) : <p className="text-sm text-app-muted">Aún no hay seguimientos.</p>}
+          </EditorialRail>
+        </div>
+      </section>
+    );
+  }
+
+  const harvest = harvestRecords.find((item) => (item.publicId ?? publicEntityId("lot", item.id)) === route.lotPublicId);
+  if (!harvest) return <EntityNotFound label="este lote de cosecha" section="harvest" />;
+  const greenhouse = greenhouses.find((item) => item.id === harvest.greenhouseId);
+
+  return (
+    <section>
+      <SectionHeader
+        action={(
+          <Link
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+            href={appRoute(organizationRouteName, { section: "harvest", greenhouseId: harvest.greenhouseId })}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Cosecha
+          </Link>
+        )}
+        title={`Lote de cosecha · ${formatDate(harvest.date)}`}
+        description={`${greenhouse ? greenhouseDisplayName(greenhouse, crops) : "Área productiva"} · ${harvest.destination || "Destino sin registrar"}`}
+      />
+      <div className="grid gap-3 md:grid-cols-3">
+        <EditorialObject index="01" label="Cajas" value={formatNumber(harvest.boxCount)} detail={`${formatNumber(harvest.boxWeightKg)} kg por caja`} icon={Package} />
+        <EditorialObject index="02" label="Volumen" value={`${formatNumber(harvest.kilograms)} kg`} detail={`${formatNumber(harvest.merma)} kg de merma`} icon={Leaf} />
+        <EditorialObject index="03" label="Precio estimado" value={formatCurrency(harvest.estimatedPrice)} detail={harvest.destination || "Destino sin registrar"} icon={WalletCards} />
+      </div>
+      <div className="mt-8 grid gap-3 md:grid-cols-4">
+        <EditorialObject index="A" label="Primera" value={`${formatNumber(harvest.firstQuality)} kg`} detail={`${formatNumber(harvest.firstQualityBoxes)} cajas`} icon={CheckCircle2} />
+        <EditorialObject index="B" label="Segunda" value={`${formatNumber(harvest.secondQuality)} kg`} detail={`${formatNumber(harvest.secondQualityBoxes)} cajas`} icon={CheckCircle2} />
+        <EditorialObject index="C" label="Tercera" value={`${formatNumber(harvest.thirdQuality)} kg`} detail={`${formatNumber(harvest.thirdQualityBoxes)} cajas`} icon={CheckCircle2} />
+        <EditorialObject index="D" label="Notas" value={harvest.notes || "Sin notas"} detail="Registro de cosecha" icon={ActivitySquare} />
       </div>
     </section>
   );
@@ -822,6 +1017,12 @@ function PestsSection() {
                     <RiskBadge level={alert.severity} />
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2">
+                    <Link
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+                      href={pestCaseRoute(organization.slug ?? organization.name, alert.publicId ?? publicEntityId("pest", alert.id))}
+                    >
+                      Abrir expediente
+                    </Link>
                     <Button icon={<Plus className="h-4 w-4" />} onClick={() => setFollowingAlert(alert)} type="button" variant="secondary">
                       Agregar seguimiento
                     </Button>
@@ -995,7 +1196,7 @@ function PestsSection() {
 }
 
 function HarvestSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseHarvest, openModal } = useFilteredData();
+  const { greenhouseHarvest, openModal, organization } = useFilteredData();
   const totalBoxes = greenhouseHarvest.reduce((sum, item) => sum + item.boxCount, 0);
   const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
   const commercialKg = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality + item.secondQuality + item.thirdQuality, 0);
@@ -1042,7 +1243,16 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
             { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
             { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
             { key: "price", label: "Precio", render: (item) => formatCurrency(item.estimatedPrice) },
-            { key: "destination", label: "Destino", render: (item) => item.destination }
+            { key: "destination", label: "Destino", render: (item) => item.destination },
+            {
+              key: "detail",
+              label: "",
+              render: (item) => (
+                <Link className="text-xs font-medium text-app-green underline-offset-4 hover:underline" href={harvestLotRoute(organization.slug ?? organization.name, item.publicId ?? publicEntityId("lot", item.id))}>
+                  Abrir lote
+                </Link>
+              )
+            }
           ]}
           data={greenhouseHarvest}
         />
@@ -2265,6 +2475,8 @@ function ActiveSection(props: CopilotSurfaceProps) {
   const operationProps = {
     copilotInsights: props.copilotInsights,
     operationRefreshKey: props.operationRefreshKey,
+    weekStart: props.operationWeekStart,
+    onWeekStartChange: props.onOperationWeekChange,
     pendingCompletionTask: props.pendingCompletionTask,
     onPendingCompletionConsumed: props.onPendingCompletionConsumed,
     onCreateCopilotTask: props.onCreateCopilotTask,
@@ -2290,6 +2502,9 @@ function ActiveSection(props: CopilotSurfaceProps) {
 }
 
 export function AppShell() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const organization = useGreenhouseStore((state) => state.organization);
@@ -2298,6 +2513,15 @@ export function AppShell() {
   const tasks = useGreenhouseStore((state) => state.tasks);
   const pestAlerts = useGreenhouseStore((state) => state.pestAlerts);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
+  const activeRoute = useMemo(
+    () => parseAppRoute(pathname, new URLSearchParams(searchParams.toString())),
+    [pathname, searchParams]
+  );
+  const routeAccessDenied = Boolean(
+    organization.id
+    && activeRoute.organizationSlug
+    && activeRoute.organizationSlug !== organizationRouteSlug(organization.slug ?? organization.name)
+  );
   const [telegramOpen, setTelegramOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotRunning, setCopilotRunning] = useState(false);
@@ -2308,6 +2532,13 @@ export function AppShell() {
   const [operationRefreshKey, setOperationRefreshKey] = useState(0);
   const [pendingCompletionTask, setPendingCompletionTask] = useState<{ id: string; date: string } | null>(null);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
+  const setOperationWeek = useCallback((weekStart: string) => {
+    router.push(appRoute(organization.slug ?? organization.name, {
+      section: "calendar",
+      greenhouseId: selectedGreenhouseId,
+      weekStart
+    }));
+  }, [organization.name, organization.slug, router, selectedGreenhouseId]);
   const localCopilotInsights = useMemo(
     () =>
       buildCopilotPulse({
@@ -2564,6 +2795,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
+      <RouteSync />
       <div className="flex min-h-screen">
         <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
         <div className="min-w-0 flex-1 pl-14 lg:pl-0">
@@ -2574,20 +2806,28 @@ export function AppShell() {
               <MiraBrand className="mt-1" markClassName="h-5 w-8" wordClassName="text-lg tracking-[0.34em]" />
             </div>
             {copilotNotice ? <InlineNotice tone={copilotNotice.tone}>{copilotNotice.message}</InlineNotice> : null}
-            <ActiveSection
-              copilotInsights={copilotInsights}
-              operationRefreshKey={operationRefreshKey}
-              pendingCompletionTask={pendingCompletionTask}
-              onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
-              onRequestTechnicalCompletion={(task) => {
-                setPendingCompletionTask({ id: task.id, date: task.date });
-                setActiveSection("calendar");
-                setOperationRefreshKey((current) => current + 1);
-              }}
-              onCreateCopilotTask={createCopilotTaskSuggestion}
-              onOpenCopilot={() => setCopilotOpen(true)}
-              onPrepareCopilotMessage={prepareCopilotMessage}
-            />
+            {routeAccessDenied ? (
+              <RouteAccessDenied />
+            ) : activeRoute.entity ? (
+              <EntityRouteView route={activeRoute.entity} />
+            ) : (
+              <ActiveSection
+                copilotInsights={copilotInsights}
+                operationRefreshKey={operationRefreshKey}
+                operationWeekStart={activeRoute.weekStart}
+                onOperationWeekChange={setOperationWeek}
+                pendingCompletionTask={pendingCompletionTask}
+                onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
+                onRequestTechnicalCompletion={(task) => {
+                  setPendingCompletionTask({ id: task.id, date: task.date });
+                  setActiveSection("calendar");
+                  setOperationRefreshKey((current) => current + 1);
+                }}
+                onCreateCopilotTask={createCopilotTaskSuggestion}
+                onOpenCopilot={() => setCopilotOpen(true)}
+                onPrepareCopilotMessage={prepareCopilotMessage}
+              />
+            )}
           </main>
         </div>
       </div>

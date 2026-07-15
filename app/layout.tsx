@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { WorkspaceGate } from "@/components/onboarding/WorkspaceGate";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
@@ -14,7 +15,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        <WorkspaceGate />
+        {children}
+      </body>
     </html>
   );
 }

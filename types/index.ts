@@ -61,6 +61,7 @@ export type UserRole = "owner" | "admin" | "manager";
 export type Organization = {
   id: string;
   name: string;
+  slug?: string;
   legalName?: string;
   logoUrl?: string;
 };
@@ -104,6 +105,7 @@ export type CurrentUser = {
 
 export type Greenhouse = {
   id: string;
+  publicId?: string;
   name: string;
   location: string;
   latitude: number | null;
@@ -201,6 +203,7 @@ export type ApplicationRecord = {
 
 export type PestAlert = {
   id: string;
+  publicId?: string;
   greenhouseId: string;
   problem: string;
   severity: RiskLevel;
@@ -249,6 +252,7 @@ export type PestAlertUpdate = {
 
 export type HarvestRecord = {
   id: string;
+  publicId?: string;
   sourceTaskId?: string;
   greenhouseId: string;
   date: string;

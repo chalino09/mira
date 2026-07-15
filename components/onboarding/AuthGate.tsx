@@ -22,6 +22,7 @@ import type {
   NutritionSampleType
 } from "@/lib/nutrition-monitoring";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { organizationRouteSlug, publicEntityId } from "@/lib/routes";
 import { createPrivateCompanyFileUrls } from "@/lib/storage";
 import { useGreenhouseStore } from "@/lib/store";
 import { parseNumericInput } from "@/lib/utils";
@@ -957,6 +958,7 @@ function OnboardingScreen({
 
 export function AuthGate() {
   const [state, setState] = useState<AuthState>("loading");
+  const [loadingStep, setLoadingStep] = useState("Cargando");
   const [session, setSession] = useState<Session | null>(null);
   const [loadError, setLoadError] = useState("");
   const [accessPausedMessage, setAccessPausedMessage] = useState("");
@@ -972,6 +974,7 @@ export function AuthGate() {
 
   const refresh = useCallback(async () => {
     setLoadError("");
+    setLoadingStep("Validando sesión");
     setState("loading");
 
     const supabase = getSupabaseBrowserClient();
@@ -992,12 +995,14 @@ export function AuthGate() {
         return;
       }
 
+      setLoadingStep("Revisando acceso");
       const { error: invitesError } = await supabase.rpc("accept_company_invites");
       throwInitialLoadError(invitesError, "No se pudieron revisar tus invitaciones.");
 
+      setLoadingStep("Cargando empresa");
       const { data: membership, error: membershipError } = await supabase
         .from("company_members")
-        .select("id, role, company_id, companies(id, name, legal_name, logo_url)")
+        .select("id, role, company_id, companies(id, name, slug, legal_name, logo_url)")
         .eq("user_id", nextSession.user.id)
         .eq("status", "active")
         .limit(1)
@@ -1027,6 +1032,7 @@ export function AuthGate() {
         ? membership.companies[0]
         : membership.companies;
 
+      setLoadingStep("Cargando datos del espacio");
       const [
         profileResponse,
         greenhousesResponse,
@@ -1094,6 +1100,7 @@ export function AuthGate() {
       const organization: Organization = {
         id: company?.id ?? membership.company_id,
         name: company?.name ?? "Empresa",
+        slug: company?.slug ?? organizationRouteSlug(company?.name ?? "Empresa"),
         legalName: company?.legal_name ?? undefined,
         logoUrl: company?.logo_url ?? undefined
       };
@@ -1226,6 +1233,7 @@ export function AuthGate() {
 
         return {
           id: greenhouse.id,
+          publicId: greenhouse.public_id ?? publicEntityId("gh", greenhouse.id),
           name: greenhouse.name,
           location: greenhouse.location ?? "",
           latitude: greenhouse.latitude == null ? null : Number(greenhouse.latitude),
@@ -1338,6 +1346,7 @@ export function AuthGate() {
 
       const pestAlerts: PestAlert[] = (pestRows ?? []).map((record: any) => ({
         id: record.id,
+        publicId: record.public_id ?? publicEntityId("pest", record.id),
         greenhouseId: record.greenhouse_id,
         problem: record.problem,
         severity: mapRiskLevel(record.severity),
@@ -1367,6 +1376,7 @@ export function AuthGate() {
 
       const harvestRecords: HarvestRecord[] = (harvestRows ?? []).map((record: any) => ({
         id: record.id,
+        publicId: record.public_id ?? publicEntityId("lot", record.id),
         sourceTaskId: record.source_task_id ?? undefined,
         greenhouseId: record.greenhouse_id,
         date: record.occurred_at,
@@ -1451,7 +1461,7 @@ export function AuthGate() {
           <PortalMark animated className="h-12 w-24" />
           <MiraBrand stacked wordClassName="text-base tracking-[0.46em]" markClassName="hidden" />
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-app-muted">
-            Cargando
+            {loadingStep}
           </p>
         </div>
       </main>

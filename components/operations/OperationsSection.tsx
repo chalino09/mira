@@ -1543,6 +1543,8 @@ export function OperationsSection({
   onPendingCompletionConsumed,
   onCreateCopilotTask,
   onPrepareCopilotMessage,
+  weekStart: routeWeekStart,
+  onWeekStartChange,
   workTypeFilter,
   specialtyLabel
 }: {
@@ -1552,6 +1554,8 @@ export function OperationsSection({
   onPendingCompletionConsumed?: () => void;
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
+  weekStart?: string;
+  onWeekStartChange?: (weekStart: string) => void;
   workTypeFilter?: string[];
   specialtyLabel?: string;
 }) {
@@ -1602,6 +1606,15 @@ export function OperationsSection({
   const weekStartKey = dateKey(weekStart);
   const weekEndKey = dateKey(weekDays[6]);
   const todayKey = dateKey(new Date());
+
+  useEffect(() => {
+    if (!routeWeekStart) return;
+    const targetWeekStart = startOfIsoWeek(dateFromKey(routeWeekStart));
+    const targetWeekStartKey = dateKey(targetWeekStart);
+    if (targetWeekStartKey !== weekStartKey) {
+      setWeekStart(targetWeekStart);
+    }
+  }, [routeWeekStart, weekStartKey]);
 
   useEffect(() => {
     if (!pendingCompletionTask?.date) return;
@@ -2363,7 +2376,11 @@ export function OperationsSection({
               aria-label="Semana anterior"
               className="w-10 px-0"
               icon={<ChevronLeft className="h-4 w-4" />}
-              onClick={() => setWeekStart((current) => addDays(current, -7))}
+              onClick={() => {
+                const targetWeekStart = addDays(weekStart, -7);
+                setWeekStart(targetWeekStart);
+                onWeekStartChange?.(dateKey(targetWeekStart));
+              }}
               variant="secondary"
             />
             <div className="min-w-48 border border-app-border bg-white px-3 py-2 text-center">
@@ -2374,7 +2391,11 @@ export function OperationsSection({
               aria-label="Semana siguiente"
               className="w-10 px-0"
               icon={<ChevronRight className="h-4 w-4" />}
-              onClick={() => setWeekStart((current) => addDays(current, 7))}
+              onClick={() => {
+                const targetWeekStart = addDays(weekStart, 7);
+                setWeekStart(targetWeekStart);
+                onWeekStartChange?.(dateKey(targetWeekStart));
+              }}
               variant="secondary"
             />
             {canPlan ? (

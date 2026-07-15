@@ -1,11 +1,13 @@
 "use client";
 
 import { ChevronDown, LogOut, Send } from "lucide-react";
+import Link from "next/link";
 import { MiraWordmark, PortalMark } from "@/components/brand/MiraBrand";
 import { navigationItemsForRole } from "@/data/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
 
 export function BrandMark() {
@@ -24,20 +26,22 @@ type NavButtonProps = {
 
 export function NavButton({ id, label, icon: Icon }: NavButtonProps) {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
-  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
+  const organization = useGreenhouseStore((state) => state.organization);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
   const active = activeSection === id;
 
   return (
-    <button
+    <Link
       className={cn(
         "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-app-muted transition",
         active ? "border border-app-border bg-white text-app-text" : "border border-transparent hover:bg-white hover:text-app-text"
       )}
-      onClick={() => setActiveSection(id)}
+      href={appRoute(organization.slug ?? organization.name, { section: id, greenhouseId: selectedGreenhouseId, period: selectedPeriod })}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{label}</span>
-    </button>
+    </Link>
   );
 }
 

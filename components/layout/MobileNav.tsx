@@ -1,11 +1,13 @@
 "use client";
 
 import { BarChart3, CalendarDays, FlaskConical, Home, Menu, Send, Sprout, X } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { BrandMark } from "@/components/layout/Sidebar";
 import { navigationItemsForRole } from "@/data/navigation";
 import { cn } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
+import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
 
 const primaryIds: SectionId[] = ["overview", "greenhouses", "calendar", "monitoring", "reports"];
@@ -20,7 +22,9 @@ const iconFallback = {
 export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
   const [open, setOpen] = useState(false);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
-  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
+  const organization = useGreenhouseStore((state) => state.organization);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const navigationItems = useMemo(() => navigationItemsForRole(currentUser.role), [currentUser.role]);
   const primary = useMemo(
@@ -28,10 +32,11 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
     [navigationItems]
   );
 
-  const selectSection = (id: SectionId) => {
-    setActiveSection(id);
-    setOpen(false);
-  };
+  const sectionHref = (section: SectionId) => appRoute(organization.slug ?? organization.name, {
+    section,
+    greenhouseId: selectedGreenhouseId,
+    period: selectedPeriod
+  });
 
   return (
     <>
@@ -55,17 +60,18 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
             {navigationItems.map((item) => {
               const Icon = item.icon;
               return (
-                <button
+                <Link
                   key={item.id}
                   className={cn(
                     "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-app-muted transition hover:bg-white hover:text-app-text",
                     activeSection === item.id && "bg-app-sidebar text-app-text"
                   )}
-                  onClick={() => selectSection(item.id)}
+                  href={sectionHref(item.id)}
+                  onClick={() => setOpen(false)}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
-                </button>
+                </Link>
               );
             })}
             {currentUser.role === "manager" ? (
@@ -96,17 +102,17 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
             }
             const Icon = iconFallback[item.id as keyof typeof iconFallback] ?? item.icon;
             return (
-              <button
+              <Link
                 key={item.id}
                 aria-label={item.label}
                 className={cn(
                   "flex h-11 w-10 items-center justify-center rounded-lg border border-transparent text-app-muted transition",
                   activeSection === item.id && "border-app-border bg-white text-app-text"
                 )}
-                onClick={() => selectSection(item.id)}
+                href={sectionHref(item.id)}
               >
                 <Icon className="h-4 w-4" />
-              </button>
+              </Link>
             );
           })}
         </div>

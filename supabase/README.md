@@ -132,6 +132,8 @@ Para confirmar o sustituir productos desde el catálogo al cerrar aplicaciones y
 
 Para interpretar correctamente las comas de miles en dosis, energía y horas al calcular consumos y costos automáticos, ejecuta `49_formatted_numeric_costs.sql` después de `48_execution_product_catalog_sync.sql`.
 
+Para habilitar URLs estables de empresa, invernaderos, ciclos actuales, casos sanitarios y lotes de cosecha, ejecuta `50_public_route_identifiers.sql` después de `49_formatted_numeric_costs.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash
