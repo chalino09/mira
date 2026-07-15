@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArchiveRestore, Package, PackagePlus, RefreshCcw, SlidersHorizontal } from "lucide-react";
+import { ArchiveRestore, Package, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Modal } from "@/components/ui/Modal";
 import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -38,6 +39,8 @@ type Movement = {
   inventory_item: { name: string; base_unit: string } | null;
 };
 
+type InventoryForm = "entry" | "item" | "adjustment" | "rate" | null;
+
 const categories = [
   ["agroinsumos", "Agroinsumos"], ["fertilizantes", "Fertilizantes"], ["agua", "Agua"],
   ["energia", "Energía"], ["mano_obra", "Mano de obra"], ["mantenimiento", "Mantenimiento"]
@@ -64,6 +67,7 @@ export function InventorySection() {
   const [notice, setNotice] = useState<{ tone: "red" | "green"; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeForm, setActiveForm] = useState<InventoryForm>(null);
   const canManage = currentUser.role === "owner" || currentUser.role === "admin";
 
   const loadInventory = useCallback(async () => {
@@ -126,6 +130,7 @@ export function InventorySection() {
       });
       if (error) throw error;
       event.currentTarget.reset();
+      setActiveForm(null);
       setNotice({ tone: "green", message: "Artículo agregado al almacén central." });
     });
   };
@@ -145,6 +150,7 @@ export function InventorySection() {
       });
       if (error) throw error;
       event.currentTarget.reset();
+      setActiveForm(null);
       setNotice({ tone: "green", message: "Entrada registrada y costo promedio actualizado." });
     });
   };
@@ -163,6 +169,7 @@ export function InventorySection() {
       });
       if (error) throw error;
       event.currentTarget.reset();
+      setActiveForm(null);
       setNotice({ tone: "green", message: "Ajuste auditado en el almacén." });
     });
   };
@@ -179,6 +186,7 @@ export function InventorySection() {
       });
       if (error) throw error;
       event.currentTarget.reset();
+      setActiveForm(null);
       setNotice({ tone: "green", message: "Tarifa automática actualizada." });
     });
   };
@@ -199,54 +207,77 @@ export function InventorySection() {
 
   return (
     <section className="pb-12">
-      <div className="mb-10 border-b border-app-border pb-7 pt-8 md:pt-10">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Almacén central</p>
-        <h1 className="mt-4 text-4xl font-light text-app-text md:text-6xl">Inventario</h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">Existencias, costo promedio, consumos vinculados a Work y movimientos auditables.</p>
+      <div className="mb-8 flex flex-col gap-5 border-b border-app-border pb-7 pt-8 md:pt-10 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Almacén central</p>
+          <h1 className="mt-4 text-4xl font-light text-app-text md:text-6xl">Inventario</h1>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar un Work.</p>
+        </div>
+        {canManage ? <div className="flex flex-wrap gap-2">
+          <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={() => setActiveForm("entry")} variant="primary">Registrar entrada</Button>
+          <Button onClick={() => setActiveForm("item")} variant="secondary">Nuevo producto</Button>
+          <Button onClick={() => setActiveForm("adjustment")} variant="ghost">Ajustar</Button>
+        </div> : null}
       </div>
 
       {notice ? <p className={`mb-5 border px-4 py-3 text-sm ${notice.tone === "red" ? "border-[#D9AAAA] bg-[#FFF6F5] text-[#8A2E2E]" : "border-[#B9D4C0] bg-[#F2F8F3] text-app-green"}`}>{notice.message}</p> : null}
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <div className="border border-app-border bg-white p-4"><p className="text-xs text-app-muted">Artículos activos</p><p className="mt-2 text-3xl font-light">{items.length}</p></div>
-        <div className="border border-app-border bg-white p-4"><p className="text-xs text-app-muted">Existencias</p><p className="mt-2 text-3xl font-light">{balances.length}</p></div>
-        <div className="border border-app-border bg-white p-4"><p className="text-xs text-app-muted">Valor estimado</p><p className="mt-2 text-3xl font-light">{formatCurrency(totalValue)}</p></div>
+      <div className="mb-6 flex flex-wrap items-baseline gap-x-6 gap-y-2 border border-app-border bg-white px-5 py-4">
+        <span className="text-sm text-app-muted"><strong className="text-app-text">{items.length}</strong> productos</span>
+        <span className="text-sm text-app-muted"><strong className="text-app-text">{balances.length}</strong> con existencias</span>
+        <span className="text-sm text-app-muted">Valor estimado <strong className="text-app-text">{formatCurrency(totalValue)}</strong></span>
+        {canManage ? <button className="ml-auto text-xs font-semibold uppercase tracking-[0.14em] text-app-green" onClick={() => setActiveForm("rate")} type="button">Configurar tarifas</button> : null}
       </div>
 
-      {canManage ? (
-        <div className="mb-8 grid gap-4 xl:grid-cols-4">
-          <form className="grid gap-3 border border-app-border bg-white p-4" onSubmit={createItem}>
-            <p className="flex items-center gap-2 text-sm font-medium"><PackagePlus className="h-4 w-4" /> Nuevo artículo</p>
-            <Field label="Nombre"><TextInput name="name" required /></Field>
-            <Field label="Producto del catálogo (para consumo automático)"><SelectInput name="productId"><option value="">No vincular</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectInput></Field>
-            <div className="grid grid-cols-2 gap-2"><Field label="Unidad"><TextInput name="unit" placeholder="kg, L, h" required /></Field><Field label="Tipo"><SelectInput name="kind"><option value="material">Material</option><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field></div>
-            <Field label="Categoría de costo"><SelectInput name="category">{categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
-            <Button disabled={saving} type="submit" variant="secondary">Agregar</Button>
-          </form>
-          <form className="grid gap-3 border border-app-border bg-white p-4" onSubmit={receive}>
-            <p className="flex items-center gap-2 text-sm font-medium"><ArchiveRestore className="h-4 w-4" /> Entrada</p>
-            <Field label="Artículo"><SelectInput name="itemId" required><option value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.base_unit}</option>)}</SelectInput></Field>
-            <div className="grid grid-cols-2 gap-2"><Field label="Cantidad"><FormattedNumberInput min={0.0001} name="quantity" required step="0.0001" /></Field><Field label="Costo/unidad"><FormattedNumberInput min={0} name="unitCost" required step="0.0001" /></Field></div>
+      <Modal open={activeForm === "entry"} onClose={() => setActiveForm(null)} title="Registrar entrada" panelClassName="sm:max-w-xl">
+        <form className="grid gap-5" onSubmit={receive}>
+          {items.length ? <>
+            <Field label="Artículo"><SelectInput name="itemId" required defaultValue=""><option disabled value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.base_unit}</option>)}</SelectInput></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Cantidad"><FormattedNumberInput min="0.0001" name="quantity" required /></Field>
+              <Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field>
+            </div>
             <Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field>
-            <Field label="Nota"><TextInput name="note" /></Field>
-            <Button disabled={saving || !items.length} type="submit" variant="secondary">Registrar entrada</Button>
-          </form>
-          <form className="grid gap-3 border border-app-border bg-white p-4" onSubmit={adjust}>
-            <p className="flex items-center gap-2 text-sm font-medium"><SlidersHorizontal className="h-4 w-4" /> Ajuste auditado</p>
-            <Field label="Artículo"><SelectInput name="itemId" required><option value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.base_unit}</option>)}</SelectInput></Field>
-            <Field label="Diferencia (+/-)"><FormattedNumberInput name="quantity" required step="0.0001" /></Field>
-            <Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field>
-            <Field label="Motivo"><TextInput name="reason" required /></Field>
-            <Button disabled={saving || !items.length} type="submit" variant="secondary">Ajustar</Button>
-          </form>
-          <form className="grid gap-3 border border-app-border bg-white p-4" onSubmit={saveRate}>
-            <p className="flex items-center gap-2 text-sm font-medium"><SlidersHorizontal className="h-4 w-4" /> Tarifa automática</p>
-            <Field label="Recurso"><SelectInput name="resource"><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
-            <div className="grid grid-cols-2 gap-2"><Field label="Unidad"><TextInput defaultValue="L" name="unit" required /></Field><Field label="Costo/unidad"><FormattedNumberInput min={0} name="unitCost" required step="0.0001" /></Field></div>
-            <p className="text-xs leading-5 text-app-muted">Agua se calcula desde los litros de riego. Energía y mano de obra usan los valores del plan técnico.</p>
-            <Button disabled={saving} type="submit" variant="secondary">Guardar tarifa</Button>
-          </form>
-        </div>
-      ) : null}
+            <Field label="Nota (opcional)"><TextInput name="note" placeholder="Proveedor, lote o referencia" /></Field>
+          </> : <p className="text-sm leading-6 text-app-muted">Primero agrega el producto que recibiste al almacén.</p>}
+          <div className="flex justify-end gap-2 border-t border-app-border pt-4">
+            <Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button>
+            {items.length ? <Button disabled={saving} type="submit" variant="primary">Registrar entrada</Button> : <Button onClick={() => setActiveForm("item")} type="button" variant="primary">Agregar producto</Button>}
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={activeForm === "item"} onClose={() => setActiveForm(null)} title="Nuevo producto de inventario" panelClassName="sm:max-w-xl">
+        <form className="grid gap-5" onSubmit={createItem}>
+          <p className="text-sm leading-6 text-app-muted">Vincúlalo al catálogo únicamente si debe descontarse automáticamente al completar un Work.</p>
+          <Field label="Nombre"><TextInput name="name" placeholder="Ej. Fertilizante A" required /></Field>
+          <Field label="Producto del catálogo (opcional)"><SelectInput defaultValue="" name="productId"><option value="">No vincular</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectInput></Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Unidad"><TextInput name="unit" placeholder="kg, L, h" required /></Field>
+            <Field label="Tipo"><SelectInput defaultValue="material" name="kind"><option value="material">Material</option><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
+          </div>
+          <Field label="Categoría de costo"><SelectInput defaultValue="agroinsumos" name="category">{categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+          <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Agregar producto</Button></div>
+        </form>
+      </Modal>
+
+      <Modal open={activeForm === "adjustment"} onClose={() => setActiveForm(null)} title="Ajustar existencias" panelClassName="sm:max-w-xl">
+        <form className="grid gap-5" onSubmit={adjust}>
+          <p className="text-sm leading-6 text-app-muted">Usa un valor positivo para sumar y negativo para descontar. El ajuste quedará auditado.</p>
+          <Field label="Artículo"><SelectInput name="itemId" required defaultValue=""><option disabled value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></Field>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Diferencia (+/-)"><FormattedNumberInput name="quantity" required /></Field><Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field></div>
+          <Field label="Motivo"><TextInput name="reason" placeholder="Ej. Conteo físico" required /></Field>
+          <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar ajuste</Button></div>
+        </form>
+      </Modal>
+
+      <Modal open={activeForm === "rate"} onClose={() => setActiveForm(null)} title="Tarifas automáticas" panelClassName="sm:max-w-xl">
+        <form className="grid gap-5" onSubmit={saveRate}>
+          <p className="text-sm leading-6 text-app-muted">Estas tarifas calculan costos de agua, energía y mano de obra al completar un Work.</p>
+          <Field label="Recurso"><SelectInput defaultValue="water" name="resource"><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><TextInput defaultValue="L" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
+          <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar tarifa</Button></div>
+        </form>
+      </Modal>
 
       {loading ? <p className="text-sm text-app-muted">Cargando inventario…</p> : balances.length ? <DataTable<Balance> columns={[
         { key: "item", label: "Artículo", render: (balance) => balance.inventory_item?.name ?? "Artículo" },
