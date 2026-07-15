@@ -81,7 +81,7 @@ type WorkEvidenceRow = {
   created_at: string;
 };
 
-type OperationView = "plan" | "execution" | "verification" | "history";
+type OperationView = "week" | "plan" | "execution" | "verification" | "history";
 
 type AssignmentRow = {
   id: string;
@@ -1525,7 +1525,7 @@ export function OperationsSection({
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
-  const [operationView, setOperationView] = useState<OperationView>("plan");
+  const [operationView, setOperationView] = useState<OperationView>("week");
   const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
 
@@ -2195,17 +2195,18 @@ export function OperationsSection({
   const unassignedCount = scopedTasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
-  const viewStatuses: Record<OperationView, OperationStatus[]> = {
+  const viewStatuses: Record<Exclude<OperationView, "week">, OperationStatus[]> = {
     plan: ["pendiente"],
     execution: ["en_progreso", "bloqueada"],
     verification: ["completada"],
     history: ["verificada", "cancelada"]
   };
-  const visibleTasks = scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
+  const visibleTasks = operationView === "week" ? scopedTasks : scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
   const overdueCount = globalOverdueTasks.length;
   const blockedScopedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
   const awaitingVerificationCount = scopedTasks.filter((task) => task.status === "completada").length;
   const operationViews: Array<{ id: OperationView; label: string; count: number }> = [
+    { id: "week", label: "Semana", count: scopedTasks.length },
     { id: "plan", label: "Plan", count: scopedTasks.filter((task) => task.status === "pendiente").length },
     { id: "execution", label: "Ejecución", count: scopedTasks.filter((task) => ["en_progreso", "bloqueada"].includes(task.status)).length },
     { id: "verification", label: "Por verificar", count: awaitingVerificationCount },
