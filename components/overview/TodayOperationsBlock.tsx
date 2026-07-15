@@ -11,8 +11,10 @@ function localDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function statusTone(status: Task["status"]): "neutral" | "green" | "amber" | "red" {
-  if (status === "Completada" || status === "Verificada") return "green";
+function statusTone(status: Task["status"]): "neutral" | "blue" | "green" | "amber" | "red" {
+  if (status === "Verificada") return "green";
+  if (status === "Completada") return "amber";
+  if (status === "En ejecución") return "blue";
   if (status === "Bloqueada") return "red";
   return "neutral";
 }

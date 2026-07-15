@@ -244,14 +244,22 @@ const statusLabels: Record<OperationStatus, string> = {
   cancelada: "Cancelada"
 };
 
-const statusTones: Record<OperationStatus, "neutral" | "green" | "amber" | "red"> = {
+const statusTones: Record<OperationStatus, "neutral" | "blue" | "green" | "amber" | "red"> = {
   pendiente: "neutral",
-  en_progreso: "neutral",
+  en_progreso: "blue",
   bloqueada: "red",
-  completada: "green",
+  completada: "amber",
   verificada: "green",
   cancelada: "neutral"
 };
+
+function workStatusIcon(status: OperationStatus) {
+  if (status === "en_progreso") return <Play className="h-3 w-3" />;
+  if (status === "bloqueada") return <Ban className="h-3 w-3" />;
+  if (status === "completada" || status === "verificada") return <CheckCircle2 className="h-3 w-3" />;
+  if (status === "cancelada") return <Ban className="h-3 w-3" />;
+  return <CalendarRange className="h-3 w-3" />;
+}
 
 const priorityLabels: Record<TaskPriority, string> = {
   low: "Baja",
@@ -2421,7 +2429,7 @@ export function OperationsSection({
                                 {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabel(task)}
                               </p>
                               <div className="justify-self-start">
-                                <StatusBadge tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
+                                <StatusBadge icon={workStatusIcon(task.status)} tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
                               </div>
                             </div>
                             <h3 className="mt-3 break-words text-sm font-medium leading-5 text-app-text">{task.title}</h3>
