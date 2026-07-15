@@ -7,10 +7,11 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Field, FormattedNumberInput, SelectInput, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
+import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
-import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
+import { formatCurrency, formatDate, formatNumber, parseNumericInput } from "@/lib/utils";
 
 type InventoryItem = {
   id: string;
@@ -21,7 +22,7 @@ type InventoryItem = {
   cost_category: string;
 };
 
-type ProductOption = { id: string; name: string };
+type ProductOption = ProductCatalogOption;
 
 type Balance = {
   id: string;
@@ -70,6 +71,7 @@ export function InventorySection() {
   const [saving, setSaving] = useState(false);
   const [activeForm, setActiveForm] = useState<InventoryForm>(null);
   const [entryTarget, setEntryTarget] = useState("");
+  const [entrySearch, setEntrySearch] = useState("");
   const [entryUnit, setEntryUnit] = useState("");
   const canManage = currentUser.role === "owner" || currentUser.role === "admin";
 
@@ -79,7 +81,7 @@ export function InventorySection() {
     setLoading(true);
     const [itemsResponse, productsResponse, balancesResponse, movementsResponse] = await Promise.all([
       supabase.from("inventory_items").select("id, product_id, name, base_unit, kind, cost_category").eq("company_id", organization.id).eq("is_active", true).order("name"),
-      supabase.from("products").select("id, name").eq("company_id", organization.id).order("name"),
+      supabase.from("products").select("id, name, composition").eq("company_id", organization.id).order("name"),
       supabase.from("inventory_balances").select("id, quantity, average_unit_cost, inventory_item:inventory_items(id, product_id, name, base_unit, kind, cost_category)").eq("company_id", organization.id).order("updated_at", { ascending: false }),
       supabase.from("inventory_movements").select("id, movement_type, quantity, unit_cost, occurred_at, note, inventory_item:inventory_items(name, base_unit)").eq("company_id", organization.id).order("created_at", { ascending: false }).limit(20)
     ]);
@@ -111,15 +113,29 @@ export function InventorySection() {
     ? items.find((item) => item.product_id === selectedEntryProductId)
     : items.find((item) => item.id === selectedEntryItemId);
   const manualItems = items.filter((item) => !item.product_id);
+  const entryOptions: ProductCatalogOption[] = [
+    ...products.map((product) => ({
+      ...product,
+      id: `product:${product.id}`,
+      description: product.composition ? null : "Producto del catálogo"
+    })),
+    ...manualItems.map((item) => ({
+      id: `item:${item.id}`,
+      name: item.name,
+      description: `Otro recurso · ${item.base_unit}`
+    }))
+  ].sort((left, right) => left.name.localeCompare(right.name, "es-MX"));
 
   const openEntry = () => {
     setEntryTarget("");
+    setEntrySearch("");
     setEntryUnit("");
     setActiveForm("entry");
   };
 
-  const selectEntryTarget = (value: string) => {
+  const selectEntryTarget = (value: string, name: string) => {
     setEntryTarget(value);
+    setEntrySearch(name);
     const productId = value.startsWith("product:") ? value.slice("product:".length) : null;
     const itemId = value.startsWith("item:") ? value.slice("item:".length) : null;
     setEntryUnit(productId ? items.find((item) => item.product_id === productId)?.base_unit ?? "" : items.find((item) => item.id === itemId)?.base_unit ?? "");
@@ -163,8 +179,8 @@ export function InventorySection() {
     void run(async () => {
       const common = {
         target_company_id: organization.id,
-        target_quantity: Number(form.get("quantity")),
-        target_unit_cost: Number(form.get("unitCost")),
+        target_quantity: parseNumericInput(String(form.get("quantity") ?? "")),
+        target_unit_cost: parseNumericInput(String(form.get("unitCost") ?? "")),
         target_occurred_at: String(form.get("date") ?? ""),
         target_idempotency_key: requestKey("receipt"),
         target_note: String(form.get("note") ?? "") || null
@@ -175,6 +191,7 @@ export function InventorySection() {
       if (error) throw error;
       event.currentTarget.reset();
       setEntryTarget("");
+      setEntrySearch("");
       setEntryUnit("");
       setActiveForm(null);
       setNotice({ tone: "green", message: "Entrada registrada y costo promedio actualizado." });
@@ -188,7 +205,7 @@ export function InventorySection() {
       const { error } = await getSupabaseBrowserClient()!.rpc("adjust_inventory", {
         target_company_id: organization.id,
         target_item_id: String(form.get("itemId") ?? ""),
-        target_quantity_delta: Number(form.get("quantity")),
+        target_quantity_delta: parseNumericInput(String(form.get("quantity") ?? "")),
         target_occurred_at: String(form.get("date") ?? ""),
         target_reason: String(form.get("reason") ?? ""),
         target_idempotency_key: requestKey("adjustment")
@@ -208,7 +225,7 @@ export function InventorySection() {
         target_company_id: organization.id,
         target_resource_type: String(form.get("resource") ?? "water"),
         target_unit: String(form.get("unit") ?? ""),
-        target_unit_cost: Number(form.get("unitCost"))
+        target_unit_cost: parseNumericInput(String(form.get("unitCost") ?? ""))
       });
       if (error) throw error;
       event.currentTarget.reset();
@@ -258,7 +275,17 @@ export function InventorySection() {
         <form className="grid gap-5" onSubmit={receive}>
           {products.length || manualItems.length ? <>
             <p className="text-sm leading-6 text-app-muted">Elige un producto de Aplicaciones. Se agrega al almacén automáticamente con su primera entrada.</p>
-            <Field label="Producto"><SelectInput name="entryTarget" onChange={(event) => selectEntryTarget(event.target.value)} required value={entryTarget}><option disabled value="">Selecciona</option>{products.length ? <optgroup label="Productos de Aplicaciones">{products.map((product) => <option key={product.id} value={`product:${product.id}`}>{product.name}</option>)}</optgroup> : null}{manualItems.length ? <optgroup label="Otros recursos">{manualItems.map((item) => <option key={item.id} value={`item:${item.id}`}>{item.name}</option>)}</optgroup> : null}</SelectInput></Field>
+            <Field label="Producto">
+              <ProductCatalogCombobox
+                allowCustom={false}
+                ariaLabel="Producto de inventario"
+                onChange={(selection) => selectEntryTarget(selection.productId, selection.productName)}
+                productId={entryTarget}
+                products={entryOptions}
+                required
+                value={entrySearch}
+              />
+            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={selectedEntryItem ? "Unidad configurada" : "Unidad (primera entrada)"}><UnitSelectInput disabled={Boolean(selectedEntryItem)} name="unit" onChange={(event) => setEntryUnit(event.target.value)} required value={entryUnit} /></Field>
               <Field label="Cantidad"><FormattedNumberInput min="0.0001" name="quantity" required /></Field>

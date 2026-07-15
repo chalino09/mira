@@ -20,8 +20,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
+import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
@@ -134,11 +135,7 @@ type MaterialDraft = {
   notes: string;
 };
 
-type ProductOption = {
-  id: string;
-  name: string;
-  composition: string | null;
-};
+type ProductOption = ProductCatalogOption;
 
 type TechnicalPlan = {
   plannedDurationMin?: string;
@@ -162,8 +159,10 @@ type TechnicalPlan = {
 
 type ApplicationExecutionDraft = {
   materialId: string;
+  productId: string;
   productName: string;
   dose: string;
+  unit: string;
   category: ApplicationRecord["category"] | "";
   composition: string;
   safetyInterval: string;
@@ -184,8 +183,11 @@ type IrrigationExecutionPayload = Omit<IrrigationRecord, "id" | "greenhouseId" |
 
 type NutritionExecutionDraft = {
   materialId: string;
+  productId: string;
   productName: string;
+  composition: string;
   dose: string;
+  unit: string;
 };
 
 type NutritionExecutionPayload = {
@@ -229,6 +231,14 @@ const activityTypes = [
   { value: "mantenimiento", label: "Mantenimiento" },
   { value: "preparacion_ciclo", label: "Preparación de ciclo" },
   { value: "otro", label: "Otra actividad" }
+];
+
+const productActivityTypes = [
+  "fertirriego",
+  "fertilizacion",
+  "aplicacion_foliar",
+  "limpieza",
+  "preparacion_ciclo"
 ];
 
 const activityLabels: Record<string, string> = {
@@ -427,109 +437,23 @@ function emptyMaterial(): MaterialDraft {
   return { productId: "", productName: "", composition: "", dose: "", unit: "", notes: "" };
 }
 
-function ProductCombobox({
-  material,
-  products,
-  onChange,
-  index
-}: {
-  material: MaterialDraft;
-  products: ProductOption[];
-  onChange: (patch: Partial<MaterialDraft>) => void;
-  index: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const query = normalizedProductName(material.productName);
-  const exactMatch = products.find((product) => normalizedProductName(product.name) === query);
-  const matches = query
-    ? products
-        .filter((product) => normalizedProductName(product.name).includes(query))
-        .slice(0, 8)
-    : products.slice(0, 8);
-
-  const selectProduct = (product: ProductOption) => {
-    onChange({
-      productId: product.id,
-      productName: product.name,
-      composition: product.composition ?? ""
-    });
-    setOpen(false);
-  };
-
-  const useManualProduct = () => {
-    onChange({ productId: "", composition: "" });
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative">
-      <TextInput
-        aria-label={`Producto ${index + 1}`}
-        onBlur={() => setOpen(false)}
-        onChange={(event) => {
-          const nextName = event.target.value;
-          const nextMatch = products.find((product) => normalizedProductName(product.name) === normalizedProductName(nextName));
-          onChange({
-            productId: nextMatch?.id ?? "",
-            productName: nextName,
-            composition: nextMatch?.composition ?? ""
-          });
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder="Buscar producto"
-        value={material.productName}
-      />
-      {open ? (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-auto border border-app-border bg-white shadow-lg">
-          {matches.map((product) => (
-            <button
-              className="block w-full px-3 py-2 text-left hover:bg-app-sidebar"
-              key={product.id}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => selectProduct(product)}
-              type="button"
-            >
-              <span className="block truncate text-sm font-medium text-app-text">{product.name}</span>
-              {product.composition ? (
-                <span className="block truncate text-xs text-app-muted">{product.composition}</span>
-              ) : null}
-            </button>
-          ))}
-          {material.productName.trim() && !exactMatch ? (
-            <button
-              className="block w-full border-t border-app-border px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={useManualProduct}
-              type="button"
-            >
-              Agregar otro: {material.productName.trim()}
-            </button>
-          ) : null}
-          {!matches.length && !material.productName.trim() ? (
-            <p className="px-3 py-2 text-sm text-app-muted">Escribe para buscar o agregar otro.</p>
-          ) : null}
-        </div>
-      ) : null}
-      {material.composition ? (
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-app-muted">{material.composition}</p>
-      ) : null}
-    </div>
-  );
+function canonicalNumericText(value?: string | null) {
+  const parsed = parseNumericInput(value ?? "");
+  return parsed === null ? "" : String(parsed);
 }
 
 function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan {
   const resourcePlan = {
-    energyKwh: plan.energyKwh ?? "",
-    laborHours: plan.laborHours ?? ""
+    energyKwh: canonicalNumericText(plan.energyKwh),
+    laborHours: canonicalNumericText(plan.laborHours)
   };
   if (type === "riego") {
     return {
-      plannedDurationMin: plan.plannedDurationMin ?? "",
-      plannedLiters: plan.plannedLiters ?? "",
+      plannedDurationMin: canonicalNumericText(plan.plannedDurationMin),
+      plannedLiters: canonicalNumericText(plan.plannedLiters),
       sector: plan.sector ?? "",
-      targetPh: plan.targetPh ?? "",
-      targetEc: plan.targetEc ?? "",
+      targetPh: canonicalNumericText(plan.targetPh),
+      targetEc: canonicalNumericText(plan.targetEc),
       ...resourcePlan
     };
   }
@@ -537,8 +461,8 @@ function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan 
     return {
       method: plan.method ?? "Fertirriego",
       objective: plan.objective ?? "Desarrollo",
-      targetPh: plan.targetPh ?? "",
-      targetEc: plan.targetEc ?? "",
+      targetPh: canonicalNumericText(plan.targetPh),
+      targetEc: canonicalNumericText(plan.targetEc),
       ...resourcePlan
     };
   }
@@ -695,8 +619,10 @@ function ActivityFormModal({
       crewSize: optionalFormNumber(form.get("crewSize")),
       assigneeIds,
       staffAssigneeIds,
-      materials: ["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType)
-        ? materialRows.filter((item) => item.productName.trim())
+      materials: productActivityTypes.includes(activityType)
+        ? materialRows
+          .filter((item) => item.productName.trim())
+          .map((item) => ({ ...item, dose: canonicalNumericText(item.dose) }))
         : [],
       technicalPlan: technicalPlanForType(activityType, technicalPlan)
     });
@@ -964,12 +890,12 @@ function ActivityFormModal({
           </div>
         </section>
 
-        {["fertirriego", "fertilizacion", "aplicacion_foliar"].includes(activityType) ? (
+        {productActivityTypes.includes(activityType) ? (
         <section className="border-t border-app-border pt-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos y mezcla</p>
-              <p className="mt-2 text-xs text-app-muted">Opcional para fertirriego, foliar y preparaciones.</p>
+              <p className="mt-2 text-xs text-app-muted">Busca en el catálogo completo y registra la dosis planeada.</p>
             </div>
             <Button
               className="h-8"
@@ -984,12 +910,19 @@ function ActivityFormModal({
           <div className="mt-4 grid gap-3">
             {materialRows.map((material, index) => (
               <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_0.55fr_auto]">
-                <ProductCombobox
-                  index={index}
-                  material={material}
+                <ProductCatalogCombobox
+                  ariaLabel={`Producto ${index + 1}`}
+                  composition={material.composition}
+                  productId={material.productId}
                   products={productOptions}
-                  onChange={(patch) => setMaterialRows((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, ...patch } : item
+                  value={material.productName}
+                  onChange={(selection) => setMaterialRows((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? {
+                      ...item,
+                      productId: selection.productId,
+                      productName: selection.productName,
+                      composition: selection.composition
+                    } : item
                   ))}
                 />
                 <FormattedNumberInput
@@ -1081,6 +1014,7 @@ function MoreDataDetails({ children }: { children: React.ReactNode }) {
 function CompleteApplicationModal({
   task,
   materials,
+  productOptions,
   greenhouseName,
   saving,
   onClose,
@@ -1088,6 +1022,7 @@ function CompleteApplicationModal({
 }: {
   task: OperationTaskRow | null;
   materials: MaterialRow[];
+  productOptions: ProductOption[];
   greenhouseName: string;
   saving: boolean;
   onClose: () => void;
@@ -1107,8 +1042,10 @@ function CompleteApplicationModal({
         .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
         .map((material) => ({
           materialId: material.id,
+          productId: material.product_id ?? "",
           productName: material.product_name,
-          dose: [material.dose, material.unit].filter(Boolean).join(" "),
+          dose: material.dose ?? "",
+          unit: material.unit ?? "",
           category: "",
           composition: material.composition ?? "",
           safetyInterval: "",
@@ -1129,7 +1066,14 @@ function CompleteApplicationModal({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await onSave({ occurredAt, appliedArea, applications });
+    await onSave({
+      occurredAt,
+      appliedArea,
+      applications: applications.map((application) => ({
+        ...application,
+        dose: canonicalNumericText(application.dose)
+      }))
+    });
   };
 
   return (
@@ -1154,22 +1098,70 @@ function CompleteApplicationModal({
         </div>
 
         <div className="grid gap-5 border-t border-app-border pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos aplicados</p>
+              <p className="mt-1 text-xs text-app-muted">Busca en el catálogo completo para confirmar o sustituir productos.</p>
+            </div>
+            <Button
+              className="h-8"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setApplications((current) => [...current, {
+                materialId: `new:${crypto.randomUUID()}`,
+                productId: "",
+                productName: "",
+                dose: "",
+                unit: "",
+                category: "",
+                composition: "",
+                safetyInterval: "",
+                reentryInterval: "",
+                effectiveness: "",
+                reviewDate: "",
+                reapplicationDate: "",
+                notes: ""
+              }])}
+              type="button"
+              variant="ghost"
+            >
+              Producto
+            </Button>
+          </div>
           {applications.map((application, index) => (
             <section key={application.materialId} className="grid gap-3 border-b border-app-border pb-5 last:border-b-0">
-              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr_0.9fr]">
+              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.65fr_0.55fr_0.9fr_auto]">
                 <Field label={`Producto ${index + 1}`}>
-                  <TextInput
-                    onChange={(event) => updateApplication(index, { productName: event.target.value })}
+                  <ProductCatalogCombobox
+                    allowCustom={false}
+                    ariaLabel={`Producto ${index + 1}`}
+                    composition={application.composition}
+                    onChange={(selection) => updateApplication(index, {
+                      productId: selection.productId,
+                      productName: selection.productName,
+                      composition: selection.composition
+                    })}
+                    productId={application.productId}
+                    products={productOptions}
                     required
                     value={application.productName}
                   />
                 </Field>
                 <Field label="Dosis real">
-                  <FormattedQuantityInput
+                  <FormattedNumberInput
                     onChange={(event) => updateApplication(index, { dose: event.target.value })}
                     required
                     value={application.dose}
                   />
+                </Field>
+                <Field label="Unidad">
+                  <SelectInput
+                    onChange={(event) => updateApplication(index, { unit: event.target.value })}
+                    required
+                    value={application.unit}
+                  >
+                    <option value="">Selecciona</option>
+                    {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                  </SelectInput>
                 </Field>
                 <Field label="Categoría">
                   <SelectInput
@@ -1183,6 +1175,16 @@ function CompleteApplicationModal({
                     {applicationCategories.map((category) => <option key={category}>{category}</option>)}
                   </SelectInput>
                 </Field>
+                {application.materialId.startsWith("new:") ? (
+                  <Button
+                    aria-label={`Quitar producto ${index + 1}`}
+                    className="mt-[27px] h-11 w-11 px-0"
+                    icon={<Minus className="h-4 w-4" />}
+                    onClick={() => setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    type="button"
+                    variant="ghost"
+                  />
+                ) : <span />}
               </div>
 
               <MoreDataDetails>
@@ -1223,7 +1225,7 @@ function CompleteApplicationModal({
 
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !applications.length} type="submit" variant="primary">
+          <Button disabled={saving || !applications.length || applications.some((application) => !application.productId || !application.dose.trim() || !application.unit || !application.category)} type="submit" variant="primary">
             {saving ? "Guardando..." : "Completar y guardar registro"}
           </Button>
         </div>
@@ -1291,6 +1293,7 @@ function CompleteIrrigationModal({
 function CompleteNutritionModal({
   task,
   materials,
+  productOptions,
   greenhouseName,
   saving,
   onClose,
@@ -1298,6 +1301,7 @@ function CompleteNutritionModal({
 }: {
   task: OperationTaskRow | null;
   materials: MaterialRow[];
+  productOptions: ProductOption[];
   greenhouseName: string;
   saving: boolean;
   onClose: () => void;
@@ -1309,8 +1313,11 @@ function CompleteNutritionModal({
     if (!task) return;
     setProducts(materials.slice().sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0)).map((material) => ({
       materialId: material.id,
+      productId: material.product_id ?? "",
       productName: material.product_name,
-      dose: [material.dose, material.unit].filter(Boolean).join(" ")
+      composition: material.composition ?? "",
+      dose: material.dose ?? "",
+      unit: material.unit ?? ""
     })));
   }, [materials, task]);
 
@@ -1324,7 +1331,10 @@ function CompleteNutritionModal({
       ph: optionalFormNumber(form.get("ph")),
       ec: optionalFormNumber(form.get("ec")),
       notes: String(form.get("notes") ?? ""),
-      products
+      products: products.map((product) => ({
+        ...product,
+        dose: canonicalNumericText(product.dose)
+      }))
     });
   };
 
@@ -1344,22 +1354,74 @@ function CompleteNutritionModal({
           </Field>
         </div>
         <div className="grid gap-3 border-t border-app-border pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos aplicados</p>
+              <p className="mt-1 text-xs text-app-muted">Busca en el catálogo completo para confirmar o sustituir productos.</p>
+            </div>
+            <Button
+              className="h-8"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setProducts((current) => [...current, {
+                materialId: `new:${crypto.randomUUID()}`,
+                productId: "",
+                productName: "",
+                composition: "",
+                dose: "",
+                unit: ""
+              }])}
+              type="button"
+              variant="ghost"
+            >
+              Producto
+            </Button>
+          </div>
           {products.map((product, index) => (
-            <div key={product.materialId} className="grid gap-2 sm:grid-cols-2">
+            <div key={product.materialId} className="grid gap-2 sm:grid-cols-[1.2fr_0.65fr_0.55fr_auto]">
               <Field label={`Producto ${index + 1}`}>
-                <TextInput
-                  onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, productName: event.target.value } : item))}
+                <ProductCatalogCombobox
+                  allowCustom={false}
+                  ariaLabel={`Producto ${index + 1}`}
+                  composition={product.composition}
+                  onChange={(selection) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                    ...item,
+                    productId: selection.productId,
+                    productName: selection.productName,
+                    composition: selection.composition
+                  } : item))}
+                  productId={product.productId}
+                  products={productOptions}
                   required
                   value={product.productName}
                 />
               </Field>
               <Field label="Dosis real">
-                <FormattedQuantityInput
+                <FormattedNumberInput
                   onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
                   required
                   value={product.dose}
                 />
               </Field>
+              <Field label="Unidad">
+                <SelectInput
+                  onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, unit: event.target.value } : item))}
+                  required
+                  value={product.unit}
+                >
+                  <option value="">Selecciona</option>
+                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                </SelectInput>
+              </Field>
+              {product.materialId.startsWith("new:") ? (
+                <Button
+                  aria-label={`Quitar producto ${index + 1}`}
+                  className="mt-[27px] h-11 w-11 px-0"
+                  icon={<Minus className="h-4 w-4" />}
+                  onClick={() => setProducts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  type="button"
+                  variant="ghost"
+                />
+              ) : <span />}
             </div>
           ))}
         </div>
@@ -1375,7 +1437,7 @@ function CompleteNutritionModal({
         </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !products.length} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+          <Button disabled={saving || !products.length || products.some((product) => !product.productId || !product.dose.trim() || !product.unit)} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
         </div>
       </form>
     </Modal>
@@ -1940,14 +2002,31 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
+    const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
+      target_work_id: applicationTask.id,
+      target_materials: payload.applications.map((application) => ({
+        materialId: application.materialId,
+        productId: application.productId,
+        productName: application.productName,
+        composition: application.composition,
+        dose: application.dose,
+        unit: application.unit
+      }))
+    });
+    if (syncError) {
+      setCompleting(false);
+      setNotice({ tone: "red", message: appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.") });
+      return;
+    }
+    const syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
     const { data, error } = await supabase.rpc("complete_application_task", {
       target_task_id: applicationTask.id,
       target_occurred_at: payload.occurredAt,
       target_applied_area: payload.appliedArea || null,
-      target_applications: payload.applications.map((application) => ({
-        materialId: application.materialId,
+      target_applications: payload.applications.map((application, index) => ({
+        materialId: syncedMaterialIds[index],
         productName: application.productName,
-        dose: application.dose,
+        dose: [application.dose, application.unit].filter(Boolean).join(" "),
         category: applicationCategoryToDb[application.category as ApplicationRecord["category"]],
         composition: application.composition,
         safetyInterval: application.safetyInterval,
@@ -1971,7 +2050,7 @@ export function OperationsSection({
       category: application.category as ApplicationRecord["category"],
       product: application.productName,
       composition: application.composition,
-      dose: application.dose,
+      dose: [application.dose, application.unit].filter(Boolean).join(" "),
       area: payload.appliedArea,
       responsible: currentUser.fullName,
       safetyInterval: application.safetyInterval,
@@ -2027,6 +2106,23 @@ export function OperationsSection({
     setNotice(null);
     const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === nutritionTask.greenhouse_id);
     const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, payload.date));
+    const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
+      target_work_id: nutritionTask.id,
+      target_materials: payload.products.map((product) => ({
+        materialId: product.materialId,
+        productId: product.productId,
+        productName: product.productName,
+        composition: product.composition,
+        dose: product.dose,
+        unit: product.unit
+      }))
+    });
+    if (syncError) {
+      setCompleting(false);
+      setNotice({ tone: "red", message: appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.") });
+      return;
+    }
+    const syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
     const { data, error } = await supabase.rpc("complete_nutrition_task", {
       target_task_id: nutritionTask.id,
       target_occurred_at: payload.date,
@@ -2036,7 +2132,11 @@ export function OperationsSection({
       target_ph: payload.ph,
       target_ec: payload.ec,
       target_notes: payload.notes || null,
-      target_products: payload.products
+      target_products: payload.products.map((product, index) => ({
+        materialId: syncedMaterialIds[index],
+        productName: product.productName,
+        dose: [product.dose, product.unit].filter(Boolean).join(" ")
+      }))
     });
     setCompleting(false);
     if (error) {
@@ -2051,7 +2151,7 @@ export function OperationsSection({
       greenhouseId: nutritionTask.greenhouse_id,
       date: payload.date,
       product: product.productName,
-      dose: product.dose,
+      dose: [product.dose, product.unit].filter(Boolean).join(" "),
       method: payload.method,
       ph: payload.ph ?? 0,
       ec: payload.ec ?? 0,
@@ -2539,6 +2639,7 @@ export function OperationsSection({
       <CompleteApplicationModal
         greenhouseName={applicationTask ? greenhouseName(applicationTask.greenhouse_id) : ""}
         materials={applicationTask ? materialsForTask(applicationTask.id) : []}
+        productOptions={productOptions}
         onClose={() => setApplicationTask(null)}
         onSave={completeApplication}
         saving={completing}
@@ -2556,6 +2657,7 @@ export function OperationsSection({
       <CompleteNutritionModal
         greenhouseName={nutritionTask ? greenhouseName(nutritionTask.greenhouse_id) : ""}
         materials={nutritionTask ? materialsForTask(nutritionTask.id) : []}
+        productOptions={productOptions}
         onClose={() => setNutritionTask(null)}
         onSave={completeNutrition}
         saving={completing}

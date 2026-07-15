@@ -128,6 +128,10 @@ Para adjuntar evidencia privada a cada Work y usar las vistas operativas unifica
 
 Para agregar los productos pendientes del catálogo sin duplicar nombres equivalentes, ejecuta `47_pending_product_catalog.sql` después de `46_work_evidence_and_operational_alerts.sql`.
 
+Para confirmar o sustituir productos desde el catálogo al cerrar aplicaciones y nutriciones, conservando `product_id` e inventario, ejecuta `48_execution_product_catalog_sync.sql` después de `47_pending_product_catalog.sql`.
+
+Para interpretar correctamente las comas de miles en dosis, energía y horas al calcular consumos y costos automáticos, ejecuta `49_formatted_numeric_costs.sql` después de `48_execution_product_catalog_sync.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash

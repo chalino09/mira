@@ -8,6 +8,7 @@ import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInp
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
+import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { appErrorMessage } from "@/lib/errors";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
@@ -82,11 +83,7 @@ function emptyCost(): CostDraft {
   return { category: "Agroinsumos", amount: "", notes: "" };
 }
 
-type ProductOption = {
-  id: string;
-  name: string;
-  composition: string | null;
-};
+type ProductOption = ProductCatalogOption;
 
 type NutritionProductDraft = {
   productId: string;
@@ -114,89 +111,6 @@ function emptyNutritionProduct(): NutritionProductDraft {
 
 function emptyApplicationProduct(): ApplicationProductDraft {
   return { productId: "", category: "Bioestimulante", product: "", composition: "", dose: "" };
-}
-
-function ProductSearchInput({
-  value,
-  productId,
-  products,
-  onChange,
-  composition,
-  index
-}: {
-  value: string;
-  productId: string;
-  products: ProductOption[];
-  onChange: (patch: { productId: string; product: string; composition?: string }) => void;
-  composition?: string;
-  index: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const query = normalizedProductName(value);
-  const exactMatch = products.find((product) => normalizedProductName(product.name) === query);
-  const matches = query
-    ? products.filter((product) => normalizedProductName(product.name).includes(query)).slice(0, 8)
-    : products.slice(0, 8);
-
-  return (
-    <div className="relative">
-      <TextInput
-        aria-label={`Producto ${index + 1}`}
-        onBlur={() => setOpen(false)}
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          const nextMatch = products.find((product) => normalizedProductName(product.name) === normalizedProductName(nextValue));
-          onChange({
-            productId: nextMatch?.id ?? "",
-            product: nextValue,
-            composition: nextMatch?.composition ?? ""
-          });
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder="Buscar producto"
-        required
-        value={value}
-      />
-      {open ? (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-auto border border-app-border bg-white shadow-lg">
-          {matches.map((product) => (
-            <button
-              className="block w-full px-3 py-2 text-left hover:bg-app-sidebar"
-              key={product.id}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange({
-                  productId: product.id,
-                  product: product.name,
-                  composition: product.composition ?? ""
-                });
-                setOpen(false);
-              }}
-              type="button"
-            >
-              <span className="block truncate text-sm font-medium text-app-text">{product.name}</span>
-              {product.composition ? <span className="block truncate text-xs text-app-muted">{product.composition}</span> : null}
-            </button>
-          ))}
-          {value.trim() && !exactMatch ? (
-            <button
-              className="block w-full border-t border-app-border px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange({ productId: "", product: value.trim(), composition: "" });
-                setOpen(false);
-              }}
-              type="button"
-            >
-              Agregar otro: {value.trim()}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {productId && composition ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-app-muted">{composition}</p> : null}
-    </div>
-  );
 }
 
 function insertedId(row: { id?: string } | null | undefined, fallback: string) {
@@ -1500,13 +1414,18 @@ export function RecordModal() {
             <div className="mt-4 grid gap-3">
               {nutritionProducts.map((product, index) => (
               <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_auto]">
-                <ProductSearchInput
-                  index={index}
+                <ProductCatalogCombobox
+                  ariaLabel={`Producto ${index + 1}`}
                   productId={product.productId}
                   products={productOptions}
                   value={product.product}
-                  onChange={(patch) => setNutritionProducts((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, ...patch } : item
+                  required
+                  onChange={(selection) => setNutritionProducts((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? {
+                      ...item,
+                      productId: selection.productId,
+                      product: selection.productName
+                    } : item
                   ))}
                 />
                 <FormattedQuantityInput
@@ -1546,14 +1465,20 @@ export function RecordModal() {
             <div className="mt-4 grid gap-3">
               {applicationProducts.map((product, index) => (
               <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1.3fr_0.7fr_0.8fr_auto]">
-                <ProductSearchInput
+                <ProductCatalogCombobox
+                  ariaLabel={`Producto ${index + 1}`}
                   composition={product.composition}
-                  index={index}
                   productId={product.productId}
                   products={productOptions}
                   value={product.product}
-                  onChange={(patch) => setApplicationProducts((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, ...patch } : item
+                  required
+                  onChange={(selection) => setApplicationProducts((current) => current.map((item, itemIndex) =>
+                    itemIndex === index ? {
+                      ...item,
+                      productId: selection.productId,
+                      product: selection.productName,
+                      composition: selection.composition
+                    } : item
                   ))}
                 />
                 <FormattedQuantityInput aria-label={`Dosis ${index + 1}`} onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))} placeholder="Dosis" required value={product.dose} />
