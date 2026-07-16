@@ -80,11 +80,19 @@ export function formatDate(value?: string | null) {
     return "Sin fecha";
   }
 
+  const normalizedValue = value.trim();
+  const isoDate = normalizedValue.match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/)?.[1];
+  const date = new Date(isoDate ? `${isoDate}T12:00:00` : normalizedValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sin fecha";
+  }
+
   return new Intl.DateTimeFormat("es-MX", {
     day: "2-digit",
     month: "short",
     year: "numeric"
-  }).format(new Date(`${value}T12:00:00`));
+  }).format(date);
 }
 
 export function formatPersonName(value: string) {
