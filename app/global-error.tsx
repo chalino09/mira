@@ -16,6 +16,7 @@ export default function GlobalError({
     <html lang="es">
       <body style={{ margin: 0 }}>
         <main
+          role="alert"
           style={{
             alignItems: "center",
             background: "#f5f5ef",
