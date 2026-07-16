@@ -23,7 +23,7 @@ export function MonitoringSection() {
         <div>
           <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
           <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
-          <h1 className="mt-3 text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">
+          <h1 className="mt-3 text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
             Diagnóstico técnico
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">

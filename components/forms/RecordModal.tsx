@@ -398,10 +398,14 @@ export function RecordModal() {
     setError("");
     setDuplicateWarning(null);
     pendingDuplicateSaveRef.current = null;
+    if (modal === "harvest" && currentUser.role === "manager") {
+      closeModal();
+      return;
+    }
     if (modal === "cost") setCostRows([emptyCost()]);
     if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
     if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
-  }, [modal]);
+  }, [closeModal, currentUser.role, modal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -529,7 +533,9 @@ export function RecordModal() {
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
-  const defaultGreenhouseId = selectedGreenhouseId === "__all__" ? "" : selectedGreenhouseId;
+  const defaultGreenhouseId = selectedGreenhouseId === "__all__"
+    ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
+    : selectedGreenhouseId;
   const activeCropOptions = crops.filter((crop) => crop.isActive);
   const cropOptions = activeCropOptions.length
     ? activeCropOptions
@@ -1111,6 +1117,10 @@ export function RecordModal() {
 
   const handleHarvest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (currentUser.role === "manager") {
+      setError("Tu rol solo puede consultar las cosechas registradas.");
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const record = {
       greenhouseId: String(form.get("greenhouseId")),
@@ -1525,7 +1535,7 @@ export function RecordModal() {
         <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <HarvestCaptureFields />
+          <HarvestCaptureFields showPrices={currentUser.role !== "manager"} />
           <Field label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
         </FormShell>

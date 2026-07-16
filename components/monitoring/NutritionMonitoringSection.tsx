@@ -269,6 +269,19 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
   const [selectedAnalyte, setSelectedAnalyte] = useState<NutritionAnalyteKey>("n_no3");
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [activeMonitoringTab, setActiveMonitoringTab] = useState<"current" | "history">("current");
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const updateViewport = () => {
+      setIsDesktop(media.matches);
+      if (!media.matches) setActiveMonitoringTab("history");
+    };
+
+    updateViewport();
+    media.addEventListener("change", updateViewport);
+    return () => media.removeEventListener("change", updateViewport);
+  }, []);
 
   const canUseMonitoring = currentUser.role === "owner" || currentUser.role === "admin";
 
@@ -750,7 +763,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
             <div>
               <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
               <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
-              <h1 className="mt-3 text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">
+              <h1 className="mt-3 text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
                 Nutrimental
               </h1>
               <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
@@ -781,7 +794,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
             role="tab"
             aria-selected={activeMonitoringTab === "current"}
             className={cn(
-              "border px-4 py-3 text-left transition",
+              "hidden border px-4 py-3 text-left transition lg:block",
               activeMonitoringTab === "current"
                 ? "border-app-green bg-app-soft text-app-green"
                 : "border-app-border bg-white text-app-muted hover:text-app-text"
@@ -818,7 +831,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
           </button>
         </div>
 
-        {activeMonitoringTab === "current" ? (
+        {isDesktop && activeMonitoringTab === "current" ? (
           <Button
             disabled={isSaving || !hasNutritionDataset || !result.complete}
             icon={<Save className="h-4 w-4" />}
@@ -829,6 +842,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
           </Button>
         ) : (
           <Button
+            className="hidden lg:inline-flex"
             disabled={!savedEvents.length}
             icon={<Download className="h-4 w-4" />}
             onClick={exportHistory}
@@ -839,7 +853,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
         )}
       </div>
 
-      {activeMonitoringTab === "current" ? (
+      {isDesktop && activeMonitoringTab === "current" ? (
       <div className="grid gap-12 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
         <div>
           <div className="mb-6 flex items-center justify-between gap-4 border-y border-app-border py-4">
@@ -1035,8 +1049,10 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                       )}
                     >
                       <button
-                        className="text-left"
+                        className="text-left disabled:cursor-default disabled:opacity-100"
+                        disabled={!isDesktop}
                         onClick={() => {
+                          if (!isDesktop) return;
                           applySavedMonitoring(event);
                           setActiveMonitoringTab("current");
                         }}
@@ -1051,7 +1067,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                               {alerts} alertas · {recommendationCount} recomendaciones
                             </p>
                           </div>
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted lg:inline">
                             Usar
                           </span>
                         </div>
@@ -1152,7 +1168,7 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
                   ) : null}
                 </div>
                 <div className="flex gap-2">
-                  <Button disabled={compareEvents.length !== 2} icon={<Download className="h-4 w-4" />} onClick={exportCompare} variant="secondary">
+                  <Button className="hidden lg:inline-flex" disabled={compareEvents.length !== 2} icon={<Download className="h-4 w-4" />} onClick={exportCompare} variant="secondary">
                     Exportar
                   </Button>
                   <GitCompare className="mt-3 h-4 w-4 text-app-green sm:mt-0" />

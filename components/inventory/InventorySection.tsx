@@ -253,10 +253,10 @@ export function InventorySection() {
       <div className="mb-8 flex flex-col gap-5 border-b border-app-border pb-7 pt-8 md:pt-10 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Almacén central</p>
-          <h1 className="mt-4 text-4xl font-light text-app-text md:text-6xl">Inventario</h1>
+          <h1 className="mt-4 text-3xl font-light text-app-text sm:text-4xl md:text-6xl">Inventario</h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar un Work.</p>
         </div>
-        {canManage ? <div className="flex flex-wrap gap-2">
+        {canManage ? <div className="hidden flex-wrap gap-2 lg:flex">
           <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={openEntry} variant="primary">Registrar entrada</Button>
           <Button onClick={() => setActiveForm("item")} variant="secondary">Otro recurso</Button>
           <Button onClick={() => setActiveForm("adjustment")} variant="ghost">Ajustar</Button>
@@ -268,7 +268,7 @@ export function InventorySection() {
         <span className="text-sm text-app-muted"><strong className="text-app-text">{items.length}</strong> productos</span>
         <span className="text-sm text-app-muted"><strong className="text-app-text">{balances.length}</strong> con existencias</span>
         <span className="text-sm text-app-muted">Valor estimado <strong className="text-app-text">{formatCurrency(totalValue)}</strong></span>
-        {canManage ? <button className="ml-auto text-xs font-semibold uppercase tracking-[0.14em] text-app-green" onClick={() => setActiveForm("rate")} type="button">Configurar tarifas</button> : null}
+        {canManage ? <button className="ml-auto hidden text-xs font-semibold uppercase tracking-[0.14em] text-app-green lg:block" onClick={() => setActiveForm("rate")} type="button">Configurar tarifas</button> : null}
       </div>
 
       <Modal open={activeForm === "entry"} onClose={() => setActiveForm(null)} title="Registrar entrada" panelClassName="sm:max-w-xl">
@@ -348,7 +348,7 @@ export function InventorySection() {
         { key: "type", label: "Tipo", render: (movement) => movementLabels[movement.movement_type] },
         { key: "quantity", label: "Cantidad", render: (movement) => `${formatNumber(Number(movement.quantity))} ${movement.inventory_item?.base_unit ?? ""}` },
         { key: "unitCost", label: "Costo/u.", render: (movement) => formatCurrency(Number(movement.unit_cost)) },
-        ...(canManage ? [{ key: "actions", label: "", render: (movement: Movement) => <Button disabled={saving} icon={<RefreshCcw className="h-3.5 w-3.5" />} onClick={() => reverse(movement.id)} title="Revertir" variant="ghost" /> }] : [])
+        ...(canManage ? [{ key: "actions", label: "", mobileHidden: true, render: (movement: Movement) => <Button disabled={saving} icon={<RefreshCcw className="h-3.5 w-3.5" />} onClick={() => reverse(movement.id)} title="Revertir" variant="ghost" /> }] : [])
       ]} data={movements} /> : <p className="text-sm text-app-muted">Todavía no hay movimientos.</p>}</div>
     </section>
   );

@@ -629,7 +629,7 @@ export function TechnicalLabSection() {
       ) : null}
 
       <div className="grid gap-10 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)]">
-        <div className="min-w-0">
+        <div className="hidden min-w-0 lg:block">
           <div className="mb-6 flex items-center justify-between gap-4 border-y border-app-border py-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">Nuevo análisis</p>
@@ -780,6 +780,7 @@ export function TechnicalLabSection() {
               </span>
               {selectedStudy.review_status !== "approved" ? (
                 <Button
+                  className="hidden lg:inline-flex"
                   disabled={!selectedStudy.values.length}
                   icon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={() => approveStudy(selectedStudy)}
@@ -794,6 +795,7 @@ export function TechnicalLabSection() {
                 </span>
               )}
               <Button
+                className="hidden lg:inline-flex"
                 icon={<Save className="h-4 w-4" />}
                 onClick={() => startEditingStudy(selectedStudy)}
                 type="button"
@@ -890,7 +892,7 @@ export function TechnicalLabSection() {
           </section>
 
           {editingStudyId === selectedStudy.id ? (
-            <section className="mt-6 border-t border-app-border pt-5">
+            <section className="mt-6 hidden border-t border-app-border pt-5 lg:block">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Corrección de resultados</p>

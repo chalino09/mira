@@ -101,7 +101,7 @@ function SectionHeader({
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div>
           <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-          <h1 className="text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">
+          <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
             {title}
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">{description}</p>
@@ -1288,7 +1288,8 @@ function PestsSection() {
 }
 
 function HarvestSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseHarvest, openModal, organization } = useFilteredData();
+  const { currentUser, greenhouseHarvest, openModal, organization } = useFilteredData();
+  const isManager = currentUser.role === "manager";
   const totalBoxes = greenhouseHarvest.reduce((sum, item) => sum + item.boxCount, 0);
   const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
   const commercialKg = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality + item.secondQuality + item.thirdQuality, 0);
@@ -1301,6 +1302,10 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
     return sum + (revenue || fallbackCommercialKg * item.estimatedPrice);
   }, 0);
   const averagePrice = commercialKg ? estimatedRevenue / commercialKg : 0;
+  const latestHarvest = greenhouseHarvest.reduce<HarvestRecord | null>(
+    (latest, item) => !latest || item.date > latest.date ? item : latest,
+    null
+  );
   const harvestChartData = greenhouseHarvest
     .slice(0, 7)
     .reverse()
@@ -1313,18 +1318,30 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
     <section>
       {!embedded ? (
         <SectionHeader
-          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar cosecha</Button>}
+          action={!isManager ? <Button className="w-full sm:w-auto" icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar cosecha</Button> : undefined}
           title="Cosecha"
-          description="Cortes capturados por cajas, calidad, merma, precio por kg y destino."
+          description={isManager
+            ? "Consulta las últimas cosechas registradas en tus áreas asignadas."
+            : "Consulta cortes, calidad, merma, destino y rendimiento por área productiva."}
         />
       ) : null}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <MetricCard icon={Leaf} label="Cajas acumuladas" value={formatNumber(totalBoxes)} detail={`${formatNumber(totalKg)} kg registrados`} />
-        <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da y 3ra calidad" />
-        <MetricCard icon={WalletCards} label="Precio promedio" value={formatCurrency(averagePrice)} detail="Ponderado por kg comercial" />
+        {isManager ? (
+          <>
+            <MetricCard icon={CheckCircle2} label="Kg registrados" value={`${formatNumber(totalKg)} kg`} detail="En el periodo seleccionado" />
+            <MetricCard icon={CalendarDays} label="Último corte" value={latestHarvest ? formatDate(latestHarvest.date) : "--"} detail={latestHarvest ? `${formatNumber(latestHarvest.kilograms)} kg capturados` : "Sin cortes registrados"} />
+          </>
+        ) : (
+          <>
+            <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da y 3ra calidad" />
+            <MetricCard icon={WalletCards} label="Precio promedio" value={formatCurrency(averagePrice)} detail="Ponderado por kg comercial" />
+          </>
+        )}
       </div>
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
-        <YieldChart data={harvestChartData} />
+      <h2 className="mb-4 text-xl font-light text-app-text">Últimas cosechas</h2>
+      <div className={cn("grid gap-5", !isManager && "xl:grid-cols-[0.8fr_1.5fr]")}>
+        {!isManager ? <YieldChart data={harvestChartData} /> : null}
         <DataTable<HarvestRecord>
           columns={[
             { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
@@ -1334,7 +1351,7 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
             { key: "second", label: "2da", render: (item) => qualityCell(item.secondQualityBoxes, item.secondQuality) },
             { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
             { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
-            { key: "price", label: "Precio", render: (item) => formatCurrency(item.estimatedPrice) },
+            ...(!isManager ? [{ key: "price", label: "Precio", render: (item: HarvestRecord) => formatCurrency(item.estimatedPrice) }] : []),
             { key: "destination", label: "Destino", render: (item) => item.destination },
             {
               key: "detail",
@@ -1428,7 +1445,7 @@ function CostsSection() {
   return (
     <section>
       <SectionHeader
-        action={<Button icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Nuevo costo</Button>}
+        action={<Button className="hidden lg:inline-flex" icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Nuevo costo</Button>}
         title="Costos"
         description="Mano de obra, insumos, agua, energía, renta, gasolina, refrescos y margen estimado."
       />
@@ -1496,7 +1513,7 @@ function ReportsSection() {
         <YieldChart data={harvestChartData} />
         <CostChart data={costChartData} />
         <IrrigationChart data={irrigationChartData} />
-        <div className="border-y border-app-border py-5">
+        <div className="hidden border-y border-app-border py-5 lg:block">
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Exportaciones</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {["Producción semanal", "Aplicaciones por cultivo", "Historial sanitario", "Rendimiento por área"].map((item) => (
@@ -2126,7 +2143,7 @@ function SettingsSection() {
 
   if (!activeSetting) {
     return (
-      <section>
+      <section className="hidden lg:block">
         <SectionHeader
           title="Ajustes"
           description="Elige un bloque de configuración para revisar o cambiar su información."
@@ -2153,7 +2170,7 @@ function SettingsSection() {
   }
 
   return (
-    <section>
+    <section className="hidden lg:block">
       <SectionHeader
         action={
           <Button icon={<ArrowLeft className="h-4 w-4" />} onClick={() => setActiveSetting(null)} variant="secondary">
@@ -2530,7 +2547,7 @@ function SettingsSection() {
 
       {activeSetting === "greenhouses" ? (
         <SettingsPanel
-          action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="ghost">Nuevo</Button>}
+          action={<Button className="hidden lg:inline-flex" icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="ghost">Nuevo</Button>}
           description={`Administración rápida de áreas productivas, ubicación, superficie y responsables. Superficie total: ${formatNumber(totalSurface)} m2.`}
           icon={Sprout}
           kicker="Producción"
@@ -2549,7 +2566,7 @@ function SettingsSection() {
                       Encargado: {greenhouse.manager}
                     </p>
                   </div>
-                  <Button icon={<Edit3 className="h-4 w-4" />} onClick={() => editGreenhouse(greenhouse.id)} variant="ghost">
+                  <Button className="hidden lg:inline-flex" icon={<Edit3 className="h-4 w-4" />} onClick={() => editGreenhouse(greenhouse.id)} variant="ghost">
                     Editar
                   </Button>
                 </div>
@@ -2618,7 +2635,7 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "nutrition") return <OperationsSection {...operationProps} specialtyLabel="Nutrición" workTypeFilter={["fertirriego", "fertilizacion"]} />;
   if (activeSection === "applications") return <OperationsSection {...operationProps} specialtyLabel="Aplicaciones" workTypeFilter={["aplicacion_foliar"]} />;
   if (activeSection === "pests") return <PestsSection />;
-  if (activeSection === "harvest") return <OperationsSection {...operationProps} specialtyLabel="Cosecha" workTypeFilter={["cosecha"]} />;
+  if (activeSection === "harvest") return <HarvestSection />;
   if (activeSection === "inventory") return <InventorySection />;
   if (activeSection === "costs") return <CostsSection />;
   if (activeSection === "reports") return <ReportsSection />;

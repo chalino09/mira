@@ -10,6 +10,7 @@ type DataTableProps<T> = {
     render: (item: T) => React.ReactNode;
     className?: string;
     sortable?: boolean;
+    mobileHidden?: boolean;
   }[];
   data: T[];
   emptyLabel?: string;
@@ -36,7 +37,7 @@ export function DataTable<T>({ columns, data, emptyLabel = "Sin registros", getR
           <p className="px-4 py-8 text-center text-sm text-app-muted">{emptyLabel}</p>
         ) : data.map((item, index) => (
           <article className="grid gap-3 px-4 py-5" key={getRowKey ? getRowKey(item) : index}>
-            {columns.map((column) => (
+            {columns.filter((column) => !column.mobileHidden).map((column) => (
               <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] items-start gap-4" key={column.key}>
                 <p className="pt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">{column.label}</p>
                 <div className={cn("min-w-0 break-words text-right text-sm text-app-text", column.className)}>{column.render(item)}</div>
@@ -50,7 +51,7 @@ export function DataTable<T>({ columns, data, emptyLabel = "Sin registros", getR
           <thead className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={cn("px-4 py-4", column.className)}>
+                <th key={column.key} className={cn("px-4 py-4", column.mobileHidden && "hidden lg:table-cell", column.className)}>
                   {column.sortable && onSort ? (
                     <button
                       aria-label={`Ordenar por ${column.label}`}
@@ -77,7 +78,7 @@ export function DataTable<T>({ columns, data, emptyLabel = "Sin registros", getR
               data.map((item, index) => (
                 <tr key={getRowKey ? getRowKey(item) : index} className="border-t border-app-border transition hover:bg-white/60">
                   {columns.map((column) => (
-                    <td key={column.key} className={cn("px-4 py-4 align-middle text-app-text", column.className)}>
+                    <td key={column.key} className={cn("px-4 py-4 align-middle text-app-text", column.mobileHidden && "hidden lg:table-cell", column.className)}>
                       {column.render(item)}
                     </td>
                   ))}

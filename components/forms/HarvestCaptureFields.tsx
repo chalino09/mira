@@ -7,13 +7,14 @@ import { cn, parseNumericInput } from "@/lib/utils";
 
 type HarvestCaptureFieldsProps = {
   compact?: boolean;
+  showPrices?: boolean;
 };
 
 function numberValue(value: string) {
   return parseNumericInput(value) ?? 0;
 }
 
-export function HarvestCaptureFields({ compact = false }: HarvestCaptureFieldsProps) {
+export function HarvestCaptureFields({ compact = false, showPrices = true }: HarvestCaptureFieldsProps) {
   const [boxCount, setBoxCount] = useState("");
   const [boxWeightKg, setBoxWeightKg] = useState("20");
   const [firstQualityBoxes, setFirstQualityBoxes] = useState("");
@@ -143,14 +144,16 @@ export function HarvestCaptureFields({ compact = false }: HarvestCaptureFieldsPr
                 placeholder="Cajas"
                 value={field.boxesValue}
               />
-              <FormattedNumberInput
-                aria-label={`Precio ${field.title}`}
-                min={0}
-                name={field.priceName}
-                onChange={(event) => field.setPrice(event.target.value)}
-                placeholder="Precio/kg"
-                value={field.priceValue}
-              />
+              {showPrices ? (
+                <FormattedNumberInput
+                  aria-label={`Precio ${field.title}`}
+                  min={0}
+                  name={field.priceName}
+                  onChange={(event) => field.setPrice(event.target.value)}
+                  placeholder="Precio/kg"
+                  value={field.priceValue}
+                />
+              ) : null}
             </div>
           </div>
         ))}
@@ -165,9 +168,7 @@ export function HarvestCaptureFields({ compact = false }: HarvestCaptureFieldsPr
               placeholder="Cajas"
               value={mermaBoxes}
             />
-            <div className="flex h-11 items-center border border-app-border bg-app-sidebar px-3 text-sm text-app-muted">
-              Sin precio
-            </div>
+            {showPrices ? <div className="flex h-11 items-center border border-app-border bg-app-sidebar px-3 text-sm text-app-muted">Sin precio</div> : null}
           </div>
         </div>
       </div>

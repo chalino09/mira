@@ -226,7 +226,7 @@ function AuthCard({
               {title}
             </h1>
             <AtmosphericMapVisual className="mt-10 hidden max-w-2xl lg:block" variant="login" />
-            <div className="mt-8 hidden max-w-2xl gap-0 border-y border-app-border py-6 sm:grid-cols-3 lg:grid lg:mt-14">
+            <div className="mt-8 hidden max-w-2xl gap-0 border-y border-app-border py-6 sm:grid-cols-3 lg:mt-14 lg:grid">
               {signals.map((item, index) => (
                 <div
                   key={item.label}

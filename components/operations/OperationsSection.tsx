@@ -663,7 +663,7 @@ function ActivityFormModal({
           </Field>
           <Field label="Día">
             <input name="scheduledDate" type="hidden" value={scheduledDate} />
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7 sm:gap-1.5">
               {weekDays.map((date) => {
                 const key = dateKey(date);
                 const selected = key === scheduledDate;
@@ -2364,7 +2364,7 @@ export function OperationsSection({
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-            <h1 className="text-4xl font-light leading-none tracking-normal text-app-text md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
+            <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
             <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
                 ? "Planea, ejecuta, verifica y consulta cada Work desde un solo lugar."
@@ -2399,7 +2399,7 @@ export function OperationsSection({
               variant="secondary"
             />
             {canPlan ? (
-              <Button icon={<Plus className="h-4 w-4" />} onClick={openNewActivity} variant="primary">
+              <Button className="hidden lg:inline-flex" icon={<Plus className="h-4 w-4" />} onClick={openNewActivity} variant="primary">
                 Nueva actividad
               </Button>
             ) : null}
@@ -2486,7 +2486,7 @@ export function OperationsSection({
           ) : null}
 
           {canPlan && plan && weekTasks.length ? (
-            <div className="flex flex-col gap-3 border-b border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="hidden flex-col gap-3 border-b border-app-border py-4 lg:flex lg:flex-row lg:items-center lg:justify-between">
               <p className="text-sm text-app-muted">
                 {plan.status === "published"
                   ? "La semana está publicada. Puedes reenviarla si hiciste cambios."
@@ -2515,12 +2515,14 @@ export function OperationsSection({
           ) : null}
 
           {canPlan ? (
-            <CopilotInlineSuggestions
-              insights={copilotInsights.filter((insight) => !dismissedCopilotIds.includes(insight.id))}
-              onCreateTask={onCreateCopilotTask}
-              onDismiss={(insight) => setDismissedCopilotIds((current) => [...current, insight.id])}
-              onPrepareMessage={onPrepareCopilotMessage}
-            />
+            <div className="hidden lg:block">
+              <CopilotInlineSuggestions
+                insights={copilotInsights.filter((insight) => !dismissedCopilotIds.includes(insight.id))}
+                onCreateTask={onCreateCopilotTask}
+                onDismiss={(insight) => setDismissedCopilotIds((current) => [...current, insight.id])}
+                onPrepareMessage={onPrepareCopilotMessage}
+              />
+            </div>
           ) : null}
 
           {loading ? (
@@ -2585,35 +2587,33 @@ export function OperationsSection({
                             ) : null}
                             {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
                             {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
-                            <div className="mt-3 flex flex-wrap gap-1">
+                            <div className="mt-4 flex flex-wrap gap-2">
                               {canPlan ? (
                                 <Button
-                                  aria-label={`Editar ${task.title}`}
-                                  className="h-8 w-8 px-0"
+                                  className="hidden min-h-11 px-3 lg:inline-flex"
                                   icon={<Edit3 className="h-3.5 w-3.5" />}
                                   onClick={() => openEditActivity(task)}
-                                  title="Editar actividad"
                                   variant="ghost"
-                                />
+                                >Editar</Button>
                               ) : null}
                               {["pendiente", "en_progreso"].includes(task.status) ? (
                                 <>
-                                  <Button aria-label="Bloquear actividad" className="h-8 w-8 px-0" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} title="Bloquear actividad" variant="ghost" />
-                                  <Button disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
+                                  <Button className="min-h-11 px-3" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} variant="ghost">Bloquear</Button>
+                                  <Button className="min-h-11 px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
                                 </>
                               ) : null}
                               {["pendiente", "bloqueada"].includes(task.status) ? (
-                                <Button disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar sólo si seguirá en curso"} variant="ghost">{task.status === "bloqueada" ? "Reanudar" : "Iniciar"}</Button>
+                                <Button className="min-h-11 px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar sólo si seguirá en curso"} variant="ghost">{task.status === "bloqueada" ? "Reanudar" : "Iniciar"}</Button>
                               ) : null}
-                              <Button aria-label="Adjuntar evidencia opcional" className="h-8 w-8 px-0" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost" />
+                              <Button className="min-h-11 px-3" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost">Evidencia{evidenceForTask(task.id).length ? ` (${evidenceForTask(task.id).length})` : ""}</Button>
                               {canPlan && task.status === "completada" ? (
                                 <>
-                                  <Button aria-label="Verificar trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} title="Verificar trabajo" variant="ghost" />
-                                  <Button aria-label="Reabrir trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} title="Reabrir trabajo" variant="ghost" />
+                                  <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} variant="ghost">Verificar</Button>
+                                  <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
                                 </>
                               ) : null}
                               {canPlan && task.status === "verificada" ? (
-                                <Button aria-label="Reabrir trabajo" className="h-8 w-8 px-0" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} title="Reabrir trabajo" variant="ghost" />
+                                <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
                               ) : null}
                             </div>
                           </article>
@@ -2629,6 +2629,7 @@ export function OperationsSection({
           ) : (
             <div className="mt-8">
               <EmptyState
+                actionClassName={canPlan ? "hidden lg:inline-flex" : undefined}
                 actionLabel={canPlan ? "Agregar actividad" : undefined}
                 icon={CalendarRange}
                 onAction={canPlan ? openNewActivity : undefined}
