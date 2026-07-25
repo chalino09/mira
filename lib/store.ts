@@ -16,6 +16,7 @@ import type {
   ModalType,
   NutritionRecord,
   Organization,
+  OrganizationMembership,
   PestAlert,
   PestAlertUpdate,
   SectionId,
@@ -56,6 +57,7 @@ type AppState = {
   viewContexts: Partial<Record<SectionId, ViewContext>>;
   modal: ModalType;
   organization: Organization;
+  memberships: OrganizationMembership[];
   currentUser: CurrentUser;
   crops: CropCatalogItem[];
   cropStages: CropStageCatalog[];
@@ -95,6 +97,7 @@ type AppState = {
   replaceViewData: (data: WorkspaceViewData, meta?: ViewDataMeta | null) => void;
   hydrateWorkspace: (data: {
     organization: Organization;
+    memberships: OrganizationMembership[];
     currentUser: CurrentUser;
     crops: CropCatalogItem[];
     cropStages: CropStageCatalog[];
@@ -116,6 +119,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
     id: "",
     name: ""
   },
+  memberships: [],
   currentUser: {
     id: "",
     fullName: "",
@@ -171,12 +175,16 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   hydrateWorkspace: (data) => {
     invalidateViewDataCache();
     set((state) => {
-      const allowsAll = !["overview", "monitoring"].includes(state.activeSection);
-      const selectedGreenhouseId = (allowsAll && state.selectedGreenhouseId === allGreenhousesId) || data.greenhouses.some((item) => item.id === state.selectedGreenhouseId)
-        ? state.selectedGreenhouseId
-        : data.greenhouses[0]?.id ?? "";
+      const managerSections = new Set<SectionId>(["overview", "greenhouses", "calendar", "records", "pests", "harvest"]);
+      const activeSection = data.currentUser.role === "manager" && !managerSections.has(state.activeSection)
+        ? "overview"
+        : state.activeSection;
+      const allowsAll = !["overview", "monitoring"].includes(activeSection);
+      const selectedGreenhouseId = allowsAll ? allGreenhousesId : data.greenhouses[0]?.id ?? "";
       return {
+        activeSection,
         organization: data.organization,
+        memberships: data.memberships,
         currentUser: data.currentUser,
         crops: data.crops,
         cropStages: data.cropStages,
@@ -184,6 +192,9 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         nutritionObservationRules: data.nutritionObservationRules,
         greenhouses: data.greenhouses,
         selectedGreenhouseId,
+        selectedPeriod: "month",
+        viewContexts: {},
+        modal: null,
         tasks: [],
         irrigationRecords: [],
         nutritionRecords: [],

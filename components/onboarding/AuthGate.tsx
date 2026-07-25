@@ -2,7 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { ArrowLeft } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
@@ -32,6 +33,7 @@ import type {
   CurrentUser,
   Greenhouse,
   Organization,
+  OrganizationMembership,
   RiskLevel
 } from "@/types";
 
@@ -66,6 +68,18 @@ const DEFAULT_CROP_OPTIONS: CropCatalogItem[] = [
     isActive: true
   }
 ];
+
+const LAST_COMPANY_STORAGE_KEY = "mira-last-company-id";
+
+function routeOrganizationSlug(pathname: string) {
+  const segment = pathname.split("/").filter(Boolean)[0];
+  if (!segment) return undefined;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 function mapCropStage(stage?: string | null): CropStage {
   if (stage === "floracion") return "Floración";
@@ -839,14 +853,20 @@ function OnboardingScreen({
 }
 
 export function AuthGate() {
+  const pathname = usePathname();
+  const requestedOrganizationSlug = routeOrganizationSlug(pathname);
   const [state, setState] = useState<AuthState>("loading");
   const [loadingStep, setLoadingStep] = useState("Cargando");
   const [session, setSession] = useState<Session | null>(null);
   const [loadError, setLoadError] = useState("");
   const [accessPausedMessage, setAccessPausedMessage] = useState("");
   const hydrateWorkspace = useGreenhouseStore((store) => store.hydrateWorkspace);
+  const refreshRequestRef = useRef(0);
+  const loadedOrganizationSlugRef = useRef<string | null>(null);
 
   const signOut = useCallback(async () => {
+    refreshRequestRef.current += 1;
+    loadedOrganizationSlugRef.current = null;
     await getSupabaseBrowserClient()?.auth.signOut();
     setSession(null);
     setLoadError("");
@@ -855,6 +875,7 @@ export function AuthGate() {
   }, []);
 
   const refresh = useCallback(async () => {
+    const requestId = ++refreshRequestRef.current;
     setLoadError("");
     setLoadingStep("Validando sesión");
     setState("loading");
@@ -882,16 +903,15 @@ export function AuthGate() {
       throwInitialLoadError(invitesError, "No se pudieron revisar tus invitaciones.");
 
       setLoadingStep("Cargando empresa");
-      const { data: membership, error: membershipError } = await supabase
+      const { data: membershipRows, error: membershipError } = await supabase
         .from("company_members")
-        .select("id, role, company_id, companies(id, name, slug, legal_name, logo_url)")
+        .select("id, role, company_id, created_at, companies(id, name, slug, legal_name, logo_url)")
         .eq("user_id", nextSession.user.id)
         .eq("status", "active")
-        .limit(1)
-        .maybeSingle();
-      throwInitialLoadError(membershipError, "No se pudo cargar tu membresía.");
+        .order("created_at", { ascending: true });
+      throwInitialLoadError(membershipError, "No se pudieron cargar tus membresías.");
 
-      if (!membership) {
+      if (!membershipRows?.length) {
         const { data: pausedMembership, error: pausedMembershipError } = await supabase
           .from("company_members")
           .select("id, status, role")
@@ -910,9 +930,37 @@ export function AuthGate() {
         return;
       }
 
-      const company = Array.isArray(membership.companies)
-        ? membership.companies[0]
-        : membership.companies;
+      const memberships: OrganizationMembership[] = membershipRows
+        .map((membership: any) => {
+          const company = Array.isArray(membership.companies)
+            ? membership.companies[0]
+            : membership.companies;
+          const organization: Organization = {
+            id: company?.id ?? membership.company_id,
+            name: company?.name ?? "Empresa",
+            slug: company?.slug ?? organizationRouteSlug(company?.name ?? "Empresa"),
+            legalName: company?.legal_name ?? undefined,
+            logoUrl: company?.logo_url ?? undefined
+          };
+          return {
+            id: membership.id,
+            companyId: membership.company_id,
+            role: membership.role,
+            organization
+          };
+        })
+        .sort((left, right) => left.organization.name.localeCompare(right.organization.name, "es-MX"));
+
+      const requestedMembership = requestedOrganizationSlug
+        ? memberships.find((item) => organizationRouteSlug(item.organization.slug ?? item.organization.name) === requestedOrganizationSlug)
+        : undefined;
+      const lastCompanyId = !requestedOrganizationSlug
+        ? window.localStorage.getItem(LAST_COMPANY_STORAGE_KEY)
+        : null;
+      const membership = requestedMembership
+        ?? memberships.find((item) => item.companyId === lastCompanyId)
+        ?? memberships[0];
+      const company = membership.organization;
 
       setLoadingStep("Cargando datos del espacio");
       const [
@@ -932,7 +980,7 @@ export function AuthGate() {
         supabase
           .from("greenhouses")
           .select("id, public_id, name, location, latitude, longitude, location_accuracy_m, surface_m2, budget_amount, crop_id, crop_variety, tomato_variety, transplant_date, plants_count, stem_count, is_grafted, crop_stage, manager_user_id, manager_staff_id, beds_count, health_status, created_at")
-          .eq("company_id", membership.company_id)
+          .eq("company_id", membership.companyId)
           .order("created_at", { ascending: true }),
         supabase
           .from("crops")
@@ -979,13 +1027,7 @@ export function AuthGate() {
       const nutritionReferenceRanges = mapNutritionRanges(nutritionRangeRows);
       const nutritionObservationRules = mapNutritionRules(nutritionRuleRows);
 
-      const organization: Organization = {
-        id: company?.id ?? membership.company_id,
-        name: company?.name ?? "Empresa",
-        slug: company?.slug ?? organizationRouteSlug(company?.name ?? "Empresa"),
-        legalName: company?.legal_name ?? undefined,
-        logoUrl: company?.logo_url ?? undefined
-      };
+      const organization = company;
 
       const profileName = String(profile?.full_name ?? "").trim();
       const accountEmail = String(nextSession.user.email ?? "").trim();
@@ -1016,7 +1058,7 @@ export function AuthGate() {
         ? await supabase
           .from("company_members")
           .select("user_id")
-          .eq("company_id", membership.company_id)
+          .eq("company_id", membership.companyId)
           .eq("role", "manager")
           .eq("status", "active")
           .in("user_id", managerUserIds)
@@ -1033,7 +1075,7 @@ export function AuthGate() {
         ? await supabase
           .from("company_staff")
           .select("id, full_name")
-          .eq("company_id", membership.company_id)
+          .eq("company_id", membership.companyId)
           .in("id", managerStaffIds)
         : { data: [], error: null };
       throwInitialLoadError(managerStaffResponse.error, "No se pudieron cargar los encargados internos.");
@@ -1076,8 +1118,11 @@ export function AuthGate() {
         };
       });
 
+      if (requestId !== refreshRequestRef.current) return;
+
       hydrateWorkspace({
         organization,
+        memberships,
         currentUser,
         crops,
         cropStages,
@@ -1086,16 +1131,23 @@ export function AuthGate() {
         greenhouses: mappedGreenhouses
       });
 
+      if (!requestedOrganizationSlug || requestedMembership) {
+        window.localStorage.setItem(LAST_COMPANY_STORAGE_KEY, membership.companyId);
+      }
+      loadedOrganizationSlugRef.current = organizationRouteSlug(organization.slug ?? organization.name);
+
       setState("ready");
     } catch (error) {
+      if (requestId !== refreshRequestRef.current) return;
       setLoadError(initialLoadErrorMessage(error));
       setState("load-error");
     }
-  }, [hydrateWorkspace]);
+  }, [hydrateWorkspace, requestedOrganizationSlug]);
 
   useEffect(() => {
+    if (requestedOrganizationSlug && requestedOrganizationSlug === loadedOrganizationSlugRef.current) return;
     refresh();
-  }, [refresh]);
+  }, [refresh, requestedOrganizationSlug]);
 
   if (state === "loading") {
     return (

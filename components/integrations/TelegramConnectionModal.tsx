@@ -65,7 +65,7 @@ export function TelegramConnectionModal({ open, onClose }: { open: boolean; onCl
     setWorking(true);
     setNotice("");
     const { data, error } = await supabase.functions.invoke("telegram-link", {
-      body: { action: "link" }
+      body: { action: "link", company_id: organization.id }
     });
     setWorking(false);
 
@@ -85,7 +85,7 @@ export function TelegramConnectionModal({ open, onClose }: { open: boolean; onCl
     setWorking(true);
     setNotice("");
     const { error } = await supabase.functions.invoke("telegram-link", {
-      body: { action: "disconnect" }
+      body: { action: "disconnect", company_id: organization.id }
     });
     setWorking(false);
 

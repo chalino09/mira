@@ -9,6 +9,7 @@ import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
+import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 
 export function BrandMark() {
   return (
@@ -61,9 +62,9 @@ export function Sidebar({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-app-border bg-app-sidebar p-2.5 lg:flex lg:flex-col">
       <div className="flex items-center gap-2.5 px-2 py-2">
         <BrandMark />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <MiraWordmark className="block truncate text-sm tracking-[0.34em]" />
-          <p className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">{organization.name}</p>
+          <OrganizationSwitcher className="mt-1" />
         </div>
       </div>
 
