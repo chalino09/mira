@@ -330,7 +330,7 @@ export function InventorySection() {
         <form className="grid gap-5" onSubmit={saveRate}>
           <p className="text-sm leading-6 text-app-muted">Estas tarifas calculan costos de agua, energía y mano de obra al completar un Work.</p>
           <Field label="Recurso"><SelectInput defaultValue="water" name="resource"><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><UnitSelectInput defaultValue="L" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><UnitSelectInput defaultValue="lt" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
           <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar tarifa</Button></div>
         </form>
       </Modal>

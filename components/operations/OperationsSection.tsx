@@ -301,7 +301,7 @@ const applicationCategories: ApplicationRecord["category"][] = [
   "Regulador de crecimiento"
 ];
 
-const doseUnitOptions = ["ml/L", "g/L", "L/ha", "kg/ha", "ml/20 L", "g/20 L", "cc/L", "%"];
+const doseUnitOptions = ["ml", "lt", "gr", "kg", "unidad"];
 
 const rafiaWorkTypes = [
   "Anillado",

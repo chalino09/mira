@@ -38,8 +38,7 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
 type FormattedInputValue = string | number | null | undefined;
 
 const unitGroups = [
-  { label: "Inventario", values: ["kg", "g", "mg", "t", "L", "mL", "m³", "h", "min", "unidad", "pieza", "caja", "saco", "rollo"] },
-  { label: "Aplicación y nutrición", values: ["ml/L", "g/L", "L/ha", "kg/ha", "ml/20 L", "g/20 L", "cc/L", "%"] },
+  { label: "Insumos e inventario", values: ["ml", "lt", "gr", "kg", "unidad"] },
   { label: "Mediciones", values: ["ppm", "mg/L", "meq/L", "mmol/L", "mS/cm", "dS/m", "pH", "°C", "°F"] }
 ] as const;
 
