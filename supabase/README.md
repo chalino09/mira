@@ -1,5 +1,9 @@
 # mira Supabase SQL
 
+## Instalaciones nuevas
+
+Las instalaciones nuevas usan exclusivamente las migraciones de `supabase/migrations/`. Ejecuta `./supabase/scripts/verify-fresh-install.sh` para una validación local desde cero, y consulta el [runbook de migraciones](../docs/supabase-migrations-runbook.md) para el despliegue y la verificación del esquema. Los SQL numerados restantes son el historial legible de la secuencia.
+
 Ejecuta estos archivos en Supabase SQL Editor en este orden:
 
 1. `01_schema.sql`
@@ -135,6 +139,10 @@ Para interpretar correctamente las comas de miles en dosis, energía y horas al 
 Para habilitar URLs estables de empresa, invernaderos, ciclos actuales, casos sanitarios y lotes de cosecha, ejecuta `50_public_route_identifiers.sql` después de `49_formatted_numeric_costs.sql`.
 
 Para evitar descargar historiales completos en Costos y Reportes, ejecuta `51_scalable_view_aggregates.sql` después de `50_public_route_identifiers.sql`. Esta migración agrega los índices de las vistas y el RPC de agregados por empresa, invernadero y periodo.
+
+Para revocar de inmediato el acceso de managers desactivados —incluyendo asignaciones existentes de invernadero o Work, registros técnicos, storage y RPC— ejecuta `52_p0_authorization_revocation.sql` después de `51_scalable_view_aggregates.sql`. La regresión de roles está en `tests/p0_authorization_revocation.sql` y se ejecuta después de toda la cadena SQL.
+
+Para exigir el contrato mínimo de Work y evitar que una base atrasada actualice `tasks.status` directamente, ejecuta `53_work_schema_contract.sql` después de `52_p0_authorization_revocation.sql`.
 
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 

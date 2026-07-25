@@ -56,6 +56,7 @@ import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
+import { requireWorkSchema } from "@/lib/work-schema";
 import {
   buildCopilotPulse,
   localDateKey,
@@ -264,6 +265,8 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string, sta
     throw new Error("missing_supabase_client");
   }
 
+  await requireWorkSchema(supabase);
+
   const { data, error: workRpcError } = await supabase.rpc("complete_work", {
     target_work_id: taskId,
     target_payload: {
@@ -272,26 +275,8 @@ async function completeTaskRecord(taskId: string, completeTask: (id: string, sta
     }
   });
 
-  const missingWorkRpc = ["42883", "PGRST202"].includes(workRpcError?.code ?? "");
-  if (!missingWorkRpc) {
-    if (workRpcError) throw workRpcError;
-    completeTask(taskId, data?.status === "verificada" ? "Verificada" : "Completada");
-    return;
-  }
-
-  const { error: legacyRpcError } = await supabase.rpc("update_operational_task_status", {
-    target_task_id: taskId,
-    next_status: "completada",
-    update_note: updateNote || null
-  });
-
-  const missingOperationsRpc = ["42883", "PGRST202"].includes(legacyRpcError?.code ?? "");
-  const { error } = missingOperationsRpc
-    ? await supabase.from("tasks").update({ status: "completada" }).eq("id", taskId)
-    : { error: legacyRpcError };
-
-  if (error) throw error;
-  completeTask(taskId);
+  if (workRpcError) throw workRpcError;
+  completeTask(taskId, data?.status === "verificada" ? "Verificada" : "Completada");
 }
 
 function isTechnicalCompletionTask(task: Task) {

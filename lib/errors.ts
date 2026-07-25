@@ -10,6 +10,7 @@ const knownMessages: Record<string, string> = {
   "A user with this email address has already been registered": "Ese correo ya tiene cuenta. Entra con tu contraseña.",
   "Password should be at least 6 characters": "Usa una contraseña más larga.",
   missing_supabase_client: "No se pudo conectar con Supabase.",
+  work_schema_update_required: "La base de datos está desactualizada para operar Work. Aplica la migración 53 y vuelve a intentarlo.",
   not_authenticated: "Tu sesión expiró. Vuelve a iniciar sesión.",
   not_allowed: "Tu rol no permite hacer este cambio.",
   invalid_email: "Revisa el correo del usuario.",
