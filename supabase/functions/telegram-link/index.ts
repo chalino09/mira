@@ -44,18 +44,24 @@ Deno.serve(async (request) => {
 
   if (authError || !authData.user) return response({ error: "not_authenticated" }, 401);
 
-  const { data: membership } = await userClient
+  const body = await request.json().catch(() => ({}));
+  const companyId = typeof body.company_id === "string" ? body.company_id : "";
+
+  let membershipQuery = userClient
     .from("company_members")
     .select("company_id, role, status")
     .eq("user_id", authData.user.id)
     .eq("role", "manager")
-    .eq("status", "active")
+    .eq("status", "active");
+
+  if (companyId) membershipQuery = membershipQuery.eq("company_id", companyId);
+
+  const { data: membership } = await membershipQuery
     .limit(1)
     .maybeSingle();
 
   if (!membership) return response({ error: "manager_membership_required" }, 403);
 
-  const body = await request.json().catch(() => ({}));
   if (body.action === "disconnect") {
     const { error } = await adminClient
       .from("notification_connections")

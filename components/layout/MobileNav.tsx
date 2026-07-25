@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useGreenhouseStore } from "@/lib/store";
 import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
+import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 
 const primaryIds: SectionId[] = ["overview", "calendar", "monitoring", "reports"];
 const iconFallback = {
@@ -60,6 +61,7 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
                 <X className="h-4 w-4" />
               </button>
             </div>
+            <OrganizationSwitcher className="mb-3" />
             {mobileNavigationItems.map((item) => {
               const Icon = item.icon;
               return (

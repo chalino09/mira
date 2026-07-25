@@ -66,6 +66,13 @@ export type Organization = {
   logoUrl?: string;
 };
 
+export type OrganizationMembership = {
+  id: string;
+  companyId: string;
+  role: UserRole;
+  organization: Organization;
+};
+
 export type CropCatalogItem = {
   id: string;
   slug: string;
