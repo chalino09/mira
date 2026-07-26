@@ -24,8 +24,16 @@ begin
 
   insert into public.companies (id, name, created_by)
   values (company_a, 'Inventario A', owner_a), (company_b, 'Inventario B', owner_b);
-  insert into public.company_members (company_id, user_id, role, status)
-  values (company_a, owner_a, 'owner', 'active'), (company_b, owner_b, 'owner', 'active');
+
+  if not exists (
+    select 1 from public.company_members
+    where company_id = company_a and user_id = owner_a and role = 'owner' and status = 'active'
+  ) or not exists (
+    select 1 from public.company_members
+    where company_id = company_b and user_id = owner_b and role = 'owner' and status = 'active'
+  ) then
+    raise exception 'Company creation did not provision its active owner membership';
+  end if;
 
   perform set_config('request.jwt.claim.sub', owner_a::text, true);
   select (public.create_inventory_item(company_a, 'Fertilizante A', 'kg')->>'inventoryItemId')::uuid into item_a;
