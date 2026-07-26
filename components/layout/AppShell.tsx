@@ -32,6 +32,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { RouteSync } from "@/components/layout/RouteSync";
+import { RouteAccessDenied } from "@/components/access/RouteAccessDenied";
 import { CopilotPulseBand, MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
@@ -576,24 +577,10 @@ function EntityNotFound({ section, label }: { section: SectionId; label: string 
   );
 }
 
-function RouteAccessDenied() {
+function ActiveOrganizationRouteAccessDenied() {
   const organization = useGreenhouseStore((state) => state.organization);
 
-  return (
-    <section>
-      <SectionHeader
-        title="Acceso restringido"
-        description="No tienes permiso para abrir recursos de esta empresa."
-      />
-      <Link
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
-        href={appRoute(organization.slug ?? organization.name, { section: "overview" })}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Ir a mi espacio
-      </Link>
-    </section>
-  );
+  return <RouteAccessDenied returnHref={appRoute(organization.slug ?? organization.name, { section: "overview" })} />;
 }
 
 function EntityRouteView({ route }: { route: EntityRoute }) {
@@ -3060,7 +3047,7 @@ export function AppShell() {
             </div>
             {copilotNotice ? <InlineNotice tone={copilotNotice.tone}>{copilotNotice.message}</InlineNotice> : null}
             {routeAccessDenied ? (
-              <RouteAccessDenied />
+              <ActiveOrganizationRouteAccessDenied />
             ) : (
               <ViewDataBoundary entity={activeRoute.entity} list={activeRoute.list}>
                 {activeRoute.entity ? (

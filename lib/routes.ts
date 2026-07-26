@@ -1,5 +1,8 @@
 import { startOfIsoWeek } from "@/lib/date";
+import { organizationRouteSlug } from "@/lib/organization-routing";
 import type { ContextPeriod, SectionId } from "@/types";
+
+export { organizationRouteSlug } from "@/lib/organization-routing";
 
 export const allGreenhousesId = "__all__";
 
@@ -56,17 +59,6 @@ function isDateKey(value: string | undefined) {
 
 function dateKey(date: Date) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
-}
-
-export function organizationRouteSlug(name: string) {
-  const normalized = name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return normalized || "empresa";
 }
 
 export function publicEntityId(prefix: "gh" | "pest" | "lot", id: string) {

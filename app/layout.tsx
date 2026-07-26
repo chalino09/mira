@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { WorkspaceGate } from "@/components/onboarding/WorkspaceGate";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
@@ -16,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
-        <WorkspaceGate />
+        <Suspense fallback={null}>
+          <WorkspaceGate />
+        </Suspense>
         {children}
       </body>
     </html>

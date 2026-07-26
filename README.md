@@ -17,43 +17,14 @@ NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key-publica
 ```
 
-3. Ejecuta los SQL de Supabase en este orden:
+3. Levanta Supabase local y aplica la cadena de migraciones desde cero:
 
-```text
-supabase/01_schema.sql
-supabase/02_rls_policies.sql
-supabase/03_onboarding_rpc.sql
-supabase/04_storage_assets.sql
-supabase/05_user_management.sql
-supabase/06_onboarding_improvements.sql
-supabase/07_greenhouse_coordinates.sql
-supabase/08_operational_planning.sql
-supabase/09_manager_experience.sql
-supabase/10_simplified_task_flow.sql
-supabase/11_telegram_connection.sql
-supabase/12_operation_technical_records.sql
-supabase/13_greenhouse_manager_scope.sql
-supabase/14_greenhouse_budget.sql
-supabase/15_greenhouse_crop_details.sql
-supabase/16_crop_ddt_stages.sql
-supabase/17_nutrition_monitoring.sql
-supabase/18_assigned_task_greenhouse_visibility.sql
-supabase/19_telegram_operational_sessions.sql
-supabase/20_nutrition_monitoring_admin_scope.sql
-supabase/21_technical_lab_studies.sql
-supabase/22_cost_categories.sql
-supabase/23_multi_crop_foundation.sql
-supabase/24_weather_snapshots.sql
-supabase/25_mira_copilot.sql
-supabase/26_private_pest_photos.sql
-supabase/27_tenant_integrity_constraints.sql
-supabase/28_rls_hardening.sql
-supabase/30_function_grant_hardening.sql
-supabase/31_operation_completion_result_ids.sql
-supabase/32_owner_only_role_management.sql
-supabase/33_mira_copilot_memory_chat.sql
-supabase/34_pest_alert_followup_history.sql
+```bash
+supabase start
+supabase db reset --local
 ```
+
+`supabase/migrations/` es la única fuente de verdad para una instalación nueva. Los SQL numerados en la raíz se conservan como historial de despliegues manuales, no como una segunda cadena de migración.
 
 4. Crea usuarios desde la app:
 
@@ -74,7 +45,19 @@ Corre este comando antes de desplegar:
 npm run check
 ```
 
-Ese comando valida lint, TypeScript y build de Next.js.
+Ese comando valida lint, TypeScript, pruebas unitarias y build de Next.js. Para repetir el control completo de CI en local, incluyendo la auditoría de dependencias de producción:
+
+```bash
+npm run check:ci
+```
+
+Para validar Supabase desde una base limpia y ejecutar las regresiones de RLS, Work, inventario y multiempresa (requiere Docker):
+
+```bash
+npm run test:db
+```
+
+GitHub Actions ejecuta ambos controles en cada pull request y en cada cambio a `main`.
 
 En el proveedor de deploy configura estas variables:
 

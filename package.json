@@ -9,7 +9,10 @@
     "test": "node --experimental-strip-types --test lib/**/*.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "audit": "npm audit --omit=dev --audit-level=high",
+    "test:db": "./supabase/scripts/test-local-db.sh",
+    "check:ci": "npm run check && npm run audit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

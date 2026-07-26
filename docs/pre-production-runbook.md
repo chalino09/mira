@@ -16,19 +16,15 @@ Validar antes de produccion:
 
 1. Confirma que `.env`, `.env.local` y secretos reales no estan en Git.
 2. Toma un backup o snapshot desde Supabase antes de correr SQL nuevo.
-3. Ejecuta `npm run check` en local.
-4. Despliega las Edge Functions tocadas.
-5. Corre `supabase/29_pre_production_checks.sql` en Supabase SQL Editor.
-6. Si el diagnostico marca helpers con `anon_execute = true`, corre `supabase/30_function_grant_hardening.sql` y repite el diagnostico.
-7. Si el diagnostico marca `operational rpc returns` en `review`, corre `supabase/31_operation_completion_result_ids.sql` y repite el diagnostico.
-8. Si el diagnostico marca `member role hardening` en `review`, corre `supabase/32_owner_only_role_management.sql` y repite el diagnostico.
-9. Si vas a habilitar chat y memoria de Mira, corre `supabase/33_mira_copilot_memory_chat.sql` y repite el diagnostico.
-10. Si vas a habilitar historial sanitario por alerta, corre `supabase/34_pest_alert_followup_history.sql` y repite el diagnostico.
-11. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
+3. Ejecuta `npm run check:ci` en local.
+4. Ejecuta `npm run test:db` para validar la cadena de migraciones y regresiones de RLS, Work, inventario y multiempresa en una base local limpia.
+5. Despliega las Edge Functions tocadas.
+6. Corre `supabase/29_pre_production_checks.sql` en Supabase SQL Editor.
+7. Haz smoke test manual con owner/admin, manager activo y manager desactivado.
 
 ## Orden de SQL
 
-En un proyecto nuevo, ejecuta `supabase/01_schema.sql` hasta `supabase/34_pest_alert_followup_history.sql` en orden.
+En un proyecto nuevo, aplica exclusivamente los archivos en `supabase/migrations/`, en orden. Para reproducirlo localmente usa `supabase db reset --local` o `npm run test:db`.
 
 Si el proyecto ya tiene los SQL aplicados, no repitas todo por costumbre. Aplica solo los archivos nuevos que falten y despues corre:
 
@@ -178,7 +174,8 @@ Frontend:
 
 Puedes pasar a beta controlada cuando:
 
-- `npm run check` pasa.
+- `npm run check:ci` pasa.
+- `npm run test:db` pasa.
 - `29_pre_production_checks.sql` no muestra `missing` y los `review` estan justificados.
 - Owner/admin y manager activo pasan smoke test.
 - Manager desactivado no puede operar por Telegram.
