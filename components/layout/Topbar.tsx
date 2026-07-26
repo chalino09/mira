@@ -29,8 +29,8 @@ export function Topbar({
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
   const acceptsAll = ["calendar", "records", "pests", "harvest", "costs", "reports"].includes(activeSection);
-  const acceptsPeriod = ["records", "pests", "costs", "reports"].includes(activeSection);
-  const hasContextPeriod = acceptsPeriod || activeSection === "calendar" || activeSection === "harvest";
+  const acceptsPeriod = ["records", "pests", "harvest", "costs", "reports"].includes(activeSection);
+  const hasContextPeriod = acceptsPeriod || activeSection === "calendar";
   const isCompanyView = ["inventory", "greenhouses", "settings"].includes(activeSection);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
   const scopeLabel = isCompanyView
@@ -38,7 +38,7 @@ export function Topbar({
     : selectedGreenhouseId === "__all__"
       ? `Todos los invernaderos${greenhouses.length ? ` (${greenhouses.length})` : ""}`
       : selectedGreenhouse ? greenhouseDisplayName(selectedGreenhouse, crops) : "Sin invernadero";
-  const periodLabel = activeSection === "calendar" || activeSection === "harvest"
+  const periodLabel = activeSection === "calendar"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
   const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {

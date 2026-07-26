@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ActivitySquare,
   AlertTriangle,
@@ -18,6 +18,7 @@ import {
   Package,
   Plus,
   Ruler,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -87,6 +88,12 @@ import type {
   SectionId,
   Task
 } from "@/types";
+
+const ViewDataRefreshContext = createContext<() => void>(() => {});
+
+function useViewDataRefresh() {
+  return useContext(ViewDataRefreshContext);
+}
 
 function SectionHeader({
   title,
@@ -1273,37 +1280,32 @@ function PestsSection() {
 }
 
 function HarvestSection({ embedded = false }: { embedded?: boolean }) {
-  const { currentUser, greenhouseHarvest, openModal, organization } = useFilteredData();
+  const { currentUser, greenhouseHarvest, openModal, organization, viewAggregates, viewDataMeta } = useFilteredData();
+  const { list, updateList } = useListNavigation();
+  const refresh = useViewDataRefresh();
   const isManager = currentUser.role === "manager";
-  const totalBoxes = greenhouseHarvest.reduce((sum, item) => sum + item.boxCount, 0);
-  const totalKg = greenhouseHarvest.reduce((sum, item) => sum + item.kilograms, 0);
-  const commercialKg = greenhouseHarvest.reduce((sum, item) => sum + item.firstQuality + item.secondQuality + item.thirdQuality, 0);
-  const estimatedRevenue = greenhouseHarvest.reduce((sum, item) => {
-    const revenue =
-      item.firstQuality * item.firstQualityPrice +
-      item.secondQuality * item.secondQualityPrice +
-      item.thirdQuality * item.thirdQualityPrice;
-    const fallbackCommercialKg = item.firstQuality + item.secondQuality + item.thirdQuality;
-    return sum + (revenue || fallbackCommercialKg * item.estimatedPrice);
-  }, 0);
-  const averagePrice = commercialKg ? estimatedRevenue / commercialKg : 0;
-  const latestHarvest = greenhouseHarvest.reduce<HarvestRecord | null>(
-    (latest, item) => !latest || item.date > latest.date ? item : latest,
-    null
-  );
-  const harvestChartData = greenhouseHarvest
-    .slice(0, 7)
-    .reverse()
+  const totalBoxes = viewAggregates?.totalHarvestBoxes ?? 0;
+  const totalKg = viewAggregates?.totalHarvestKg ?? 0;
+  const commercialKg = viewAggregates?.commercialKg ?? 0;
+  const averagePrice = viewAggregates?.averagePrice ?? 0;
+  const latestHarvest = viewAggregates?.harvestDaily.at(-1);
+  const harvestChartData = (viewAggregates?.harvestDaily ?? [])
+    .slice(-7)
     .map((record) => ({
       label: dateLabel(record.date),
-      kg: record.kilograms
+      kg: record.kg
     }));
 
   return (
     <section>
       {!embedded ? (
         <SectionHeader
-          action={!isManager ? <Button className="w-full sm:w-auto" icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar cosecha</Button> : undefined}
+          action={(
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <Button className="w-full sm:w-auto" icon={<RefreshCw className="h-4 w-4" />} onClick={refresh} variant="secondary">Actualizar</Button>
+              {!isManager ? <Button className="w-full sm:w-auto" icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("harvest")} variant="secondary">Registrar cosecha</Button> : null}
+            </div>
+          )}
           title="Cosecha"
           description={isManager
             ? "Consulta las últimas cosechas registradas en tus áreas asignadas."
@@ -1315,7 +1317,7 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
         {isManager ? (
           <>
             <MetricCard icon={CheckCircle2} label="Kg registrados" value={`${formatNumber(totalKg)} kg`} detail="En el periodo seleccionado" />
-            <MetricCard icon={CalendarDays} label="Último corte" value={latestHarvest ? formatDate(latestHarvest.date) : "--"} detail={latestHarvest ? `${formatNumber(latestHarvest.kilograms)} kg capturados` : "Sin cortes registrados"} />
+            <MetricCard icon={CalendarDays} label="Último corte" value={latestHarvest ? formatDate(latestHarvest.date) : "--"} detail={latestHarvest ? `${formatNumber(latestHarvest.kg)} kg capturados` : "Sin cortes registrados"} />
           </>
         ) : (
           <>
@@ -1329,14 +1331,14 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
         {!isManager ? <YieldChart data={harvestChartData} /> : null}
         <DataTable<HarvestRecord>
           columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date) },
-            { key: "boxes", label: "Cajas", render: (item) => item.boxCount ? formatNumber(item.boxCount) : "--" },
-            { key: "kg", label: "Kg", render: (item) => formatNumber(item.kilograms) },
+            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: true },
+            { key: "boxes", label: "Cajas", render: (item) => item.boxCount ? formatNumber(item.boxCount) : "--", sortable: true },
+            { key: "kg", label: "Kg", render: (item) => formatNumber(item.kilograms), sortable: true },
             { key: "first", label: "1ra", render: (item) => qualityCell(item.firstQualityBoxes, item.firstQuality) },
             { key: "second", label: "2da", render: (item) => qualityCell(item.secondQualityBoxes, item.secondQuality) },
             { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
             { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
-            ...(!isManager ? [{ key: "price", label: "Precio", render: (item: HarvestRecord) => formatCurrency(item.estimatedPrice) }] : []),
+            ...(!isManager ? [{ key: "price", label: "Precio", render: (item: HarvestRecord) => formatCurrency(item.estimatedPrice), sortable: true }] : []),
             { key: "destination", label: "Destino", render: (item) => item.destination },
             {
               key: "detail",
@@ -1349,6 +1351,10 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
             }
           ]}
           data={greenhouseHarvest}
+          getRowKey={(item) => item.id}
+          sort={{ key: list.sort ?? "date", dir: list.dir ?? "desc" }}
+          onSort={(key, dir) => updateList({ sort: key, dir, page: undefined })}
+          pagination={viewDataMeta?.resource === "harvest" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
         />
       </div>
     </section>
@@ -2646,6 +2652,10 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
     status: "idle",
     error: ""
   });
+  const refresh = useCallback(() => {
+    invalidateViewDataCache();
+    setRetryKey((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     if (!required || !organization.id) {
@@ -2736,10 +2746,10 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
       {required && loadState.key === requestKey && (loadState.status === "refreshing" || loadState.status === "stale") ? (
         <div aria-live="polite" className="mb-4 flex flex-wrap items-center justify-between gap-3 border-y border-app-border py-3 text-xs text-app-muted">
           <span>{loadState.status === "refreshing" ? "Actualizando datos…" : `${loadState.error} Mostrando la última información disponible.`}</span>
-          <Button className="h-8 px-3 text-xs" onClick={() => { invalidateViewDataCache(); setRetryKey((value) => value + 1); }} variant="ghost">Reintentar</Button>
+          <Button className="h-8 px-3 text-xs" onClick={refresh} variant="ghost">Reintentar</Button>
         </div>
       ) : null}
-      {children}
+      <ViewDataRefreshContext.Provider value={refresh}>{children}</ViewDataRefreshContext.Provider>
     </>
   );
 }

@@ -44,7 +44,7 @@ export type WorkspaceViewData = Partial<Pick<AppState,
 >>;
 
 export type ViewDataMeta = {
-  resource: "applications" | "nutrition" | "irrigation" | "pests" | "costs";
+  resource: "applications" | "nutrition" | "irrigation" | "pests" | "harvest" | "costs";
   page: number;
   pageSize: number;
   total: number;

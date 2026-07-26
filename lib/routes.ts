@@ -74,7 +74,7 @@ export function publicEntityId(prefix: "gh" | "pest" | "lot", id: string) {
 }
 
 export function supportsPeriod(section: SectionId) {
-  return ["records", "pests", "costs", "reports"].includes(section);
+  return ["records", "pests", "harvest", "costs", "reports"].includes(section);
 }
 
 export function supportsGreenhouse(section: SectionId) {
