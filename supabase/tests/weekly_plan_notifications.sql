@@ -37,7 +37,6 @@ begin
 
   insert into public.company_members (company_id, user_id, role, status)
   values
-    (test_company, owner_id, 'owner', 'active'),
     (test_company, manager_a, 'manager', 'active'),
     (test_company, manager_b, 'manager', 'active');
 
