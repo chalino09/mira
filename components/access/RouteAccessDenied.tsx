@@ -1,15 +1,16 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
+import { PageTitle } from "@/components/ui/PageTitle";
 
 export function RouteAccessDenied({ returnHref, returnLabel = "Ir a mi espacio" }: { returnHref: string; returnLabel?: string }) {
   return (
     <section>
       <div className="mb-10 border-b border-app-border pb-7 pt-8 md:pt-10">
         <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-        <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
+        <PageTitle>
           Acceso restringido
-        </h1>
+        </PageTitle>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
           No tienes permiso para abrir recursos de esta empresa.
         </p>

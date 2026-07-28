@@ -17,6 +17,7 @@ import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageTitle } from "@/components/ui/PageTitle";
 import { INITIAL_CROP_ID, cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appErrorMessage } from "@/lib/errors";
 import {
@@ -763,9 +764,9 @@ export function NutritionMonitoringSection({ embedded = false }: { embedded?: bo
             <div>
               <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
               <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
-              <h1 className="mt-3 text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
+              <PageTitle className="mt-3">
                 Nutrimental
-              </h1>
+              </PageTitle>
               <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
                 Captura, compara y exporta extracto celular de peciolo y solucion de suelo con rangos por DDT.
               </p>

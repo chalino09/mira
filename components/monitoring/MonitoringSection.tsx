@@ -5,6 +5,7 @@ import { FileText, FlaskConical } from "lucide-react";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { NutritionMonitoringSection } from "@/components/monitoring/NutritionMonitoringSection";
 import { TechnicalLabSection } from "@/components/monitoring/TechnicalLabSection";
+import { PageTitle } from "@/components/ui/PageTitle";
 import { cn } from "@/lib/utils";
 
 type MonitoringTab = "nutrition" | "lab";
@@ -23,9 +24,9 @@ export function MonitoringSection() {
         <div>
           <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
           <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-app-muted">Monitoreo</p>
-          <h1 className="mt-3 text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
+          <PageTitle className="mt-3">
             Diagnóstico técnico
-          </h1>
+          </PageTitle>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
             Monitoreo nutrimental, estudios de laboratorio, documentos privados y acciones técnicas por área productiva.
           </p>

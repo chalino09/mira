@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
+import { PageTitle } from "@/components/ui/PageTitle";
 import { Field, FormattedNumberInput, SelectInput, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { appErrorMessage } from "@/lib/errors";
@@ -253,7 +254,7 @@ export function InventorySection() {
       <div className="mb-8 flex flex-col gap-5 border-b border-app-border pb-7 pt-8 md:pt-10 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Almacén central</p>
-          <h1 className="mt-4 text-3xl font-light text-app-text sm:text-4xl md:text-6xl">Inventario</h1>
+          <PageTitle className="mt-4">Inventario</PageTitle>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar una actividad.</p>
         </div>
         {canManage ? <div className="hidden flex-wrap gap-2 lg:flex">

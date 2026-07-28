@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PortalMark } from "@/components/brand/MiraBrand";
 import { Button } from "@/components/ui/Button";
+import { PageTitle } from "@/components/ui/PageTitle";
 import { cropLabelForId, getCropDdtStatus } from "@/lib/crop-ddt";
 import { greetingForNow } from "@/lib/date";
 import {
@@ -333,9 +334,9 @@ export function TodayDecisionBoard({
             <PortalMark className="h-4 w-7 shrink-0 text-app-green" />
             <span>Hoy · <span className="capitalize">{todayLabel()}</span></span>
           </div>
-          <h1 className="mt-3 text-balance text-4xl font-light leading-[0.98] tracking-normal text-app-text sm:text-5xl md:text-6xl">
+          <PageTitle className="mt-3">
             {greetingForNow()}, {firstName}
-          </h1>
+          </PageTitle>
           <p className="mt-3 max-w-2xl text-pretty text-sm leading-6 text-app-muted">
             {selectedDecision
               ? `Tienes ${decisions.length} ${decisions.length === 1 ? "decisión" : "decisiones"}. Empieza por la de mayor impacto.`

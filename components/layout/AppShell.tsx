@@ -47,6 +47,7 @@ import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageTitle } from "@/components/ui/PageTitle";
 import { RiskBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
@@ -105,9 +106,9 @@ function SectionHeader({
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
       <div>
           <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
-          <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">
+          <PageTitle>
             {title}
-          </h1>
+          </PageTitle>
           <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">{description}</p>
       </div>
       {action}
