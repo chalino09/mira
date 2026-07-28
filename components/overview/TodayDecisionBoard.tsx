@@ -333,7 +333,7 @@ export function TodayDecisionBoard({
             <PortalMark className="h-4 w-7 shrink-0 text-app-green" />
             <span>Hoy · <span className="capitalize">{todayLabel()}</span></span>
           </div>
-          <h1 className="mt-3 text-balance text-4xl font-medium leading-[1.02] tracking-[-0.045em] text-app-text sm:text-5xl">
+          <h1 className="mt-3 text-balance text-4xl font-light leading-[0.98] tracking-normal text-app-text sm:text-5xl">
             {greetingForNow()}, {firstName}
           </h1>
           <p className="mt-3 max-w-2xl text-pretty text-sm leading-6 text-app-muted">
