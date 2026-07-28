@@ -292,7 +292,7 @@ export function TodayDecisionBoard({
     if (action === "complete") return onCompleteTask(decision.sourceId);
     if (action === "open-pest") return onOpenPests();
     if (decision.kind === "approval") {
-      return onOpenWork(decision.sourceId, "verification", "evidence");
+      return onOpenWork(decision.sourceId, "verification", "details");
     }
     if (decision.kind === "blocked-work") {
       return onOpenWork(decision.sourceId, "execution", "details");

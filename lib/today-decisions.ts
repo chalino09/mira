@@ -93,7 +93,7 @@ function approvalDecision(task: Task, greenhouses: Greenhouse[], today: string):
     timing: task.date < today ? "Verificación pendiente" : "Completado hoy",
     priority: "high",
     primaryAction: { type: "verify", label: "Verificar" },
-    secondaryAction: { type: "open-work", label: "Revisar evidencia" },
+    secondaryAction: { type: "open-work", label: "Revisar actividad" },
     score: 120 + daysBetween(task.date, today)
   };
 }
