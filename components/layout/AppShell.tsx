@@ -9,8 +9,6 @@ import {
   CalendarDays,
   CheckCircle2,
   CloudSun,
-  Clock3,
-  Droplets,
   Edit3,
   FileDown,
   Leaf,
@@ -75,12 +73,9 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFile } from "@/lib/storage";
 import { cn, formatCurrency, formatDate, formatNumber, formatPersonName, parseNumericInput } from "@/lib/utils";
 import type {
-  ApplicationRecord,
   CostRecord,
   Greenhouse,
   HarvestRecord,
-  IrrigationRecord,
-  NutritionRecord,
   PestAlert,
   PestActionType,
   PestCaseStatus,
@@ -314,7 +309,9 @@ type CopilotSurfaceProps = {
   onPrepareCopilotMessage: (insight: CopilotInsight) => void;
   operationRefreshKey?: number;
   operationWeekStart?: string;
+  operationView?: "calendar" | "plan" | "execution" | "verification" | "history";
   onOperationWeekChange?: (weekStart: string) => void;
+  onOperationViewChange?: (view: "calendar" | "plan" | "execution" | "verification" | "history") => void;
   pendingCompletionTask?: { id: string; date: string } | null;
   onPendingCompletionConsumed?: () => void;
   onRequestTechnicalCompletion?: (task: Task) => void;
@@ -718,140 +715,6 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
         <EditorialObject index="C" label="Tercera" value={`${formatNumber(harvest.thirdQuality)} kg`} detail={`${formatNumber(harvest.thirdQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="D" label="Notas" value={harvest.notes || "Sin notas"} detail="Registro de cosecha" icon={ActivitySquare} />
       </div>
-    </section>
-  );
-}
-
-function IrrigationSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseIrrigation, openModal, viewDataMeta } = useFilteredData();
-  const { list, updateList } = useListNavigation();
-  const totalLiters = greenhouseIrrigation.reduce((sum, record) => sum + record.liters, 0);
-  const averageDuration = greenhouseIrrigation.length
-    ? Math.round(greenhouseIrrigation.reduce((sum, record) => sum + record.durationMin, 0) / greenhouseIrrigation.length)
-    : 0;
-  const ecReadings = greenhouseIrrigation
-    .map((record) => record.ec)
-    .filter((ec): ec is number => ec !== null);
-  const averageEc = ecReadings.length
-    ? ecReadings.reduce((sum, ec) => sum + ec, 0) / ecReadings.length
-    : null;
-  const irrigationChartData = greenhouseIrrigation
-    .slice(0, 7)
-    .reverse()
-    .map((record) => ({
-      label: dateLabel(record.date),
-      litros: record.liters
-    }));
-
-  return (
-    <section>
-      {!embedded ? (
-        <SectionHeader
-          action={<Button icon={<Droplets className="h-4 w-4" />} onClick={() => openModal("irrigation")} variant="secondary">Nuevo riego</Button>}
-          title="Riego"
-          description="Registro de duración, litros, válvulas y mediciones opcionales de pH y CE."
-        />
-      ) : null}
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <MetricCard icon={Droplets} label="Litros registrados" value={`${formatNumber(totalLiters)} L`} detail={`${greenhouseIrrigation.length} registros`} />
-        <MetricCard icon={Clock3} label="Duración media" value={`${averageDuration} min`} detail="Según registros guardados" />
-        <MetricCard icon={ActivitySquare} label="CE promedio" value={averageEc !== null ? averageEc.toFixed(1) : "--"} detail="Según registros con medición" />
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
-        <IrrigationChart data={irrigationChartData} />
-        <DataTable<IrrigationRecord>
-          columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
-            { key: "duration", label: "Duración", render: (item) => `${item.durationMin} min`, sortable: embedded },
-            { key: "liters", label: "Litros", render: (item) => formatNumber(item.liters), sortable: embedded },
-            { key: "sector", label: "Sector", render: (item) => item.sector },
-            { key: "ph", label: "pH", render: (item) => item.ph ?? "--" },
-            { key: "ec", label: "CE", render: (item) => item.ec ?? "--" },
-            { key: "responsible", label: "Responsable", render: (item) => item.responsible }
-          ]}
-          data={greenhouseIrrigation}
-          getRowKey={(item) => item.id}
-          sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
-          onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
-          pagination={embedded && viewDataMeta?.resource === "irrigation" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
-        />
-      </div>
-    </section>
-  );
-}
-
-function NutritionSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseNutrition, openModal, viewDataMeta } = useFilteredData();
-  const { list, updateList } = useListNavigation();
-  const latestNutrition = greenhouseNutrition[0];
-  const averagePh = greenhouseNutrition.length
-    ? greenhouseNutrition.reduce((sum, record) => sum + record.ph, 0) / greenhouseNutrition.length
-    : 0;
-
-  return (
-    <section>
-      {!embedded ? (
-        <SectionHeader
-          action={<Button icon={<Leaf className="h-4 w-4" />} onClick={() => openModal("nutrition")} variant="secondary">Nueva nutrición</Button>}
-          title="Nutrición"
-          description="Fertirriego, foliares, drench, objetivos nutricionales y condiciones de solución."
-        />
-      ) : null}
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
-        <div className="grid gap-3">
-          <MetricCard icon={Leaf} label="Último producto" value={latestNutrition?.product ?? "Sin registros"} detail={latestNutrition?.dose ?? "Captura una nutrición para ver datos"} />
-          <MetricCard icon={ActivitySquare} label="pH promedio" value={averagePh ? averagePh.toFixed(1) : "0"} detail="Según registros guardados" />
-          <MetricCard icon={Sprout} label="Objetivo activo" value={latestNutrition?.objective ?? "Sin registros"} detail={latestNutrition?.stage ?? "Sin etapa registrada"} tone="soft" />
-        </div>
-        <DataTable<NutritionRecord>
-          columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
-            { key: "product", label: "Producto", render: (item) => item.product, sortable: embedded },
-            { key: "dose", label: "Dosis", render: (item) => item.dose },
-            { key: "method", label: "Método", render: (item) => item.method, sortable: embedded },
-            { key: "objective", label: "Objetivo", render: (item) => item.objective },
-            { key: "ph", label: "pH / CE", render: (item) => `${item.ph} / ${item.ec}` }
-          ]}
-          data={greenhouseNutrition}
-          getRowKey={(item) => item.id}
-          sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
-          onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
-          pagination={embedded && viewDataMeta?.resource === "nutrition" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
-        />
-      </div>
-    </section>
-  );
-}
-
-function ApplicationsSection({ embedded = false }: { embedded?: boolean }) {
-  const { greenhouseApplications, openModal, viewDataMeta } = useFilteredData();
-  const { list, updateList } = useListNavigation();
-
-  return (
-    <section>
-      {!embedded ? (
-        <SectionHeader
-          action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("application")} variant="secondary">Nueva aplicación</Button>}
-          title="Aplicaciones"
-          description="Nutrición, sanidad, correctores, acondicionadores de agua y coadyuvantes."
-        />
-      ) : null}
-      <DataTable<ApplicationRecord>
-        columns={[
-          { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: embedded },
-          { key: "category", label: "Tipo", render: (item) => <StatusBadge tone="green">{item.category}</StatusBadge>, sortable: embedded },
-          { key: "product", label: "Producto", render: (item) => item.product, sortable: embedded },
-          { key: "composition", label: "Composición", render: (item) => item.composition },
-          { key: "dose", label: "Dosis", render: (item) => item.dose },
-          { key: "area", label: "Área", render: (item) => item.area },
-          { key: "safety", label: "Cosecha / reentrada", render: (item) => `${item.safetyInterval || "--"} · ${item.reentry || "--"}` }
-        ]}
-        data={greenhouseApplications}
-        getRowKey={(item) => item.id}
-        sort={embedded ? { key: list.sort ?? "date", dir: list.dir ?? "desc" } : undefined}
-        onSort={embedded ? (key, dir) => updateList({ sort: key, dir, page: undefined }) : undefined}
-        pagination={embedded && viewDataMeta?.resource === "applications" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
-      />
     </section>
   );
 }
@@ -1359,54 +1222,6 @@ function qualityCell(boxes: number, kilograms: number) {
   }
 
   return `${formatNumber(kilograms)} kg`;
-}
-
-type TechnicalRecordTab = "applications" | "nutrition" | "irrigation";
-
-const technicalRecordTabs: Array<{ id: TechnicalRecordTab; label: string }> = [
-  { id: "applications", label: "Aplicaciones" },
-  { id: "nutrition", label: "Nutrición" },
-  { id: "irrigation", label: "Riegos" }
-];
-
-function TechnicalRecordsSection() {
-  const { list, updateList } = useListNavigation();
-  const activeRecord: TechnicalRecordTab = list.tab ?? "applications";
-  const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
-
-  return (
-    <section>
-      <SectionHeader
-        action={(
-          <Button icon={<CalendarDays className="h-4 w-4" />} onClick={() => setActiveSection("calendar")} variant="secondary">
-            Ir a Operación
-          </Button>
-        )}
-        title="Registros técnicos"
-        description="Consulta los resultados de Work ya realizados. Las nuevas capturas se crean o completan desde Operación."
-      />
-      <div className="mb-7 border-y border-app-border py-3">
-        <div className="flex flex-wrap gap-2">
-          {technicalRecordTabs.map((tab) => (
-            <Button
-              key={tab.id}
-              onClick={() => updateList({ tab: tab.id, page: undefined, sort: undefined, dir: undefined })}
-              variant={activeRecord === tab.id ? "primary" : "ghost"}
-            >
-              {tab.label}
-            </Button>
-          ))}
-        </div>
-        <p className="mt-3 text-xs leading-5 text-app-muted">
-          Cada registro proviene de un Work. Si algo no se planeó, créalo como trabajo no planeado desde Operación; evita capturarlo de nuevo aquí.
-        </p>
-      </div>
-      <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })} />
-      {activeRecord === "applications" ? <ApplicationsSection embedded /> : null}
-      {activeRecord === "nutrition" ? <NutritionSection embedded /> : null}
-      {activeRecord === "irrigation" ? <IrrigationSection embedded /> : null}
-    </section>
-  );
 }
 
 function CostsSection() {
@@ -2595,7 +2410,9 @@ function ActiveSection(props: CopilotSurfaceProps) {
     copilotInsights: props.copilotInsights,
     operationRefreshKey: props.operationRefreshKey,
     weekStart: props.operationWeekStart,
+    initialView: props.operationView,
     onWeekStartChange: props.onOperationWeekChange,
+    onViewChange: props.onOperationViewChange,
     pendingCompletionTask: props.pendingCompletionTask,
     onPendingCompletionConsumed: props.onPendingCompletionConsumed,
     onCreateCopilotTask: props.onCreateCopilotTask,
@@ -2608,7 +2425,7 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "greenhouses") return <GreenhousesSection />;
   if (activeSection === "calendar") return <OperationsSection {...operationProps} />;
   if (activeSection === "monitoring") return <MonitoringSection />;
-  if (activeSection === "records") return <TechnicalRecordsSection />;
+  if (activeSection === "records") return <OperationsSection {...operationProps} initialView="history" />;
   if (activeSection === "irrigation") return <OperationsSection {...operationProps} specialtyLabel="Riego" workTypeFilter={["riego"]} />;
   if (activeSection === "nutrition") return <OperationsSection {...operationProps} specialtyLabel="Nutrición" workTypeFilter={["fertirriego", "fertilizacion"]} />;
   if (activeSection === "applications") return <OperationsSection {...operationProps} specialtyLabel="Aplicaciones" workTypeFilter={["aplicacion_foliar"]} />;
@@ -2776,9 +2593,18 @@ export function AppShell() {
     router.push(appRoute(organization.slug ?? organization.name, {
       section: "calendar",
       greenhouseId: selectedGreenhouseId,
-      weekStart
+      weekStart,
+      operationView: activeRoute.operationView
     }));
-  }, [organization.name, organization.slug, router, selectedGreenhouseId]);
+  }, [activeRoute.operationView, organization.name, organization.slug, router, selectedGreenhouseId]);
+  const setOperationView = useCallback((operationView: "calendar" | "plan" | "execution" | "verification" | "history") => {
+    router.push(appRoute(organization.slug ?? organization.name, {
+      section: "calendar",
+      greenhouseId: selectedGreenhouseId,
+      weekStart: activeRoute.weekStart,
+      operationView
+    }));
+  }, [activeRoute.weekStart, organization.name, organization.slug, router, selectedGreenhouseId]);
   const localCopilotInsights = useMemo(
     () =>
       buildCopilotPulse({
@@ -3057,7 +2883,9 @@ export function AppShell() {
                     copilotInsights={copilotInsights}
                     operationRefreshKey={operationRefreshKey}
                     operationWeekStart={activeRoute.weekStart}
+                    operationView={activeRoute.operationView}
                     onOperationWeekChange={setOperationWeek}
+                    onOperationViewChange={setOperationView}
                     pendingCompletionTask={pendingCompletionTask}
                     onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
                     onRequestTechnicalCompletion={(task) => {
@@ -3076,7 +2904,7 @@ export function AppShell() {
         </div>
       </div>
       <MobileNav onOpenTelegram={() => setTelegramOpen(true)} />
-      <RecordModal />
+      <RecordModal onSaved={() => setOperationRefreshKey((current) => current + 1)} />
       {currentUser.role === "manager" ? (
         <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
       ) : null}

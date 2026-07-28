@@ -55,6 +55,7 @@ export function RouteSync() {
           greenhouseId: selectedGreenhouseId,
           period: selectedPeriod,
           weekStart: route.weekStart,
+          operationView: route.operationView,
           list: route.list
         }));
         return;
@@ -87,6 +88,7 @@ export function RouteSync() {
           greenhouseId: selectedGreenhouseId,
           period: selectedPeriod,
           weekStart: route.weekStart,
+          operationView: route.operationView,
           list: route.list
         }));
         return;
@@ -102,6 +104,7 @@ export function RouteSync() {
       greenhouseId: selectedGreenhouseId,
       period: selectedPeriod,
       weekStart: route.weekStart,
+      operationView: route.operationView,
       list: route.list
     });
     if (location !== canonicalPath) router.push(canonicalPath);

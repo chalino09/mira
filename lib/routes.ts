@@ -11,6 +11,7 @@ type RouteState = {
   greenhouseId?: string;
   period?: ContextPeriod;
   weekStart?: string;
+  operationView?: "calendar" | "plan" | "execution" | "verification" | "history";
   list?: ListQueryState;
 };
 
@@ -82,6 +83,7 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   const [organizationSlug, ...routeSegments] = segments;
   const calendarWeek = routeSegments[0] === "operations" && routeSegments[1] === "week" ? routeSegments[2] : undefined;
   const sectionKey = calendarWeek ? "operations" : routeSegments.join("/");
+  const isLegacyRecordsRoute = sectionKey === "records";
   const entity = routeSegments[0] === "greenhouses" && routeSegments.length === 2
     ? { type: "greenhouse" as const, greenhousePublicId: routeSegments[1] }
     : routeSegments[0] === "greenhouses" && routeSegments[2] === "cycles" && routeSegments[3] === "current" && routeSegments.length === 4
@@ -97,11 +99,14 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
       ? "pests"
       : entity?.type === "harvestLot"
         ? "harvest"
-        : routeSections.get(sectionKey) ?? "overview";
+        : isLegacyRecordsRoute
+          ? "calendar"
+          : routeSections.get(sectionKey) ?? "overview";
   const greenhouseId = searchParams.get("greenhouse") ?? undefined;
   const periodValue = searchParams.get("period");
   const tabValue = searchParams.get("tab");
   const directionValue = searchParams.get("dir");
+  const operationViewValue = searchParams.get("view");
   const pageValue = Number(searchParams.get("page") ?? "1");
   const list: ListQueryState = {
     tab: tabValue === "nutrition" || tabValue === "irrigation" ? tabValue : tabValue === "applications" ? tabValue : undefined,
@@ -121,13 +126,18 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
     greenhouseId,
     period: periodValue && periods.has(periodValue as ContextPeriod) ? periodValue as ContextPeriod : undefined,
     weekStart: isDateKey(calendarWeek) ? calendarWeek : undefined,
+    operationView: isLegacyRecordsRoute
+      ? "history"
+      : operationViewValue === "plan" || operationViewValue === "execution" || operationViewValue === "verification" || operationViewValue === "history"
+        ? operationViewValue
+        : "calendar",
     list
   };
 }
 
 export function appRoute(
   organizationName: string,
-  { section, greenhouseId, period, weekStart, list }: RouteState
+  { section, greenhouseId, period, weekStart, operationView, list }: RouteState
 ) {
   const segments = [...sectionSegments[section]];
   if (section === "calendar") {
@@ -139,6 +149,7 @@ export function appRoute(
     query.set("greenhouse", greenhouseId);
   }
   if (supportsPeriod(section) && period) query.set("period", period);
+  if (section === "calendar" && operationView && operationView !== "calendar") query.set("view", operationView);
   if (list?.tab && list.tab !== "applications") query.set("tab", list.tab);
   if (list?.q) query.set("q", list.q);
   if (list?.sort) query.set("sort", list.sort);

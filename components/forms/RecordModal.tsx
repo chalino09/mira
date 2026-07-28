@@ -360,7 +360,7 @@ function CloseButton() {
   );
 }
 
-export function RecordModal() {
+export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const modal = useGreenhouseStore((state) => state.modal);
   const closeModal = useGreenhouseStore((state) => state.closeModal);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
@@ -558,6 +558,7 @@ export function RecordModal() {
     setIsSaving(true);
     try {
       await handler();
+      onSaved?.();
     } catch (caught) {
       setError(appErrorMessage(caught, "No se pudo guardar el registro."));
     } finally {

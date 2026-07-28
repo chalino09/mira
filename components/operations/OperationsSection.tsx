@@ -5,6 +5,7 @@ import {
   Ban,
   CalendarRange,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -16,9 +17,8 @@ import {
   RotateCcw,
   Send
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
-import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
@@ -83,7 +83,15 @@ type WorkEvidenceRow = {
   created_at: string;
 };
 
-type OperationView = "week" | "plan" | "execution" | "verification" | "history";
+type OperationView = "calendar" | "plan" | "execution" | "verification" | "history";
+type HistoryTechnicalKind = "riego" | "nutricion" | "aplicaciones" | "cosecha";
+
+type HistoryTechnicalResult = {
+  kind: HistoryTechnicalKind;
+  label: string;
+  detail: string;
+  occurredAt: string;
+};
 
 type AssignmentRow = {
   id: string;
@@ -495,6 +503,23 @@ function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan 
 function activityLabel(task: OperationTaskRow) {
   if (task.type === "otro" && task.technical_plan?.cycleWorkType) return "Preparación de ciclo";
   return activityLabels[task.type] ?? task.type;
+}
+
+function historyKindForTask(task: OperationTaskRow): HistoryTechnicalKind | null {
+  if (task.type === "riego") return "riego";
+  if (task.type === "fertirriego" || task.type === "fertilizacion") return "nutricion";
+  if (task.type === "aplicacion_foliar") return "aplicaciones";
+  if (task.type === "cosecha") return "cosecha";
+  return null;
+}
+
+function historyKindLabel(kind: HistoryTechnicalKind) {
+  return {
+    riego: "Riego",
+    nutricion: "Nutrición",
+    aplicaciones: "Aplicaciones",
+    cosecha: "Cosecha"
+  }[kind];
 }
 
 function optionalFormNumber(value: FormDataEntryValue | null) {
@@ -1093,7 +1118,7 @@ function CompleteApplicationModal({
             {task ? activityLabels[task.type] ?? "Aplicación" : "Aplicación"} · {greenhouseName}
           </p>
           <p className="mt-1 text-xs leading-5 text-app-muted">
-            Confirma solo lo necesario. La receta planeada se conserva en Registros técnicos.
+            Confirma solo lo necesario. La receta planeada y el resultado quedan en el Historial de Operación.
           </p>
         </div>
 
@@ -1553,7 +1578,9 @@ export function OperationsSection({
   onCreateCopilotTask,
   onPrepareCopilotMessage,
   weekStart: routeWeekStart,
+  initialView,
   onWeekStartChange,
+  onViewChange,
   workTypeFilter,
   specialtyLabel
 }: {
@@ -1564,7 +1591,9 @@ export function OperationsSection({
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
   weekStart?: string;
+  initialView?: OperationView;
   onWeekStartChange?: (weekStart: string) => void;
+  onViewChange?: (view: OperationView) => void;
   workTypeFilter?: string[];
   specialtyLabel?: string;
 }) {
@@ -1577,10 +1606,14 @@ export function OperationsSection({
   const addIrrigation = useGreenhouseStore((state) => state.addIrrigation);
   const addNutrition = useGreenhouseStore((state) => state.addNutrition);
   const addHarvest = useGreenhouseStore((state) => state.addHarvest);
+  const openModal = useGreenhouseStore((state) => state.openModal);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
   const [plan, setPlan] = useState<WeeklyPlanRow | null>(null);
   const [tasks, setTasks] = useState<OperationTaskRow[]>([]);
+  const [historyTasks, setHistoryTasks] = useState<OperationTaskRow[]>([]);
+  const [historyResultsByTaskId, setHistoryResultsByTaskId] = useState<Record<string, HistoryTechnicalResult[]>>({});
   const [evidence, setEvidence] = useState<WorkEvidenceRow[]>([]);
+  const [historyEvidence, setHistoryEvidence] = useState<WorkEvidenceRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [staffAssignments, setStaffAssignments] = useState<StaffAssignmentRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
@@ -1589,6 +1622,7 @@ export function OperationsSection({
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [operationGreenhouses, setOperationGreenhouses] = useState<OperationGreenhouseOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -1606,9 +1640,14 @@ export function OperationsSection({
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
-  const [operationView, setOperationView] = useState<OperationView>("week");
+  const [operationView, setOperationView] = useState<OperationView>("calendar");
   const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [dismissedCopilotIds, setDismissedCopilotIds] = useState<string[]>([]);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTechnicalKind | "all">("all");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [planningMenuOpen, setPlanningMenuOpen] = useState(false);
+  const [completedActivityChooserOpen, setCompletedActivityChooserOpen] = useState(false);
+  const planningMenuRef = useRef<HTMLDivElement>(null);
 
   const canPlan = currentUser.role === "owner" || currentUser.role === "admin";
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -1624,6 +1663,31 @@ export function OperationsSection({
       setWeekStart(targetWeekStart);
     }
   }, [routeWeekStart, weekStartKey]);
+
+  useEffect(() => {
+    if (initialView) setOperationView(initialView);
+  }, [initialView]);
+
+  useEffect(() => {
+    if (!planningMenuOpen) return;
+    const closeMenu = (event: PointerEvent) => {
+      if (!planningMenuRef.current?.contains(event.target as Node)) setPlanningMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPlanningMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [planningMenuOpen]);
+
+  const selectOperationView = (view: OperationView) => {
+    setOperationView(view);
+    onViewChange?.(view);
+  };
 
   useEffect(() => {
     if (!pendingCompletionTask?.date) return;
@@ -1746,9 +1810,145 @@ export function OperationsSection({
     setLoading(false);
   }, [organization.id, selectedGreenhouseId, todayKey, weekEndKey, weekStartKey]);
 
+  const loadWorkHistory = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !organization.id) return;
+
+    setHistoryLoading(true);
+    let tasksQuery = supabase
+      .from("tasks")
+      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
+      .eq("company_id", organization.id)
+      .in("status", ["verificada", "cancelada"])
+      .order("occurred_at", { ascending: false, nullsFirst: false })
+      .order("scheduled_date", { ascending: false })
+      .limit(200);
+
+    if (selectedGreenhouseId !== "__all__") {
+      tasksQuery = tasksQuery.eq("greenhouse_id", selectedGreenhouseId);
+    }
+
+    const { data: historyTaskRows, error: historyTaskError } = await tasksQuery;
+    if (historyTaskError) {
+      setNotice({ tone: "red", message: appErrorMessage(historyTaskError, "No se pudo cargar el historial operativo.") });
+      setHistoryLoading(false);
+      return;
+    }
+
+    const workRows = (historyTaskRows ?? []) as OperationTaskRow[];
+    const workIds = workRows.map((task) => task.id);
+    if (!workIds.length) {
+      setHistoryTasks([]);
+      setHistoryResultsByTaskId({});
+      setHistoryEvidence([]);
+      setHistoryLoading(false);
+      return;
+    }
+
+    const [irrigationResponse, nutritionResponse, applicationsResponse, harvestResponse, evidenceResponse] = await Promise.all([
+      supabase
+        .from("irrigation_records")
+        .select("source_task_id, occurred_at, duration_min, estimated_liters, sector, ph, ec")
+        .in("source_task_id", workIds),
+      supabase
+        .from("nutrition_records")
+        .select("source_task_id, occurred_at, product_name, dose, method, ph, ec")
+        .in("source_task_id", workIds),
+      supabase
+        .from("application_records")
+        .select("source_task_id, occurred_at, product_name, dose, applied_area")
+        .in("source_task_id", workIds),
+      supabase
+        .from("harvest_records")
+        .select("source_task_id, occurred_at, kilograms, box_count, destination")
+        .in("source_task_id", workIds),
+      supabase
+        .from("work_evidence")
+        .select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_at")
+        .in("work_id", workIds)
+        .order("created_at", { ascending: false })
+    ]);
+
+    const detailError = irrigationResponse.error
+      ?? nutritionResponse.error
+      ?? applicationsResponse.error
+      ?? harvestResponse.error
+      ?? evidenceResponse.error;
+    if (detailError) {
+      setNotice({ tone: "red", message: appErrorMessage(detailError, "No se pudieron cargar todos los resultados técnicos.") });
+    }
+
+    const resultsByTaskId: Record<string, HistoryTechnicalResult[]> = {};
+    const addResult = (taskId: string | null, result: HistoryTechnicalResult) => {
+      if (!taskId) return;
+      resultsByTaskId[taskId] = [...(resultsByTaskId[taskId] ?? []), result];
+    };
+
+    (irrigationResponse.data ?? []).forEach((record: any) => {
+      addResult(record.source_task_id, {
+        kind: "riego",
+        label: "Riego ejecutado",
+        detail: [
+          record.duration_min != null ? `${record.duration_min} min` : "",
+          record.estimated_liters != null ? `${record.estimated_liters} L` : "",
+          record.sector,
+          record.ph != null ? `pH ${record.ph}` : "",
+          record.ec != null ? `CE ${record.ec}` : ""
+        ].filter(Boolean).join(" · "),
+        occurredAt: record.occurred_at
+      });
+    });
+
+    (nutritionResponse.data ?? []).forEach((record: any) => {
+      addResult(record.source_task_id, {
+        kind: "nutricion",
+        label: "Nutrición ejecutada",
+        detail: [
+          [record.product_name, record.dose].filter(Boolean).join(" · "),
+          record.method,
+          record.ph != null ? `pH ${record.ph}` : "",
+          record.ec != null ? `CE ${record.ec}` : ""
+        ].filter(Boolean).join(" · "),
+        occurredAt: record.occurred_at
+      });
+    });
+
+    (applicationsResponse.data ?? []).forEach((record: any) => {
+      addResult(record.source_task_id, {
+        kind: "aplicaciones",
+        label: "Aplicación ejecutada",
+        detail: [[record.product_name, record.dose].filter(Boolean).join(" · "), record.applied_area].filter(Boolean).join(" · "),
+        occurredAt: record.occurred_at
+      });
+    });
+
+    (harvestResponse.data ?? []).forEach((record: any) => {
+      addResult(record.source_task_id, {
+        kind: "cosecha",
+        label: "Cosecha registrada",
+        detail: [
+          record.kilograms != null ? `${record.kilograms} kg` : "",
+          record.box_count != null ? `${record.box_count} cajas` : "",
+          record.destination
+        ].filter(Boolean).join(" · "),
+        occurredAt: record.occurred_at
+      });
+    });
+
+    setHistoryTasks(workRows);
+    setHistoryResultsByTaskId(resultsByTaskId);
+    setHistoryEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
+    setHistoryLoading(false);
+  }, [organization.id, selectedGreenhouseId]);
+
   useEffect(() => {
     loadOperations();
   }, [loadOperations, operationRefreshKey]);
+
+  useEffect(() => {
+    if (operationView !== "history") return;
+    void loadWorkHistory();
+  }, [loadWorkHistory, operationRefreshKey, operationView]);
 
   const assignmentsForTask = (taskId: string) => assignments.filter((item) => item.task_id === taskId);
   const staffAssignmentsForTask = (taskId: string) => staffAssignments.filter((item) => item.task_id === taskId);
@@ -2120,7 +2320,7 @@ export function OperationsSection({
       notes: applicationNotesWithFollowUp(application)
     })));
     setApplicationTask(null);
-    setNotice({ tone: "green", message: "Aplicación completada y guardada en Registros técnicos." });
+    setNotice({ tone: "green", message: "Aplicación completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
 
@@ -2155,7 +2355,7 @@ export function OperationsSection({
       responsible: currentUser.fullName
     });
     setIrrigationTask(null);
-    setNotice({ tone: "green", message: "Riego completado y guardado en Registros técnicos." });
+    setNotice({ tone: "green", message: "Riego completado y guardado en el Historial de Operación." });
     await loadOperations();
   };
 
@@ -2222,7 +2422,7 @@ export function OperationsSection({
       notes: payload.notes
     }));
     setNutritionTask(null);
-    setNotice({ tone: "green", message: "Nutrición completada y guardada en Registros técnicos." });
+    setNotice({ tone: "green", message: "Nutrición completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
 
@@ -2262,7 +2462,7 @@ export function OperationsSection({
 
     addHarvest({ ...payload, id: rpcRecordId(data), sourceTaskId: harvestTask.id, greenhouseId: harvestTask.greenhouse_id });
     setHarvestTask(null);
-    setNotice({ tone: "green", message: "Cosecha completada y guardada en Registros técnicos." });
+    setNotice({ tone: "green", message: "Cosecha completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
 
@@ -2309,7 +2509,7 @@ export function OperationsSection({
     await loadOperations();
   };
 
-  const evidenceForTask = (taskId: string) => evidence.filter((item) => item.work_id === taskId);
+  const evidenceForTask = (taskId: string) => [...evidence, ...historyEvidence].filter((item) => item.work_id === taskId);
 
   const saveEvidence = async (file: File, note: string) => {
     if (!evidenceTask) return;
@@ -2369,27 +2569,54 @@ export function OperationsSection({
   const unassignedCount = scopedTasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
-  const viewStatuses: Record<Exclude<OperationView, "week">, OperationStatus[]> = {
+  const viewStatuses: Record<Exclude<OperationView, "calendar" | "history">, OperationStatus[]> = {
     plan: ["pendiente"],
     execution: ["en_progreso", "bloqueada"],
-    verification: ["completada"],
-    history: ["verificada", "cancelada"]
+    verification: ["completada"]
   };
-  const visibleTasks = operationView === "week" ? scopedTasks : scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
+  const visibleTasks = operationView === "calendar" || operationView === "history"
+    ? scopedTasks
+    : scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
   const overdueCount = globalOverdueTasks.length;
   const blockedScopedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
   const awaitingVerificationCount = scopedTasks.filter((task) => task.status === "completada").length;
-  const operationViews: Array<{ id: OperationView; label: string; count: number }> = [
-    { id: "week", label: "Semana", count: scopedTasks.length },
+  const historyScopedTasks = workTypeFilter?.length
+    ? historyTasks.filter((task) => workTypeFilter.includes(task.type))
+    : historyTasks;
+  const normalizedHistoryQuery = historyQuery.trim().toLocaleLowerCase("es-MX");
+  const visibleHistoryTasks = historyScopedTasks.filter((task) => {
+    const technicalResults = historyResultsByTaskId[task.id] ?? [];
+    const matchesType = historyTypeFilter === "all"
+      || technicalResults.some((result) => result.kind === historyTypeFilter)
+      || historyKindForTask(task) === historyTypeFilter;
+    if (!matchesType) return false;
+    if (!normalizedHistoryQuery) return true;
+    return [
+      task.title,
+      activityLabel(task),
+      greenhouseName(task.greenhouse_id),
+      task.instructions,
+      technicalPlanSummary(task),
+      ...technicalResults.map((result) => `${result.label} ${result.detail}`)
+    ].filter(Boolean).join(" ").toLocaleLowerCase("es-MX").includes(normalizedHistoryQuery);
+  });
+  const operationViews: Array<{ id: OperationView; label: string; count?: number }> = [
+    { id: "calendar", label: "Calendario", count: scopedTasks.length },
     { id: "plan", label: "Plan", count: scopedTasks.filter((task) => task.status === "pendiente").length },
     { id: "execution", label: "Ejecución", count: scopedTasks.filter((task) => ["en_progreso", "bloqueada"].includes(task.status)).length },
     { id: "verification", label: "Por verificar", count: awaitingVerificationCount },
-    { id: "history", label: "Historial", count: scopedTasks.filter((task) => ["verificada", "cancelada"].includes(task.status)).length }
+    { id: "history", label: "Historial", count: historyScopedTasks.length || undefined }
   ];
 
   const openNewActivity = () => {
+    setPlanningMenuOpen(false);
     setEditingTask(null);
     setActivityModalOpen(true);
+  };
+
+  const openCompletedActivity = (modal: "irrigation" | "nutrition" | "application" | "harvest") => {
+    setCompletedActivityChooserOpen(false);
+    openModal(modal);
   };
 
   const openEditActivity = (task: OperationTaskRow) => {
@@ -2409,12 +2636,11 @@ export function OperationsSection({
 
   return (
     <section>
-      <header className="mb-8 border-b border-app-border pb-7 pt-8 md:pt-10">
+      <header className="mb-6 border-b border-app-border pb-5 pt-5 md:pt-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" />
             <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
-            <p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
                 ? "Planea, ejecuta, verifica y consulta cada Work desde un solo lugar."
                 : "Consulta, confirma, adjunta evidencia y reporta el avance de tus trabajos."}
@@ -2448,9 +2674,40 @@ export function OperationsSection({
               variant="secondary"
             />
             {canPlan ? (
-              <Button className="hidden lg:inline-flex" icon={<Plus className="h-4 w-4" />} onClick={openNewActivity} variant="primary">
-                Nueva actividad
-              </Button>
+              <div className="relative flex" ref={planningMenuRef}>
+                <Button
+                  className="min-h-11 rounded-r-none border-r border-r-white/20 pr-4"
+                  icon={<Plus className="h-4 w-4" />}
+                  onClick={openNewActivity}
+                  variant="primary"
+                >
+                  Planear actividad
+                </Button>
+                <Button
+                  aria-expanded={planningMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Más opciones de actividad"
+                  className="min-h-11 rounded-l-none px-3"
+                  icon={<ChevronDown className="h-4 w-4" />}
+                  onClick={() => setPlanningMenuOpen((current) => !current)}
+                  variant="primary"
+                />
+                {planningMenuOpen ? (
+                  <div className="absolute left-0 top-[calc(100%+8px)] z-30 min-w-64 rounded-xl border border-app-border bg-white p-1.5 shadow-xl sm:left-auto sm:right-0" role="menu">
+                    <button
+                      className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium text-app-text transition hover:bg-app-sidebar focus:outline-none focus:ring-2 focus:ring-app-green/20"
+                      onClick={() => {
+                        setPlanningMenuOpen(false);
+                        setCompletedActivityChooserOpen(true);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Registrar actividad realizada
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
@@ -2474,7 +2731,7 @@ export function OperationsSection({
         </div>
       ) : (
         <>
-          <div className="grid border-y border-app-border sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-2 border-y border-app-border xl:grid-cols-5">
             {[
               ["Plan", plan?.status === "published" ? "Publicado" : plan ? "Borrador" : "Sin plan"],
               ["Hoy", String(todayCount)],
@@ -2482,40 +2739,36 @@ export function OperationsSection({
               ["Bloqueadas", String(blockedCount)],
               [canPlan ? "Sin asignar" : "Mi semana", canPlan ? String(unassignedCount) : String(tasks.length)]
             ].map(([label, value], index) => (
-              <div key={label} className={`px-4 py-5 ${index ? "border-t border-app-border sm:border-l sm:border-t-0" : ""}`}>
+              <div key={label} className={`px-4 py-4 ${index ? "border-t border-app-border xl:border-l xl:border-t-0" : ""}`}>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{label}</p>
-                <p className="mt-3 text-2xl font-light text-app-text">{value}</p>
+                <p className="mt-2 text-xl font-light text-app-text sm:text-2xl">{value}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2 border-b border-app-border pb-4">
+          <div className="mt-5 flex flex-wrap gap-2 border-b border-app-border pb-4 sm:gap-3">
             {operationViews.map((view) => (
-              <Button key={view.id} onClick={() => setOperationView(view.id)} variant={operationView === view.id ? "primary" : "ghost"}>
-                {view.label} · {view.count}
+              <Button className="min-h-10 px-3" key={view.id} onClick={() => selectOperationView(view.id)} variant={operationView === view.id ? "primary" : "ghost"}>
+                {view.label}{view.count !== undefined ? ` · ${view.count}` : ""}
               </Button>
             ))}
           </div>
 
-          {overdueCount || blockedScopedCount || awaitingVerificationCount ? (
+          {operationView !== "history" && (overdueCount || blockedScopedCount || awaitingVerificationCount) ? (
             <div className="grid gap-2 border-b border-app-border py-4 md:grid-cols-3">
               {overdueCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOverdueExpanded(true)} type="button"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{overdueCount}</strong> trabajo{overdueCount === 1 ? "" : "s"} con fecha vencida</span></button> : null}
-              {blockedScopedCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOperationView("execution")} type="button"><Ban className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{blockedScopedCount}</strong> bloqueo{blockedScopedCount === 1 ? "" : "s"} por resolver</span></button> : null}
-              {awaitingVerificationCount ? <button className="flex items-start gap-2 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-left" onClick={() => setOperationView("verification")} type="button"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-app-green" /><span className="text-sm text-app-green"><strong>{awaitingVerificationCount}</strong> trabajo{awaitingVerificationCount === 1 ? "" : "s"} esperando verificación</span></button> : null}
+              {blockedScopedCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => selectOperationView("execution")} type="button"><Ban className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{blockedScopedCount}</strong> bloqueo{blockedScopedCount === 1 ? "" : "s"} por resolver</span></button> : null}
+              {awaitingVerificationCount ? <button className="flex items-start gap-2 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-left" onClick={() => selectOperationView("verification")} type="button"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-app-green" /><span className="text-sm text-app-green"><strong>{awaitingVerificationCount}</strong> trabajo{awaitingVerificationCount === 1 ? "" : "s"} esperando verificación</span></button> : null}
             </div>
           ) : null}
 
-          {globalOverdueTasks.length ? (
-            <section className="border-b border-app-border py-5">
+          {operationView !== "history" && globalOverdueTasks.length && overdueExpanded ? (
+            <section className="border-b border-app-border py-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Atención operativa</p>
-                  <h2 className="mt-2 text-xl font-light text-app-text">{overdueCount} trabajo{overdueCount === 1 ? "" : "s"} vencido{overdueCount === 1 ? "" : "s"}</h2>
-                </div>
-                <Button onClick={() => setOverdueExpanded((current) => !current)} variant="secondary">{overdueExpanded ? "Ocultar vencidos" : "Ver vencidos"}</Button>
+                <p className="text-sm font-medium text-app-text">Trabajos vencidos</p>
+                <Button onClick={() => setOverdueExpanded(false)} variant="ghost">Ocultar</Button>
               </div>
-              <p className="mt-2 text-xs text-app-muted">Se muestran sólo cuando su fecha ya pasó, aunque pertenezcan a semanas anteriores.</p>
-              {overdueExpanded ? <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid gap-3">
                 {globalOverdueTasks.map((task) => (
                   <article className="flex flex-col gap-3 border border-[#E3BDBD] bg-[#FFF9F8] p-4 lg:flex-row lg:items-center lg:justify-between" key={task.id}>
                     <div className="min-w-0">
@@ -2530,11 +2783,11 @@ export function OperationsSection({
                     </div>
                   </article>
                 ))}
-              </div> : null}
+              </div>
             </section>
           ) : null}
 
-          {canPlan && plan && weekTasks.length ? (
+          {operationView !== "history" && canPlan && plan && weekTasks.length ? (
             <div className="hidden flex-col gap-3 border-b border-app-border py-4 lg:flex lg:flex-row lg:items-center lg:justify-between">
               <p className="text-sm text-app-muted">
                 {plan.status === "published"
@@ -2572,7 +2825,7 @@ export function OperationsSection({
             </div>
           ) : null}
 
-          {canPlan ? (
+          {operationView !== "history" && canPlan ? (
             <div className="hidden lg:block">
               <CopilotInlineSuggestions
                 insights={copilotInsights.filter((insight) => !dismissedCopilotIds.includes(insight.id))}
@@ -2583,7 +2836,97 @@ export function OperationsSection({
             </div>
           ) : null}
 
-          {loading ? (
+          {operationView === "history" ? (
+            <section className="mt-7">
+              <div className="flex flex-col gap-4 border-b border-app-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-app-text">Historial operativo</p>
+                  <p className="mt-1 text-sm leading-6 text-app-muted">Cada Work conserva su planeación, resultado técnico y evidencia en una misma línea.</p>
+                </div>
+                <div className="w-full lg:max-w-sm">
+                  <TextInput
+                    aria-label="Buscar en el historial operativo"
+                    onChange={(event) => setHistoryQuery(event.target.value)}
+                    placeholder="Buscar actividad, invernadero o resultado"
+                    value={historyQuery}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-b border-app-border py-3">
+                <Button onClick={() => setHistoryTypeFilter("all")} variant={historyTypeFilter === "all" ? "primary" : "ghost"}>Todos</Button>
+                {(["riego", "nutricion", "aplicaciones", "cosecha"] as HistoryTechnicalKind[]).map((kind) => (
+                  <Button key={kind} onClick={() => setHistoryTypeFilter(kind)} variant={historyTypeFilter === kind ? "primary" : "ghost"}>
+                    {historyKindLabel(kind)}
+                  </Button>
+                ))}
+              </div>
+
+              {historyLoading ? (
+                <div className="py-16 text-center text-sm text-app-muted">Cargando historial operativo...</div>
+              ) : visibleHistoryTasks.length ? (
+                <div className="divide-y divide-app-border border-b border-app-border">
+                  {visibleHistoryTasks.map((task) => {
+                    const technicalResults = historyResultsByTaskId[task.id] ?? [];
+                    const planSummary = technicalPlanSummary(task);
+                    const taskEvidence = evidenceForTask(task.id);
+                    const resultKinds = Array.from(new Set(technicalResults.map((result) => result.kind)));
+                    return (
+                      <article className="grid gap-4 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)_auto] lg:items-start" key={task.id}>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge icon={workStatusIcon(task.status)} tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
+                            <span className="text-xs text-app-muted">{formatDate(task.occurred_at ?? task.completed_at ?? task.scheduled_date)}</span>
+                          </div>
+                          <h3 className="mt-3 text-base font-medium text-app-text">{task.title}</h3>
+                          <p className="mt-1 text-sm text-app-muted">{activityLabel(task)} · {greenhouseName(task.greenhouse_id)} · {task.origin === "planned" ? "Planeado" : "No planeado"}</p>
+                          {task.instructions ? <p className="mt-3 text-sm leading-6 text-app-muted">{task.instructions}</p> : null}
+                          {planSummary ? <p className="mt-3 border-l-2 border-app-green pl-3 text-sm leading-6 text-app-muted"><span className="font-medium text-app-text">Planeado:</span> {planSummary}</p> : null}
+                        </div>
+
+                        <div className="min-w-0 border-l-0 border-app-border pl-0 lg:border-l lg:pl-5">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">Resultado técnico</p>
+                          {technicalResults.length ? (
+                            <div className="mt-3 grid gap-2">
+                              {technicalResults.map((result, index) => (
+                                <div className="border border-app-border bg-app-sidebar px-3 py-2" key={`${result.kind}-${result.occurredAt}-${index}`}>
+                                  <p className="text-sm font-medium text-app-text">{result.label}</p>
+                                  <p className="mt-1 text-xs leading-5 text-app-muted">{result.detail || "Sin valores adicionales"}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm leading-6 text-app-muted">
+                              {historyKindForTask(task)
+                                ? "No se encontró un resultado técnico asociado."
+                                : "Este Work no requiere un resultado técnico."}
+                            </p>
+                          )}
+                          {resultKinds.length ? <div className="mt-3 flex flex-wrap gap-1.5">{resultKinds.map((kind) => <StatusBadge key={kind} tone="green">{historyKindLabel(kind)}</StatusBadge>)}</div> : null}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          <Button className="min-h-10" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} variant="ghost">
+                            Evidencia{taskEvidence.length ? ` (${taskEvidence.length})` : ""}
+                          </Button>
+                          {canPlan && task.status === "verificada" ? (
+                            <Button className="min-h-10" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-8">
+                  <EmptyState
+                    icon={CalendarRange}
+                    title={historyQuery || historyTypeFilter !== "all" ? "No hay Works cerrados que coincidan con los filtros." : "Aún no hay Works cerrados en este alcance."}
+                  />
+                </div>
+              )}
+            </section>
+          ) : loading ? (
             <div className="py-16 text-center text-sm text-app-muted">Cargando operación...</div>
           ) : scopedTasks.length ? (
             <div className="mt-8 max-w-full overflow-x-auto overscroll-x-contain pb-2">
@@ -2715,6 +3058,19 @@ export function OperationsSection({
         task={editingTask}
         weekDays={weekDays}
       />
+
+      <Modal
+        onClose={() => setCompletedActivityChooserOpen(false)}
+        open={completedActivityChooserOpen}
+        title="Registrar actividad realizada"
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button onClick={() => openCompletedActivity("irrigation")} variant="secondary">Riego</Button>
+          <Button onClick={() => openCompletedActivity("nutrition")} variant="secondary">Nutrición</Button>
+          <Button onClick={() => openCompletedActivity("application")} variant="secondary">Aplicación</Button>
+          <Button onClick={() => openCompletedActivity("harvest")} variant="secondary">Cosecha</Button>
+        </div>
+      </Modal>
 
       <CompleteApplicationModal
         greenhouseName={applicationTask ? greenhouseName(applicationTask.greenhouse_id) : ""}
