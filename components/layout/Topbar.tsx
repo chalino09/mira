@@ -32,12 +32,6 @@ export function Topbar({
   const acceptsPeriod = ["records", "pests", "harvest", "costs", "reports"].includes(activeSection);
   const hasContextPeriod = acceptsPeriod || activeSection === "calendar";
   const isCompanyView = ["inventory", "greenhouses", "settings"].includes(activeSection);
-  const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
-  const scopeLabel = isCompanyView
-    ? "Toda la empresa"
-    : selectedGreenhouseId === "__all__"
-      ? `Todos los invernaderos${greenhouses.length ? ` (${greenhouses.length})` : ""}`
-      : selectedGreenhouse ? greenhouseDisplayName(selectedGreenhouse, crops) : "Sin invernadero";
   const periodLabel = activeSection === "calendar"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
@@ -95,7 +89,6 @@ export function Topbar({
               ) : <span className="font-medium text-app-text">{periodLabel}</span>}
             </div>
           ) : null}
-          <span className="hidden text-xs text-app-muted lg:inline">Viendo {scopeLabel}{hasContextPeriod ? ` · ${periodLabel}` : ""}</span>
           <button
             className="hidden h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted transition-[background-color,color] duration-150 ease-out hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green sm:flex"
             onClick={() => navigate({ section: "records" })}
