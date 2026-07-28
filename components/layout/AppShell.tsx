@@ -375,6 +375,8 @@ function OverviewSection({
   const {
     greenhouse,
     greenhouseTasks,
+    greenhouseIrrigation,
+    greenhouseApplications,
     greenhousePests,
     greenhouses,
     organization,
@@ -459,12 +461,17 @@ function OverviewSection({
         alerts={greenhousePests}
         busyTaskId={savingTaskId}
         currentUser={currentUser}
+        greenhouse={greenhouse}
         greenhouses={greenhouses}
+        lastApplication={[...greenhouseApplications].sort((left, right) => right.date.localeCompare(left.date))[0]}
+        lastIrrigation={[...greenhouseIrrigation].sort((left, right) => right.date.localeCompare(left.date))[0]}
         onCompleteTask={(taskId) => {
           if (!savingTaskId) {
             handleCompleteTask(taskId);
           }
         }}
+        onOpenGreenhouse={() => setActiveSection("greenhouses")}
+        onOpenMonitoring={() => setActiveSection("monitoring")}
         onOpenOperations={() => setActiveSection("calendar")}
         onOpenPests={() => setActiveSection("pests")}
         onOpenWork={(taskId, view, intent) => onOpenWork?.(taskId, view, intent)}
