@@ -123,7 +123,7 @@ function FocusDecision({
   onAction: (action: TodayDecisionAction, decision: TodayDecision) => void;
 }) {
   return (
-    <article className="relative min-h-[320px] overflow-hidden rounded-[26px] bg-app-green px-5 py-6 text-white shadow-[0_0_0_1px_rgba(13,13,13,0.04),0_18px_50px_-30px_rgba(13,13,13,0.6)] sm:px-7 sm:py-7">
+    <article className="relative min-h-[320px] overflow-hidden rounded-2xl bg-app-green px-5 py-6 text-white shadow-[0_0_0_1px_rgba(13,13,13,0.04),0_18px_50px_-30px_rgba(13,13,13,0.6)] sm:px-7 sm:py-7">
       <div aria-hidden="true" className="absolute -end-24 -top-24 h-64 w-64 rounded-full bg-white/[0.045] blur-2xl" />
       <div className="relative flex min-h-[272px] flex-col justify-between gap-8">
         <div className="min-w-0">
@@ -131,7 +131,7 @@ function FocusDecision({
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#D6E7D9]">
               Primero · {groupLabels[decision.group]}
             </p>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
               <DecisionIcon className="h-[18px] w-[18px]" kind={decision.kind} />
             </span>
           </div>
@@ -192,14 +192,14 @@ function NextDecision({
       <button
         aria-controls="today-focus-decision"
         className={cn(
-          "group flex min-h-[88px] w-full items-start gap-3 rounded-2xl px-3 py-3 text-start outline-offset-2 transition-[background-color] duration-100 ease-out hover:bg-app-sidebar focus-visible:bg-app-sidebar"
+          "group flex min-h-[88px] w-full items-start gap-3 rounded-lg px-3 py-3 text-start outline-offset-2 transition-[background-color] duration-100 ease-out hover:bg-app-sidebar focus-visible:bg-app-sidebar"
         )}
         onClick={onSelect}
         type="button"
       >
         <span
           className={cn(
-            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
             decision.priority === "critical" && "bg-app-red text-[#7B2A2A]",
             decision.priority === "high" && "bg-app-amber text-[#715318]",
             decision.priority === "normal" && "bg-app-soft text-app-green"
@@ -350,7 +350,7 @@ export function TodayDecisionBoard({
 
       <section aria-labelledby="today-pulse-title" className="mt-6">
         <h2 className="sr-only" id="today-pulse-title">Pulso del alcance</h2>
-        <div className="grid grid-cols-3 overflow-hidden rounded-2xl bg-white shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_4px_16px_-12px_rgba(13,13,13,0.18)]">
+        <div className="grid grid-cols-3 overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_4px_16px_-12px_rgba(13,13,13,0.18)]">
           {pulseItems.map(({ label, value, icon: Icon, onClick }, index) => (
             <button
               className={cn(
@@ -362,7 +362,7 @@ export function TodayDecisionBoard({
               type="button"
             >
               <span className="flex w-full items-center justify-between gap-2 sm:w-auto">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-app-soft text-app-green sm:h-9 sm:w-9 sm:rounded-xl">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-app-soft text-app-green sm:h-9 sm:w-9">
                   <Icon aria-hidden="true" className="h-4 w-4 sm:h-[18px] sm:w-[18px]" strokeWidth={1.75} />
                 </span>
                 <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-app-muted sm:hidden" />
@@ -390,7 +390,7 @@ export function TodayDecisionBoard({
             />
           </div>
 
-          <aside className="rounded-[26px] bg-white p-3 shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_8px_30px_-24px_rgba(13,13,13,0.24)] sm:p-4" aria-labelledby="next-decisions-title">
+          <aside className="rounded-2xl bg-white p-3 shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_8px_30px_-24px_rgba(13,13,13,0.24)] sm:p-4" aria-labelledby="next-decisions-title">
             <div className="flex items-center justify-between gap-4 px-2 pb-2 pt-1">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">Siguientes prioridades</p>
@@ -423,8 +423,8 @@ export function TodayDecisionBoard({
           </aside>
         </div>
       ) : (
-        <div className="mt-6 rounded-[26px] bg-white px-6 py-10 text-center shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_12px_40px_-28px_rgba(13,13,13,0.25)]">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-app-soft text-app-green">
+        <div className="mt-6 rounded-2xl bg-white px-6 py-10 text-center shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_12px_40px_-28px_rgba(13,13,13,0.25)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-app-soft text-app-green">
             <CircleCheckBig aria-hidden="true" className="h-6 w-6" strokeWidth={1.75} />
           </span>
           <h2 className="mt-5 text-2xl font-semibold tracking-[-0.025em] text-app-text">Todo resuelto por ahora</h2>
