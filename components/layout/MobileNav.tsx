@@ -45,7 +45,7 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
   return (
     <>
       {open ? (
-        <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-[60] bg-black/30 lg:hidden" onClick={() => setOpen(false)}>
           <div
             className="absolute inset-x-0 bottom-0 max-h-[min(76vh,620px)] overflow-y-auto rounded-t-2xl border border-app-border bg-app-sidebar px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
@@ -62,6 +62,19 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
               </button>
             </div>
             <OrganizationSwitcher className="mb-3" />
+            {currentUser.role === "manager" ? (
+              <button
+                className="mb-3 flex min-h-12 w-full items-center gap-3 rounded-lg border border-app-green/25 bg-app-soft px-3 text-sm font-medium text-app-green"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenTelegram?.();
+                }}
+                type="button"
+              >
+                <Send className="h-4 w-4" />
+                Conectar Telegram
+              </button>
+            ) : null}
             {mobileNavigationItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -79,19 +92,6 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
                 </Link>
               );
             })}
-            {currentUser.role === "manager" ? (
-              <button
-                className="mt-3 flex min-h-12 w-full items-center gap-3 border-t border-app-border px-3 pt-3 text-sm font-medium text-app-green"
-                onClick={() => {
-                  setOpen(false);
-                  onOpenTelegram?.();
-                }}
-                type="button"
-              >
-                <Send className="h-4 w-4" />
-                Conectar Telegram
-              </button>
-            ) : null}
           </div>
         </div>
       ) : null}

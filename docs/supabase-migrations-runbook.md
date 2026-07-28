@@ -19,7 +19,7 @@ supabase db push
 supabase migration list
 ```
 
-Nunca se usa `db reset` contra una base remota. Antes de `db push`, revisa que la lista de migraciones locales contenga `20260101000001` a `20260101000053` y la reparación `20260625000000`.
+Nunca se usa `db reset` contra una base remota. Antes de `db push`, revisa que la lista de migraciones locales contenga `20260101000001` a `20260101000053`, la reparación `20260625000000` y `20260727000000_weekly_notification_refresh.sql`.
 
 ## Verificar el esquema desplegado
 
@@ -36,3 +36,7 @@ order by version;
 La comprobación P0 de revocación está en `supabase/tests/p0_authorization_revocation.sql`; se ejecuta solo en una base de prueba, pues crea fixtures temporales y hace rollback.
 
 La migración 53 define el contrato mínimo de Work. La app consulta `assert_work_schema_ready()` antes de completar trabajos simples; si falta, muestra `work_schema_update_required` y no actualiza `tasks.status` directamente.
+
+La migración `20260727000000_weekly_notification_refresh.sql` sincroniza la cola cuando se agregan actividades o cambian responsables en una semana publicada. **Enviar cambios pendientes** procesa únicamente actividades nuevas o modificadas.
+
+La regresión correspondiente está en `supabase/tests/weekly_plan_notifications.sql`; ejecútala únicamente en una base de prueba porque crea fixtures dentro de una transacción y termina con `rollback`.

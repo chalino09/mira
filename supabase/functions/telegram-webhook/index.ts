@@ -23,11 +23,30 @@ async function sha256(value: string) {
 }
 
 async function sendTelegramMessage(token: string, chatId: string, text: string, replyMarkup?: Record<string, unknown>) {
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const result = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, disable_web_page_preview: true, reply_markup: replyMarkup, text })
+    body: JSON.stringify({ chat_id: chatId, disable_web_page_preview: true, parse_mode: "HTML", reply_markup: replyMarkup, text })
   });
+  if (!result.ok) throw new Error(`telegram_send_${result.status}`);
+  const payload = await result.json().catch(() => null);
+  return Number.isSafeInteger(payload?.result?.message_id) ? payload.result.message_id : null;
+}
+
+async function editTelegramMessage(token: string, chatId: string, messageId: number, text: string, replyMarkup?: Record<string, unknown>) {
+  const result = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      disable_web_page_preview: true,
+      parse_mode: "HTML",
+      reply_markup: replyMarkup,
+      text
+    })
+  });
+  if (!result.ok) throw new Error(`telegram_edit_${result.status}`);
 }
 
 async function answerCallbackQuery(token: string, callbackQueryId: string) {
@@ -54,16 +73,48 @@ function selectionKeyboard(count: number) {
 function confirmationKeyboard() {
   return {
     inline_keyboard: [[
-      { text: "SI", callback_data: "op:yes" },
-      { text: "NO", callback_data: "op:no" }
+      { text: "✅ Sí, terminar", callback_data: "flow:yes" },
+      { text: "Cancelar", callback_data: "flow:no" }
     ]]
   };
 }
 
 function cancelKeyboard() {
   return {
-    inline_keyboard: [[{ text: "Cancelar", callback_data: "op:cancel" }]]
+    inline_keyboard: [[{ text: "Cancelar", callback_data: "flow:cancel" }]]
   };
+}
+
+function taskActionsKeyboard(taskId: string, planId: string, page = 0) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Listo", callback_data: `task:complete:${taskId}` },
+        { text: "🚧 Problema", callback_data: `task:block:${taskId}` }
+      ],
+      [{ text: "⬅️ Regresar", callback_data: `menu:page:${planId}:${page}` }]
+    ]
+  };
+}
+
+function backToMenuKeyboard(planId?: string, page = 0) {
+  return planId
+    ? { inline_keyboard: [[{ text: "⬅️ Regresar", callback_data: `menu:page:${planId}:${page}` }]] }
+    : undefined;
+}
+
+function problemTypeKeyboard(taskId: string) {
+  return {
+    inline_keyboard: [
+      [{ text: "📦 Falta producto o material", callback_data: `block:material:${taskId}` }],
+      [{ text: "🚧 Otro problema", callback_data: `block:other:${taskId}` }],
+      [{ text: "⬅️ Regresar", callback_data: `task:view:${taskId}` }]
+    ]
+  };
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function callbackText(data: string) {
@@ -547,10 +598,10 @@ async function loadTaskContext(adminClient: any, connection: any, taskIds: strin
 
   const { data: tasks } = await adminClient
     .from("tasks")
-    .select("id, company_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
+    .select("id, company_id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
     .eq("company_id", connection.company_id)
     .in("id", allowedIds)
-    .not("status", "in", "(completada,verificada,cancelada)")
+    .not("status", "in", "(completada,verificada,cancelada,bloqueada)")
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true });
 
@@ -567,6 +618,60 @@ async function loadTaskContext(adminClient: any, connection: any, taskIds: strin
     tasks: tasks ?? [],
     greenhouseById: new Map((greenhouses ?? []).map((greenhouse: any) => [greenhouse.id, greenhouse.name]))
   };
+}
+
+async function loadPlanTaskContext(adminClient: any, connection: any, planId: string) {
+  const { data: assignments } = await adminClient
+    .from("task_assignments")
+    .select("task_id")
+    .eq("company_id", connection.company_id)
+    .eq("user_id", connection.user_id);
+  const taskIds = (assignments ?? []).map((row: any) => row.task_id).filter(Boolean);
+  if (!taskIds.length) return { tasks: [], greenhouseById: new Map() };
+
+  const { data: tasks } = await adminClient
+    .from("tasks")
+    .select("id, company_id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
+    .eq("company_id", connection.company_id)
+    .eq("weekly_plan_id", planId)
+    .in("id", taskIds)
+    .not("status", "in", "(completada,verificada,cancelada,bloqueada)")
+    .order("scheduled_date", { ascending: true })
+    .order("scheduled_time", { ascending: true });
+  const greenhouseIds = Array.from(new Set((tasks ?? []).map((task: any) => task.greenhouse_id).filter(Boolean)));
+  const { data: greenhouses } = greenhouseIds.length
+    ? await adminClient.from("greenhouses").select("id, name").eq("company_id", connection.company_id).in("id", greenhouseIds)
+    : { data: [] };
+  return { tasks: tasks ?? [], greenhouseById: new Map((greenhouses ?? []).map((greenhouse: any) => [greenhouse.id, greenhouse.name])) };
+}
+
+function taskMenuKeyboard(tasks: any[], planId: string, page: number) {
+  const rows = tasks.map((task: any, index: number) => [{
+    text: `${index + 1} · ${String(task.title).slice(0, 34)}`,
+    callback_data: `task:view:${task.id}`
+  }]);
+  const nav = [];
+  if (page > 0) nav.push({ text: "⬅️ Anterior", callback_data: `menu:page:${planId}:${page - 1}` });
+  if (tasks.length === 5) nav.push({ text: "Siguiente ➡️", callback_data: `menu:page:${planId}:${page + 1}` });
+  if (nav.length) rows.push(nav);
+  return { inline_keyboard: rows };
+}
+
+async function showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId, page }: any) {
+  const { tasks, greenhouseById } = await loadPlanTaskContext(adminClient, connection, planId);
+  const pageSize = 5;
+  const start = page * pageSize;
+  const visibleTasks = tasks.slice(start, start + pageSize);
+  if (!visibleTasks.length && page > 0) return showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId, page: page - 1 });
+  const lines = visibleTasks.map((task: any, index: number) => {
+    const time = task.scheduled_time ? task.scheduled_time.slice(0, 5) : "Sin hora";
+    return `<b>${index + 1}. ${escapeHtml(activityLabel(task))} · ${escapeHtml(time)}</b>\n${escapeHtml(task.title)}\n📍 ${escapeHtml(greenhouseById.get(task.greenhouse_id) ?? "Invernadero")}`;
+  });
+  const text = tasks.length
+    ? [`<b>🌱 MIRA · ACTIVIDADES ACTIVAS</b>`, `<b>${tasks.length} pendientes</b>`, ...lines, "<b>Selecciona una actividad:</b>"].join("\n\n")
+    : "<b>✓ No tienes actividades pendientes.</b>";
+  const keyboard = tasks.length ? taskMenuKeyboard(visibleTasks, planId, page) : undefined;
+  await editTelegramMessage(botToken, chatId, messageId, text, keyboard);
 }
 
 async function loadMaterials(adminClient: any, task: any) {
@@ -740,7 +845,10 @@ async function askConfirmation({
   action,
   note,
   executionPayload,
-  executionSummary
+  executionSummary,
+  messageId,
+  planId,
+  page = 0
 }: {
   adminClient: any;
   botToken: string;
@@ -752,31 +860,37 @@ async function askConfirmation({
   note?: string;
   executionPayload?: any;
   executionSummary?: string;
+  messageId?: number;
+  planId?: string;
+  page?: number;
 }) {
-  const saved = await saveSession(adminClient, connection, chatId, "confirmation", {
+  const payload = {
     action,
     taskId: task.id,
     note,
-    executionPayload
-  });
+    executionPayload,
+    planId,
+    page
+  };
 
-  if (!saved) {
-    await sendTelegramMessage(
-      botToken,
-      chatId,
-      "No pude guardar la confirmacion. Revisa que el SQL 19 este ejecutado en Supabase."
-    );
+  const verb = action === "block" ? "reportar el problema" : "terminar";
+  const extra = executionSummary ? `\nDatos: ${executionSummary}` : "";
+  const text = `<b>¿Confirmas ${verb}?</b>\n${escapeHtml(taskLine(task, greenhouseName))}${escapeHtml(extra)}\n\nToca una opción.`;
+  if (messageId) {
+    const saved = await saveSession(adminClient, connection, chatId, "confirmation", { ...payload, messageId });
+    if (!saved) {
+      await editTelegramMessage(botToken, chatId, messageId, "No pude guardar la confirmación. Intenta desde Mira.");
+      return;
+    }
+    await editTelegramMessage(botToken, chatId, messageId, text, confirmationKeyboard());
     return;
   }
 
-  const verb = action === "block" ? "bloquear" : "completar";
-  const extra = executionSummary ? `\nDatos: ${executionSummary}` : "";
-  await sendTelegramMessage(
-    botToken,
-    chatId,
-    `Confirmas ${verb} esta actividad?\n${taskLine(task, greenhouseName)}${extra}\n\nToca SI o NO.`,
-    confirmationKeyboard()
-  );
+  const confirmationMessageId = await sendTelegramMessage(botToken, chatId, text, confirmationKeyboard());
+  const saved = await saveSession(adminClient, connection, chatId, "confirmation", { ...payload, messageId: confirmationMessageId });
+  if (!saved && confirmationMessageId) {
+    await editTelegramMessage(botToken, chatId, confirmationMessageId, "No pude guardar la confirmación. Intenta desde Mira.");
+  }
 }
 
 async function startActionForTask({
@@ -787,7 +901,10 @@ async function startActionForTask({
   greenhouseName,
   task,
   parsed,
-  originalText
+  originalText,
+  messageId,
+  planId,
+  page = 0
 }: {
   adminClient: any;
   botToken: string;
@@ -797,6 +914,9 @@ async function startActionForTask({
   task: any;
   parsed: any;
   originalText: string;
+  messageId?: number;
+  planId?: string;
+  page?: number;
 }) {
   if (parsed.action === "block") {
     await askConfirmation({
@@ -807,21 +927,29 @@ async function startActionForTask({
       greenhouseName,
       task,
       action: "block",
-      note: `Telegram: ${parsed.note || originalText}`
+      note: `Telegram: ${parsed.note || originalText}`,
+      messageId,
+      planId,
+      page
     });
     return;
   }
 
   const parser = captureParserForTask(task);
   if (!parser) {
-    await askConfirmation({ adminClient, botToken, chatId, connection, greenhouseName, task, action: "complete" });
+    await askConfirmation({ adminClient, botToken, chatId, connection, greenhouseName, task, action: "complete", messageId, planId, page });
     return;
   }
 
   if (task.type === "aplicacion_foliar" || task.type === "fertirriego" || task.type === "fertilizacion") {
     const materials = await loadMaterials(adminClient, task);
     if (!materials.length) {
-      await sendTelegramMessage(botToken, chatId, "Esta actividad no tiene insumos planeados. Completa o edita la actividad desde Mira.");
+      const text = "<b>Esta actividad no tiene insumos planeados.</b>\nCompleta o edita la actividad desde Mira.";
+      if (messageId) {
+        await editTelegramMessage(botToken, chatId, messageId, text, backToMenuKeyboard(planId, page));
+      } else {
+        await sendTelegramMessage(botToken, chatId, text);
+      }
       return;
     }
   }
@@ -837,7 +965,10 @@ async function startActionForTask({
       task,
       action: "complete",
       executionPayload: parsedCapture.payload,
-      executionSummary: parsedCapture.summary
+      executionSummary: parsedCapture.summary,
+      messageId,
+      planId,
+      page
     });
     return;
   }
@@ -853,14 +984,20 @@ async function startActionForTask({
       task,
       action: "complete",
       executionPayload: plannedExecution.payload,
-      executionSummary: plannedExecution.summary
+      executionSummary: plannedExecution.summary,
+      messageId,
+      planId,
+      page
     });
     return;
   }
 
   const saved = await saveSession(adminClient, connection, chatId, "capture_required", {
     action: "complete",
-    taskId: task.id
+    taskId: task.id,
+    messageId,
+    planId,
+    page
   });
   if (!saved) {
     await sendTelegramMessage(
@@ -870,12 +1007,161 @@ async function startActionForTask({
     );
     return;
   }
-  await sendTelegramMessage(
+  const captureText = `Antes de completar necesito la captura minima.\n${taskLine(task, greenhouseName)}\n\n${capturePromptForTask(task)}`;
+  if (messageId) {
+    await editTelegramMessage(botToken, chatId, messageId, captureText, cancelKeyboard());
+  } else {
+    await sendTelegramMessage(botToken, chatId, captureText, cancelKeyboard());
+  }
+}
+
+async function handleMenuCallback({ adminClient, botToken, chatId, connection, callbackData, messageId }: any) {
+  const match = callbackData.match(/^menu:page:([0-9a-f-]{36}):(\d{1,3})$/i);
+  if (!match) return false;
+  await clearSession(adminClient, connection);
+  await showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId: match[1], page: Number(match[2]) });
+  return true;
+}
+
+async function handleFlowCallback({ adminClient, botToken, chatId, connection, callbackData, messageId }: any) {
+  if (!/^flow:(yes|no|cancel)$/.test(callbackData)) return false;
+  const session = await loadSession(adminClient, connection);
+  if (!session || session.payload?.messageId !== messageId) return true;
+
+  if (callbackData === "flow:cancel" || callbackData === "flow:no") {
+    await clearSession(adminClient, connection);
+    if (session.payload?.planId) {
+      await showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId: session.payload.planId, page: session.payload.page ?? 0 });
+    } else {
+      await editTelegramMessage(botToken, chatId, messageId, "<b>Sin cambios.</b>");
+    }
+    return true;
+  }
+
+  if (session.session_type !== "confirmation") return true;
+  await clearSession(adminClient, connection);
+  try {
+    const result = await executeConfirmedAction(adminClient, connection, session.payload);
+    const planId = session.payload?.planId ?? result.task.weekly_plan_id;
+    if (planId) {
+      await showPlanMenu({
+        adminClient,
+        botToken,
+        chatId,
+        connection,
+        messageId,
+        planId,
+        page: session.payload?.page ?? 0
+      });
+    } else {
+      await editTelegramMessage(botToken, chatId, messageId, `<b>✅ Actividad terminada</b>\n${escapeHtml(result.task.title)}`);
+    }
+  } catch (_caught) {
+    if (session.payload?.planId) {
+      await showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId: session.payload.planId, page: session.payload.page ?? 0 });
+    } else {
+      await editTelegramMessage(botToken, chatId, messageId, "<b>No pude guardar el cambio.</b> Intenta desde Mira.");
+    }
+  }
+  return true;
+}
+
+async function handleBlockReasonCallback({ adminClient, botToken, chatId, connection, callbackData, messageId }: any) {
+  const match = callbackData.match(/^block:(material|other):([0-9a-f-]{36})$/i);
+  if (!match) return false;
+
+  const { tasks } = await loadTaskContext(adminClient, connection, [match[2]]);
+  const task = tasks[0];
+  if (!task) {
+    await clearSession(adminClient, connection);
+    await editTelegramMessage(botToken, chatId, messageId, "Esta actividad ya no está pendiente o ya no está asignada a ti.");
+    return true;
+  }
+
+  await clearSession(adminClient, connection);
+  const note = match[1] === "material"
+    ? "Telegram: Falta producto o material"
+    : "Telegram: Problema reportado por encargado; requiere revisión de admin";
+  try {
+    await executeTelegramWorkAction(adminClient, connection, task, "block", note);
+    await showPlanMenu({ adminClient, botToken, chatId, connection, messageId, planId: task.weekly_plan_id, page: 0 });
+  } catch (_caught) {
+    await editTelegramMessage(botToken, chatId, messageId, "No pude registrar el problema. Intenta desde Mira.");
+  }
+  return true;
+}
+
+async function handleTaskCallback({
+  adminClient,
+  botToken,
+  chatId,
+  connection,
+  callbackData,
+  messageId
+}: {
+  adminClient: any;
+  botToken: string;
+  chatId: string;
+  connection: any;
+  callbackData: string;
+  messageId: number;
+}) {
+  const match = callbackData.match(/^task:(view|complete|block):([0-9a-f-]{36})$/i);
+  if (!match) return false;
+
+  const action = match[1];
+  const taskId = match[2];
+  const { tasks, greenhouseById } = await loadTaskContext(adminClient, connection, [taskId]);
+  const task = tasks[0];
+  if (!task) {
+    await clearSession(adminClient, connection);
+    await sendTelegramMessage(botToken, chatId, "Esta actividad ya no está pendiente o ya no está asignada a ti.");
+    return true;
+  }
+
+  const greenhouseName = greenhouseById.get(task.greenhouse_id) ?? "Invernadero";
+  const planId = task.weekly_plan_id;
+  const existingSession = await loadSession(adminClient, connection);
+  if (existingSession?.session_type === "confirmation" && existingSession.payload?.messageId === messageId) {
+    return true;
+  }
+  await clearSession(adminClient, connection);
+
+  if (action === "view") {
+    const detail = [
+      "<b>📋 ACTIVIDAD</b>",
+      `<b>${escapeHtml(task.title)}</b>`,
+      `${escapeHtml(task.scheduled_date)} · ${escapeHtml(task.scheduled_time ? task.scheduled_time.slice(0, 5) : "Sin hora")}`,
+      `📍 ${escapeHtml(greenhouseName)}`,
+      task.instructions ? `📝 ${escapeHtml(task.instructions)}` : ""
+    ].filter(Boolean).join("\n\n");
+    await editTelegramMessage(botToken, chatId, messageId, detail, taskActionsKeyboard(task.id, planId));
+    return true;
+  }
+
+  if (action === "block") {
+    await editTelegramMessage(botToken, chatId, messageId, `<b>¿Qué pasó?</b>\n${escapeHtml(task.title)}`, problemTypeKeyboard(task.id));
+    return true;
+  }
+
+  const parser = captureParserForTask(task);
+  if (!parser) {
+    await askConfirmation({ adminClient, botToken, chatId, connection, greenhouseName, task, action: "complete", messageId, planId });
+    return true;
+  }
+  await startActionForTask({
+    adminClient,
     botToken,
     chatId,
-    `Antes de completar necesito la captura minima.\n${taskLine(task, greenhouseName)}\n\n${capturePromptForTask(task)}`,
-    cancelKeyboard()
-  );
+    connection,
+    greenhouseName,
+    task,
+    parsed: { action: "complete", note: null, query: "" },
+    originalText: "",
+    messageId,
+    planId
+  });
+  return true;
 }
 
 async function handleSessionReply({ adminClient, botToken, chatId, connection, session, text }: any) {
@@ -928,6 +1214,27 @@ async function handleSessionReply({ adminClient, botToken, chatId, connection, s
       return true;
     }
 
+    if (session.payload?.action === "block") {
+      const reason = String(text ?? "").trim();
+      if (reason.length < 3) {
+        await sendTelegramMessage(botToken, chatId, "Escribe brevemente el motivo del bloqueo o cancela.", cancelKeyboard());
+        return true;
+      }
+      await askConfirmation({
+        adminClient,
+        botToken,
+        chatId,
+        connection,
+        greenhouseName: greenhouseById.get(task.greenhouse_id) ?? "Invernadero",
+        task,
+        action: "block",
+        note: `Telegram: ${reason.slice(0, 500)}`,
+        messageId: session.payload?.messageId,
+        planId: session.payload?.planId
+      });
+      return true;
+    }
+
     const parser = captureParserForTask(task);
     const parsedCapture = parser?.(text, task);
     if (!parsedCapture?.ok) {
@@ -944,7 +1251,10 @@ async function handleSessionReply({ adminClient, botToken, chatId, connection, s
       task,
       action: "complete",
       executionPayload: parsedCapture.payload,
-      executionSummary: parsedCapture.summary
+      executionSummary: parsedCapture.summary,
+      messageId: session.payload?.messageId,
+      planId: session.payload?.planId,
+      page: session.payload?.page
     });
     return true;
   }
@@ -1045,7 +1355,7 @@ async function handleOperationalReply({
     .select("id, company_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, instructions, technical_plan")
     .eq("company_id", connection.company_id)
     .in("id", taskIds)
-    .not("status", "in", "(completada,verificada,cancelada)")
+    .not("status", "in", "(completada,verificada,cancelada,bloqueada)")
     .gte("scheduled_date", dateStart)
     .lte("scheduled_date", dateEnd)
     .order("scheduled_date", { ascending: true })
@@ -1197,7 +1507,17 @@ Deno.serve(async (request) => {
       return response({ ok: true });
     }
 
-    await handleOperationalReply({ adminClient, botToken, chatId, connection: activeConnection, text });
+    const callbackData = String(callbackQuery?.data ?? "");
+    const messageId = Number(callbackMessage?.message_id ?? 0);
+    const handledCallback = callbackData && messageId
+      ? await handleMenuCallback({ adminClient, botToken, chatId, connection: activeConnection, callbackData, messageId })
+        || await handleFlowCallback({ adminClient, botToken, chatId, connection: activeConnection, callbackData, messageId })
+        || await handleBlockReasonCallback({ adminClient, botToken, chatId, connection: activeConnection, callbackData, messageId })
+        || await handleTaskCallback({ adminClient, botToken, chatId, connection: activeConnection, callbackData, messageId })
+      : false;
+    if (!handledCallback) {
+      await handleOperationalReply({ adminClient, botToken, chatId, connection: activeConnection, text });
+    }
     return response({ ok: true });
   }
 

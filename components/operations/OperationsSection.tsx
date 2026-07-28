@@ -521,6 +521,15 @@ function telegramDispatchMessage(data: any) {
   ].filter(Boolean).join(" · ");
 }
 
+async function telegramInvokeErrorMessage(error: unknown, fallback: string) {
+  const response = (error as { context?: Response } | null)?.context;
+  if (response && typeof response.clone === "function") {
+    const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
+    if (payload?.error) return appErrorMessage({ message: payload.error }, fallback);
+  }
+  return appErrorMessage(error, fallback);
+}
+
 function ActivityFormModal({
   open,
   onClose,
@@ -1877,14 +1886,18 @@ export function OperationsSection({
       const { error } = await supabase.rpc("publish_weekly_plan", { target_plan_id: plan.id });
       if (error) throw error;
 
+      const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError || !sessionData.session?.access_token) throw sessionError ?? new Error("not_authenticated");
+
       const { data, error: dispatchError } = await supabase.functions.invoke("telegram-dispatch", {
-        body: { weeklyPlanId: plan.id }
+        body: { weeklyPlanId: plan.id },
+        headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
       });
 
       if (dispatchError) {
         setNotice({
           tone: "red",
-          message: `Semana publicada, pero no se pudo enviar la notificación: ${appErrorMessage(dispatchError, "revisa la funcion de envio.")}`
+          message: `Semana publicada, pero no se pudo enviar la notificación: ${await telegramInvokeErrorMessage(dispatchError, "revisa la función de envío.")}`
         });
       } else {
         setNotice({ tone: "green", message: `Semana publicada. ${telegramDispatchMessage(data)}` });
@@ -1904,13 +1917,49 @@ export function OperationsSection({
 
     setDispatchingTelegram(true);
     setNotice(null);
+    const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
+    if (sessionError || !sessionData.session?.access_token) {
+      setDispatchingTelegram(false);
+      setNotice({ tone: "red", message: appErrorMessage(sessionError, "Tu sesión expiró. Vuelve a iniciar sesión.") });
+      return;
+    }
+
     const { data, error } = await supabase.functions.invoke("telegram-dispatch", {
-      body: { weeklyPlanId: plan.id }
+      body: { weeklyPlanId: plan.id },
+      headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
     });
     setDispatchingTelegram(false);
 
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reenviar la semana.") });
+      setNotice({ tone: "red", message: await telegramInvokeErrorMessage(error, "No se pudo enviar los cambios pendientes.") });
+      return;
+    }
+
+    setNotice({ tone: "green", message: telegramDispatchMessage(data) });
+  };
+
+  const resendActiveTelegramForPlan = async () => {
+    if (!plan) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setDispatchingTelegram(true);
+    setNotice(null);
+    const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
+    if (sessionError || !sessionData.session?.access_token) {
+      setDispatchingTelegram(false);
+      setNotice({ tone: "red", message: appErrorMessage(sessionError, "Tu sesión expiró. Vuelve a iniciar sesión.") });
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke("telegram-dispatch", {
+      body: { weeklyPlanId: plan.id, mode: "active" },
+      headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+    });
+    setDispatchingTelegram(false);
+
+    if (error) {
+      setNotice({ tone: "red", message: await telegramInvokeErrorMessage(error, "No se pudo reenviar las actividades activas.") });
       return;
     }
 
@@ -2493,14 +2542,23 @@ export function OperationsSection({
                   : "Publica cuando instrucciones y responsables estén listos."}
               </p>
               {plan.status === "published" ? (
-                <Button
-                  disabled={dispatchingTelegram}
-                  icon={<Send className="h-4 w-4" />}
-                  onClick={sendTelegramForPlan}
-                  variant="secondary"
-                >
-                  {dispatchingTelegram ? "Enviando..." : "Reenviar semana"}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={dispatchingTelegram}
+                    icon={<Send className="h-4 w-4" />}
+                    onClick={sendTelegramForPlan}
+                    variant="secondary"
+                  >
+                    {dispatchingTelegram ? "Enviando cambios..." : "Enviar cambios pendientes"}
+                  </Button>
+                  <Button
+                    disabled={dispatchingTelegram}
+                    onClick={resendActiveTelegramForPlan}
+                    variant="ghost"
+                  >
+                    Reenviar actividades activas
+                  </Button>
+                </div>
               ) : (
                 <Button
                   disabled={publishing}

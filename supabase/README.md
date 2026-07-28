@@ -144,6 +144,8 @@ Para revocar de inmediato el acceso de managers desactivados —incluyendo asign
 
 Para exigir el contrato mínimo de Work y evitar que una base atrasada actualice `tasks.status` directamente, ejecuta `53_work_schema_contract.sql` después de `52_p0_authorization_revocation.sql`.
 
+Para mantener las notificaciones de Telegram alineadas con las asignaciones actuales, avisar únicamente actividades nuevas o modificadas después de publicar y cancelar pendientes de responsables removidos, aplica `migrations/20260727000000_weekly_notification_refresh.sql` después de `53_work_schema_contract.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash
