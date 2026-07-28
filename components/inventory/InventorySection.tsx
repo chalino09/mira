@@ -254,7 +254,7 @@ export function InventorySection() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Almacén central</p>
           <h1 className="mt-4 text-3xl font-light text-app-text sm:text-4xl md:text-6xl">Inventario</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar un Work.</p>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">Registra compras; los consumos y costos se actualizan al completar una actividad.</p>
         </div>
         {canManage ? <div className="hidden flex-wrap gap-2 lg:flex">
           <Button icon={<ArchiveRestore className="h-4 w-4" />} onClick={openEntry} variant="primary">Registrar entrada</Button>
@@ -328,7 +328,7 @@ export function InventorySection() {
 
       <Modal open={activeForm === "rate"} onClose={() => setActiveForm(null)} title="Tarifas automáticas" panelClassName="sm:max-w-xl">
         <form className="grid gap-5" onSubmit={saveRate}>
-          <p className="text-sm leading-6 text-app-muted">Estas tarifas calculan costos de agua, energía y mano de obra al completar un Work.</p>
+          <p className="text-sm leading-6 text-app-muted">Estas tarifas calculan costos de agua, energía y mano de obra al completar una actividad.</p>
           <Field label="Recurso"><SelectInput defaultValue="water" name="resource"><option value="water">Agua</option><option value="energy">Energía</option><option value="labor">Mano de obra</option></SelectInput></Field>
           <div className="grid gap-4 sm:grid-cols-2"><Field label="Unidad"><UnitSelectInput defaultValue="lt" name="unit" required /></Field><Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field></div>
           <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar tarifa</Button></div>

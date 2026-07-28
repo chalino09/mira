@@ -217,7 +217,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         {
           id: makeId("act"),
           greenhouseId: task.greenhouseId,
-          title: "Nueva tarea creada",
+          title: "Nueva actividad creada",
           detail: task.title,
           time: "Ahora"
         },

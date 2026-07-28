@@ -417,8 +417,8 @@ export function TodayDecisionBoard({
               variant="ghost"
             >
               {hiddenDecisionCount
-                ? `Ver ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? "decisión más" : "decisiones más"} en Work`
-                : "Abrir Work"}
+                ? `Ver ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? "decisión más" : "decisiones más"} en Operación`
+                : "Abrir Operación"}
             </Button>
           </aside>
         </div>
@@ -437,7 +437,7 @@ export function TodayDecisionBoard({
             onClick={onOpenOperations}
             variant="secondary"
           >
-            Abrir Work
+            Abrir Operación
           </Button>
         </div>
       )}

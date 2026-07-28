@@ -422,10 +422,10 @@ function OverviewSection({
     setSavingTaskId(simpleCompletionTask.id);
     try {
       await completeTaskRecord(simpleCompletionTask.id, completeTask, updateNote);
-      setTaskNotice({ tone: "green", message: "Tarea marcada como completada." });
+      setTaskNotice({ tone: "green", message: "Actividad marcada como completada." });
       setSimpleCompletionTask(null);
     } catch (caught) {
-      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo completar la tarea.") });
+      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo completar la actividad.") });
     } finally {
       setSavingTaskId(null);
     }
@@ -446,9 +446,9 @@ function OverviewSection({
       if (error) throw error;
 
       completeTask(taskId, "Verificada");
-      setTaskNotice({ tone: "green", message: "Work verificado. La decisión quedó resuelta." });
+      setTaskNotice({ tone: "green", message: "Actividad verificada. La decisión quedó resuelta." });
     } catch (caught) {
-      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo verificar el Work.") });
+      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo verificar la actividad.") });
     } finally {
       setSavingTaskId(null);
     }

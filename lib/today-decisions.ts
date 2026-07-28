@@ -87,12 +87,12 @@ function approvalDecision(task: Task, greenhouses: Greenhouse[], today: string):
     kind: "approval",
     group: "decision",
     title: `Verificar ${task.title}`,
-    reason: "El Work fue completado y espera tu criterio antes de cerrarse.",
+    reason: "La actividad fue completada y espera tu criterio antes de cerrarse.",
     impact: "Al verificarlo, el resultado queda aprobado para el equipo.",
     context: `${greenhouseName(task.greenhouseId, greenhouses)} · ${task.type}`,
     timing: task.date < today ? "Verificación pendiente" : "Completado hoy",
     priority: "high",
-    primaryAction: { type: "verify", label: "Verificar Work" },
+    primaryAction: { type: "verify", label: "Verificar" },
     secondaryAction: { type: "open-work", label: "Revisar evidencia" },
     score: 120 + daysBetween(task.date, today)
   };
@@ -105,12 +105,12 @@ function blockedDecision(task: Task, greenhouses: Greenhouse[], today: string): 
     kind: "blocked-work",
     group: "blocking",
     title: `Desbloquear ${task.title}`,
-    reason: "El trabajo está detenido y necesita una decisión para poder continuar.",
+    reason: "La actividad está detenida y necesita una decisión para poder continuar.",
     impact: "Resolver el bloqueo evita que el plan operativo siga acumulando retraso.",
     context: `${greenhouseName(task.greenhouseId, greenhouses)} · ${task.responsible}`,
     timing: taskTiming(task, today),
     priority: "critical",
-    primaryAction: { type: "open-work", label: "Resolver en Work" },
+    primaryAction: { type: "open-work", label: "Resolver" },
     score: 105 + daysBetween(task.date, today)
   };
 }
@@ -149,7 +149,7 @@ function assignedWorkDecision(task: Task, greenhouses: Greenhouse[], today: stri
     group: "next",
     title: task.title,
     reason: overdue
-      ? "Este Work está vencido y sigue esperando ejecución."
+      ? "Esta actividad está vencida y sigue esperando ejecución."
       : "Es la siguiente acción asignada para hoy.",
     impact: overdue
       ? "Completarlo recupera el ritmo del plan operativo."
@@ -157,8 +157,8 @@ function assignedWorkDecision(task: Task, greenhouses: Greenhouse[], today: stri
     context: `${greenhouseName(task.greenhouseId, greenhouses)} · ${task.type}`,
     timing: taskTiming(task, today),
     priority: overdue ? "high" : "normal",
-    primaryAction: { type: "complete", label: "Completar Work" },
-    secondaryAction: { type: "open-work", label: "Abrir Work" },
+    primaryAction: { type: "complete", label: "Completar" },
+    secondaryAction: { type: "open-work", label: "Abrir actividad" },
     score: (overdue ? 80 : 60) + daysBetween(task.date, today)
   };
 }

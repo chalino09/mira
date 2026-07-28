@@ -248,7 +248,7 @@ export function buildCopilotPulse({
         title: isYesterday ? "Actividad de ayer sin completar" : "Actividad vencida sin cierre",
         detail: `${operationTypeLabel(task.type)} en ${greenhouseName(greenhouses, greenhouseId)} sigue ${task.status}.`,
         severity: status.includes("bloque") ? "high" : isYesterday ? "medium" : "high",
-        recommendedAction: `Preparar mensaje para ${managerName(greenhouses, greenhouseId)} o crear una tarea de seguimiento.`,
+        recommendedAction: `Preparar mensaje para ${managerName(greenhouses, greenhouseId)} o crear una actividad de seguimiento.`,
         evidence: [
           { label: "Actividad", value: task.title },
           { label: "Fecha", value: date },
@@ -291,7 +291,7 @@ export function buildCopilotPulse({
         title: "Alerta sanitaria pendiente",
         detail: `${pestProblemLabel(alert.problem)} en ${alert.zone || greenhouseName(greenhouses, alert.greenhouseId)}.`,
         severity: alert.severity === "Alta" ? "high" : "medium",
-        recommendedAction: "Confirmar seguimiento y programar revision si no existe tarea.",
+        recommendedAction: "Confirmar seguimiento y programar revisión si no existe una actividad.",
         evidence: [
           { label: "Severidad", value: alert.severity },
           { label: "Fecha", value: alert.detectedAt }

@@ -6,7 +6,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
   return (
     <div className="rounded-app border border-app-border bg-white">
       <div className="border-b border-app-border px-4 py-3">
-        <h3 className="text-sm font-semibold text-app-text">Tareas de hoy</h3>
+        <h3 className="text-sm font-semibold text-app-text">Actividades de hoy</h3>
       </div>
       <div className="divide-y divide-app-border">
         {tasks.map((task) => (

@@ -766,7 +766,7 @@ function ActivityFormModal({
             <Field label="Horas por persona">
               <FormattedNumberInput min={0} onChange={(event) => updateTechnicalPlan({ laborHours: event.target.value })} step="0.25" value={technicalPlan.laborHours ?? ""} />
             </Field>
-            <p className="sm:col-span-2 text-xs leading-5 text-app-muted">Si configuras sus tarifas en Inventario, estos valores generan costos automáticos al completar el Work.</p>
+            <p className="sm:col-span-2 text-xs leading-5 text-app-muted">Si configuras sus tarifas en Inventario, estos valores generan costos automáticos al completar la actividad.</p>
           </div>
           {activityType === "riego" ? (
             <div className="grid gap-4 border-t border-app-border pt-4 sm:col-span-2 sm:grid-cols-2">
@@ -1566,7 +1566,7 @@ function WorkEvidenceModal({
   return (
     <Modal open={Boolean(task)} onClose={onClose} title="Evidencia privada" panelClassName="sm:max-w-xl">
       <div className="grid gap-5">
-        <p className="text-sm leading-6 text-app-muted">Los archivos quedan vinculados a este Work y sólo se abren con enlaces temporales para miembros de la empresa.</p>
+        <p className="text-sm leading-6 text-app-muted">Los archivos quedan vinculados a esta actividad y sólo se abren con enlaces temporales para miembros de la empresa.</p>
         <form className="grid gap-4 border-y border-app-border py-4" onSubmit={handleSubmit}>
           <Field label="Archivo"><TextInput accept="image/jpeg,image/png,image/webp,application/pdf" name="file" required type="file" /></Field>
           <Field label="Nota (opcional)"><TextInput name="note" placeholder="Qué confirma esta evidencia" /></Field>
@@ -2242,7 +2242,7 @@ export function OperationsSection({
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: data?.status === "verificada" ? "Trabajo completado y verificado." : "Trabajo completado." });
+    setNotice({ tone: "green", message: data?.status === "verificada" ? "Actividad completada y verificada." : "Actividad completada." });
     await loadOperations();
   }, [loadOperations, materials]);
 
@@ -2255,10 +2255,10 @@ export function OperationsSection({
     const { error } = await supabase.rpc("start_work", { target_work_id: task.id });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo iniciar el trabajo.") });
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo iniciar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: "Trabajo iniciado." });
+    setNotice({ tone: "green", message: "Actividad iniciada." });
     await loadOperations();
   };
 
@@ -2271,10 +2271,10 @@ export function OperationsSection({
     const { error } = await supabase.rpc("verify_work", { target_work_id: task.id, target_note: null });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo verificar el trabajo.") });
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo verificar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: "Trabajo verificado." });
+    setNotice({ tone: "green", message: "Actividad verificada." });
     await loadOperations();
   };
 
@@ -2549,12 +2549,12 @@ export function OperationsSection({
     });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reabrir el trabajo.") });
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo reabrir la actividad.") });
       return;
     }
     setReopenTask(null);
     setReopenReason("");
-    setNotice({ tone: "green", message: "Trabajo reabierto para ejecución." });
+    setNotice({ tone: "green", message: "Actividad reabierta para ejecución." });
     await loadOperations();
   };
 
@@ -2585,7 +2585,7 @@ export function OperationsSection({
         note: note.trim() || null
       });
       if (error) throw error;
-      setNotice({ tone: "green", message: "Evidencia privada adjuntada al trabajo." });
+      setNotice({ tone: "green", message: "Evidencia privada adjuntada a la actividad." });
       await loadOperations();
     } catch (caught) {
       setNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo adjuntar la evidencia.") });
@@ -2689,8 +2689,8 @@ export function OperationsSection({
             <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-5xl">{specialtyLabel ?? "Operación"}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
-                ? "Planea, ejecuta, verifica y consulta cada Work desde un solo lugar."
-                : "Consulta, confirma, adjunta evidencia y reporta el avance de tus trabajos."}
+                ? "Planea, ejecuta, verifica y consulta cada actividad operativa desde un solo lugar."
+                : "Consulta, confirma, adjunta evidencia y reporta el avance de tus actividades."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2889,7 +2889,7 @@ export function OperationsSection({
           {operationView !== "history" && globalOverdueTasks.length && overdueExpanded ? (
             <section className="border-b border-app-border py-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-medium text-app-text">Trabajos vencidos</p>
+                <p className="text-sm font-medium text-app-text">Actividades vencidas</p>
                 <Button onClick={() => setOverdueExpanded(false)} variant="ghost">Ocultar</Button>
               </div>
               <div className="mt-4 grid gap-3">
@@ -2927,7 +2927,7 @@ export function OperationsSection({
               <div className="flex flex-col gap-4 border-b border-app-border pb-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="text-sm font-medium text-app-text">Historial operativo</p>
-                  <p className="mt-1 text-sm leading-6 text-app-muted">Cada Work conserva su planeación, resultado técnico y evidencia en una misma línea.</p>
+                  <p className="mt-1 text-sm leading-6 text-app-muted">Cada actividad conserva su planeación, resultado técnico y evidencia en una misma línea.</p>
                 </div>
                 <div className="w-full lg:max-w-sm">
                   <TextInput
@@ -2985,7 +2985,7 @@ export function OperationsSection({
                             <p className="mt-3 text-sm leading-6 text-app-muted">
                               {historyKindForTask(task)
                                 ? "No se encontró un resultado técnico asociado."
-                                : "Este Work no requiere un resultado técnico."}
+                                : "Esta actividad no requiere un resultado técnico."}
                             </p>
                           )}
                           {resultKinds.length ? <div className="mt-3 flex flex-wrap gap-1.5">{resultKinds.map((kind) => <StatusBadge key={kind} tone="green">{historyKindLabel(kind)}</StatusBadge>)}</div> : null}
@@ -3007,7 +3007,7 @@ export function OperationsSection({
                 <div className="mt-8">
                   <EmptyState
                     icon={CalendarRange}
-                    title={historyQuery || historyTypeFilter !== "all" ? "No hay Works cerrados que coincidan con los filtros." : "Aún no hay Works cerrados en este alcance."}
+                    title={historyQuery || historyTypeFilter !== "all" ? "No hay actividades cerradas que coincidan con los filtros." : "Aún no hay actividades cerradas en este alcance."}
                   />
                 </div>
               )}
@@ -3069,7 +3069,7 @@ export function OperationsSection({
                               {["pendiente", "en_progreso"].includes(task.status) ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
                               ) : task.status === "bloqueada" ? (
-                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Reanudar trabajo" variant="primary">Reanudar</Button>
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Reanudar actividad" variant="primary">Reanudar</Button>
                               ) : canPlan && task.status === "completada" ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} variant="primary">Verificar</Button>
                               ) : null}
@@ -3118,7 +3118,7 @@ export function OperationsSection({
                           </article>
                         );
                       })}
-                      {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin trabajos en esta vista</p> : null}
+                      {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin actividades en esta vista</p> : null}
                     </div>
                   </section>
                     );
@@ -3133,7 +3133,7 @@ export function OperationsSection({
                 actionLabel={canPlan ? "Agregar actividad" : undefined}
                 icon={CalendarRange}
                 onAction={canPlan ? openNewActivity : undefined}
-                title={canPlan ? "La semana todavía no tiene trabajos de este tipo." : "No tienes trabajos asignados de este tipo."}
+                title={canPlan ? "La semana todavía no tiene actividades de este tipo." : "No tienes actividades asignadas de este tipo."}
               />
             </div>
           )}
@@ -3237,23 +3237,23 @@ export function OperationsSection({
         </form>
       </Modal>
 
-      <Modal open={Boolean(reopenTask)} onClose={() => { setReopenTask(null); setReopenReason(""); }} title="Reabrir trabajo">
+      <Modal open={Boolean(reopenTask)} onClose={() => { setReopenTask(null); setReopenReason(""); }} title="Reabrir actividad">
         <form className="grid gap-5" onSubmit={reopenCompletedWork}>
           <div>
             <p className="text-sm font-medium text-app-text">{reopenTask?.title}</p>
-            <p className="mt-2 text-sm leading-6 text-app-muted">El trabajo volverá a ejecución y el motivo quedará en su auditoría.</p>
+            <p className="mt-2 text-sm leading-6 text-app-muted">La actividad volverá a ejecución y el motivo quedará en su auditoría.</p>
           </div>
           <Field label="Motivo">
             <TextArea
               onChange={(event) => setReopenReason(event.target.value)}
-              placeholder="Describe qué debe corregirse antes de volver a completar el trabajo."
+              placeholder="Describe qué debe corregirse antes de volver a completar la actividad."
               required
               value={reopenReason}
             />
           </Field>
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setReopenTask(null); setReopenReason(""); }} type="button" variant="secondary">Cancelar</Button>
-            <Button disabled={completing} icon={<RotateCcw className="h-4 w-4" />} type="submit" variant="primary">Reabrir trabajo</Button>
+            <Button disabled={completing} icon={<RotateCcw className="h-4 w-4" />} type="submit" variant="primary">Reabrir actividad</Button>
           </div>
         </form>
       </Modal>

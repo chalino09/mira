@@ -248,7 +248,7 @@ const modalCopy = {
     note: "Actualiza variedad, trasplante, plantas y datos base del cultivo."
   },
   task: {
-    title: "Nueva tarea",
+    title: "Nueva actividad",
     kicker: "Agenda operativa",
     note: "Programa una acción para el equipo del área productiva."
   },
@@ -769,7 +769,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     });
     if (rpcError) throw rpcError;
     const result = data as { workId?: string; materialIds?: string[] } | null;
-    if (!result?.workId) throw new Error("No se pudo crear el Work no planeado.");
+    if (!result?.workId) throw new Error("No se pudo crear la actividad no planeada.");
     return { workId: result.workId, materialIds: result.materialIds ?? [] };
   };
 
@@ -905,7 +905,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .select("id")
         .single();
       if (insertError) throw insertError;
-      addTask({ ...record, id: insertedId(data, "No se pudo confirmar la tarea guardada.") });
+      addTask({ ...record, id: insertedId(data, "No se pudo confirmar la actividad guardada.") });
     });
   };
 
