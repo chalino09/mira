@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AlertOctagon,
   ArrowRight,
@@ -181,21 +181,20 @@ function FocusDecision({
 
 function NextDecision({
   decision,
-  onSelect,
+  onOpen,
   className
 }: {
   decision: TodayDecision;
-  onSelect: () => void;
+  onOpen: () => void;
   className?: string;
 }) {
   return (
     <li className={className}>
       <button
-        aria-controls="today-focus-decision"
         className={cn(
           "group flex min-h-[88px] w-full items-start gap-3 rounded-lg px-3 py-3 text-start outline-offset-2 transition-[background-color] duration-100 ease-out hover:bg-app-sidebar focus-visible:bg-app-sidebar"
         )}
-        onClick={onSelect}
+        onClick={onOpen}
         type="button"
       >
         <span
@@ -250,9 +249,8 @@ export function TodayDecisionBoard({
     () => buildTodayDecisions({ tasks, alerts, greenhouses, currentUser }),
     [alerts, currentUser, greenhouses, tasks]
   );
-  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(decisions[0]?.id ?? null);
-  const selectedDecision = decisions.find((decision) => decision.id === selectedDecisionId) ?? decisions[0];
-  const nextDecisions = decisions.filter((decision) => decision.id !== selectedDecision?.id).slice(0, 3);
+  const selectedDecision = decisions[0];
+  const nextDecisions = decisions.slice(1, 4);
   const firstName = currentUser.fullName.split(" ")[0] || "Usuario";
   const pendingAlerts = alerts.filter((alert) => alert.caseStatus !== "Cierre sanitario").length;
   const cropStatus = getCropDdtStatus(
@@ -278,20 +276,8 @@ export function TodayDecisionBoard({
   const visibleDecisionCount = selectedDecision ? 1 + nextDecisions.length : 0;
   const hiddenDecisionCount = Math.max(0, decisions.length - visibleDecisionCount);
 
-  useEffect(() => {
-    if (!decisions.length) {
-      setSelectedDecisionId(null);
-      return;
-    }
-    if (!decisions.some((decision) => decision.id === selectedDecisionId)) {
-      setSelectedDecisionId(decisions[0].id);
-    }
-  }, [decisions, selectedDecisionId]);
-
-  const onAction = (action: TodayDecisionAction, decision: TodayDecision) => {
-    if (action === "verify") return onVerifyTask(decision.sourceId);
-    if (action === "complete") return onCompleteTask(decision.sourceId);
-    if (action === "open-pest") return onOpenPests();
+  const openDecisionDetails = (decision: TodayDecision) => {
+    if (decision.kind === "pest-exception") return onOpenPests();
     if (decision.kind === "approval") {
       return onOpenWork(decision.sourceId, "verification", "details");
     }
@@ -299,6 +285,13 @@ export function TodayDecisionBoard({
       return onOpenWork(decision.sourceId, "execution", "details");
     }
     return onOpenWork(decision.sourceId, "calendar", "details");
+  };
+
+  const onAction = (action: TodayDecisionAction, decision: TodayDecision) => {
+    if (action === "verify") return onVerifyTask(decision.sourceId);
+    if (action === "complete") return onCompleteTask(decision.sourceId);
+    if (action === "open-pest") return onOpenPests();
+    return openDecisionDetails(decision);
   };
 
   const pulseItems = [
@@ -383,7 +376,7 @@ export function TodayDecisionBoard({
           <div aria-atomic="true" className="sr-only" role="status">
             Decisión prioritaria: {selectedDecision.title}
           </div>
-          <div className="today-priority-swap" id="today-focus-decision" key={selectedDecision.id}>
+          <div id="today-focus-decision">
             <FocusDecision
               busy={busyTaskId === selectedDecision.sourceId}
               decision={selectedDecision}
@@ -407,7 +400,7 @@ export function TodayDecisionBoard({
                   className={cn(index === 2 && "hidden sm:list-item lg:list-item")}
                   decision={decision}
                   key={decision.id}
-                  onSelect={() => setSelectedDecisionId(decision.id)}
+                  onOpen={() => openDecisionDetails(decision)}
                 />
               ))}
             </ul>
