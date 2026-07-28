@@ -2686,7 +2686,7 @@ export function OperationsSection({
       <header className="mb-4 border-b border-app-border pb-4 pt-4 md:pt-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-5xl">{specialtyLabel ?? "Operación"}</h1>
+            <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
                 ? "Planea, ejecuta, verifica y consulta cada actividad operativa desde un solo lugar."
