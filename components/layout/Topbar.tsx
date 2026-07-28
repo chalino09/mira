@@ -65,7 +65,7 @@ export function Topbar({
             ) : (
               <select
                 aria-label="Alcance de invernaderos"
-                className="min-w-0 bg-transparent font-medium text-app-text outline-none"
+                className="h-full min-w-0 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
                 value={selectedGreenhouseId}
                 onChange={(event) => navigate({ greenhouseId: event.target.value })}
               >
@@ -84,7 +84,7 @@ export function Topbar({
               {acceptsPeriod ? (
                 <select
                   aria-label="Periodo"
-                  className="bg-transparent font-medium text-app-text outline-none"
+                  className="h-full cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
                   value={selectedPeriod}
                   onChange={(event) => navigate({ period: event.target.value as typeof selectedPeriod })}
                 >
@@ -96,10 +96,14 @@ export function Topbar({
             </div>
           ) : null}
           <span className="hidden text-xs text-app-muted lg:inline">Viendo {scopeLabel}{hasContextPeriod ? ` · ${periodLabel}` : ""}</span>
-          <div className="hidden h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:flex">
+          <button
+            className="hidden h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted transition-[background-color,color] duration-150 ease-out hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green sm:flex"
+            onClick={() => navigate({ section: "records" })}
+            type="button"
+          >
             <Search className="h-3.5 w-3.5" />
             <span>Buscar registros</span>
-          </div>
+          </button>
           {onOpenCopilot ? (
             <MiraCopilotCommand insightCount={copilotInsightCount} onOpen={onOpenCopilot} />
           ) : null}

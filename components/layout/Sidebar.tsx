@@ -34,6 +34,7 @@ export function NavButton({ id, label, icon: Icon }: NavButtonProps) {
 
   return (
     <Link
+      aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-app-muted transition",
         active ? "border border-app-border bg-white text-app-text" : "border border-transparent hover:bg-white hover:text-app-text"

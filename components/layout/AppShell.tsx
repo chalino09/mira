@@ -31,7 +31,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { RouteSync } from "@/components/layout/RouteSync";
 import { RouteAccessDenied } from "@/components/access/RouteAccessDenied";
-import { CopilotPulseBand, MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
+import { MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
@@ -39,7 +39,7 @@ import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
 import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
 import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
-import { OverviewHero } from "@/components/overview/OverviewHero";
+import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
 import { InventorySection } from "@/components/inventory/InventorySection";
@@ -314,6 +314,13 @@ type CopilotSurfaceProps = {
   onOperationViewChange?: (view: "calendar" | "plan" | "execution" | "verification" | "history") => void;
   pendingCompletionTask?: { id: string; date: string } | null;
   onPendingCompletionConsumed?: () => void;
+  pendingOpenWork?: { id: string; intent: "details" | "evidence" } | null;
+  onPendingOpenWorkConsumed?: () => void;
+  onOpenWork?: (
+    taskId: string,
+    view: "calendar" | "execution" | "verification",
+    intent: "details" | "evidence"
+  ) => void;
   onRequestTechnicalCompletion?: (task: Task) => void;
 };
 
@@ -362,31 +369,22 @@ const pestUpdateStatuses = Object.keys(pestUpdateStatusToDb) as PestUpdateStatus
 const pestActionTypes = Object.keys(pestActionTypeToDb) as PestActionType[];
 
 function OverviewSection({
-  copilotInsights,
-  onCreateCopilotTask,
-  onOpenCopilot,
-  onPrepareCopilotMessage,
+  onOpenWork,
   onRequestTechnicalCompletion
 }: CopilotSurfaceProps) {
   const {
     greenhouse,
     greenhouseTasks,
-    greenhouseIrrigation,
-    greenhouseApplications,
     greenhousePests,
-    greenhouseActivities,
+    greenhouses,
     organization,
     currentUser,
     completeTask,
-    tasks,
     setActiveSection
   } = useFilteredData();
   const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [simpleCompletionTask, setSimpleCompletionTask] = useState<Task | null>(null);
-  const lastIrrigation = greenhouseIrrigation[0];
-  const lastApplication = greenhouseApplications[0];
-  const pendingAlerts = greenhousePests.filter((alert) => alert.severity !== "Baja").length;
 
   if (!greenhouse) {
     return (
@@ -398,7 +396,7 @@ function OverviewSection({
   }
 
   const handleCompleteTask = async (taskId: string) => {
-    const task = tasks.find((item) => item.id === taskId) ?? greenhouseTasks.find((item) => item.id === taskId);
+    const task = greenhouseTasks.find((item) => item.id === taskId);
     if (!task) return;
     if (isTechnicalCompletionTask(task)) {
       onRequestTechnicalCompletion?.(task);
@@ -431,30 +429,47 @@ function OverviewSection({
     }
   };
 
+  const handleVerifyTask = async (taskId: string) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || savingTaskId) return;
+
+    setTaskNotice(null);
+    setSavingTaskId(taskId);
+    try {
+      await requireWorkSchema(supabase);
+      const { error } = await supabase.rpc("verify_work", {
+        target_work_id: taskId,
+        target_note: null
+      });
+      if (error) throw error;
+
+      completeTask(taskId, "Verificada");
+      setTaskNotice({ tone: "green", message: "Work verificado. La decisión quedó resuelta." });
+    } catch (caught) {
+      setTaskNotice({ tone: "red", message: appErrorMessage(caught, "No se pudo verificar el Work.") });
+    } finally {
+      setSavingTaskId(null);
+    }
+  };
+
   return (
     <>
       {taskNotice ? <InlineNotice tone={taskNotice.tone}>{taskNotice.message}</InlineNotice> : null}
-      <CopilotPulseBand
-        insights={copilotInsights}
-        onCreateTask={onCreateCopilotTask}
-        onOpenCopilot={onOpenCopilot}
-        onPrepareMessage={onPrepareCopilotMessage}
-      />
-      <OverviewHero
+      <TodayDecisionBoard
         alerts={greenhousePests}
+        busyTaskId={savingTaskId}
         currentUser={currentUser}
-        greenhouse={greenhouse}
-        lastApplication={lastApplication}
-        lastIrrigation={lastIrrigation}
+        greenhouses={greenhouses}
         onCompleteTask={(taskId) => {
           if (!savingTaskId) {
             handleCompleteTask(taskId);
           }
         }}
         onOpenOperations={() => setActiveSection("calendar")}
-        operationsTasks={tasks}
+        onOpenPests={() => setActiveSection("pests")}
+        onOpenWork={(taskId, view, intent) => onOpenWork?.(taskId, view, intent)}
+        onVerifyTask={handleVerifyTask}
         organization={organization}
-        pendingAlerts={pendingAlerts}
         tasks={greenhouseTasks}
       />
       <Modal
@@ -2415,6 +2430,8 @@ function ActiveSection(props: CopilotSurfaceProps) {
     onViewChange: props.onOperationViewChange,
     pendingCompletionTask: props.pendingCompletionTask,
     onPendingCompletionConsumed: props.onPendingCompletionConsumed,
+    pendingOpenWork: props.pendingOpenWork,
+    onPendingOpenWorkConsumed: props.onPendingOpenWorkConsumed,
     onCreateCopilotTask: props.onCreateCopilotTask,
     onPrepareCopilotMessage: props.onPrepareCopilotMessage
   };
@@ -2588,6 +2605,7 @@ export function AppShell() {
   const [copilotChatMessages, setCopilotChatMessages] = useState<CopilotChatMessage[]>([]);
   const [operationRefreshKey, setOperationRefreshKey] = useState(0);
   const [pendingCompletionTask, setPendingCompletionTask] = useState<{ id: string; date: string } | null>(null);
+  const [pendingOpenWork, setPendingOpenWork] = useState<{ id: string; intent: "details" | "evidence" } | null>(null);
   const activeLabel = navigationItemsForRole(currentUser.role).find((item) => item.id === activeSection)?.label ?? "Inicio";
   const setOperationWeek = useCallback((weekStart: string) => {
     router.push(appRoute(organization.slug ?? organization.name, {
@@ -2861,12 +2879,18 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-app-background text-app-text">
+      <a
+        className="sr-only fixed left-4 top-4 z-[100] rounded-lg bg-app-green px-4 py-3 text-sm font-medium text-white shadow-lg focus:not-sr-only focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-app-green"
+        href="#main-content"
+      >
+        Saltar al contenido
+      </a>
       <RouteSync />
       <div className="flex min-h-screen">
         <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
         <div className="min-w-0 flex-1">
           <Topbar copilotInsightCount={copilotInsights.length} onOpenCopilot={() => setCopilotOpen(true)} />
-          <main className="mx-auto w-full max-w-[1500px] px-4 pb-24 pt-5 lg:px-6 lg:pb-5">
+          <main className="mx-auto w-full max-w-[1500px] scroll-mt-20 px-4 pb-24 pt-5 lg:px-6 lg:pb-5" id="main-content">
             <div className="mb-4 lg:hidden">
               <p className="text-xs font-medium uppercase text-app-muted">{activeLabel}</p>
               <MiraBrand className="mt-1" markClassName="h-5 w-8" wordClassName="text-lg tracking-[0.34em]" />
@@ -2888,6 +2912,22 @@ export function AppShell() {
                     onOperationViewChange={setOperationView}
                     pendingCompletionTask={pendingCompletionTask}
                     onPendingCompletionConsumed={() => setPendingCompletionTask(null)}
+                    pendingOpenWork={pendingOpenWork}
+                    onPendingOpenWorkConsumed={() => setPendingOpenWork(null)}
+                    onOpenWork={(taskId, view, intent) => {
+                      const targetTask = tasks.find((task) => task.id === taskId);
+                      if (!targetTask) {
+                        setActiveSection("calendar");
+                        return;
+                      }
+                      setPendingOpenWork({ id: taskId, intent });
+                      router.push(appRoute(organization.slug ?? organization.name, {
+                        section: "calendar",
+                        greenhouseId: targetTask.greenhouseId,
+                        weekStart: dateKey(startOfIsoWeek(new Date(`${targetTask.date}T12:00:00`))),
+                        operationView: view
+                      }));
+                    }}
                     onRequestTechnicalCompletion={(task) => {
                       setPendingCompletionTask({ id: task.id, date: task.date });
                       setActiveSection("calendar");

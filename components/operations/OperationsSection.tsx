@@ -1584,6 +1584,8 @@ export function OperationsSection({
   operationRefreshKey = 0,
   pendingCompletionTask,
   onPendingCompletionConsumed,
+  pendingOpenWork,
+  onPendingOpenWorkConsumed,
   onCreateCopilotTask,
   onPrepareCopilotMessage,
   weekStart: routeWeekStart,
@@ -1597,6 +1599,8 @@ export function OperationsSection({
   operationRefreshKey?: number;
   pendingCompletionTask?: { id: string; date: string } | null;
   onPendingCompletionConsumed?: () => void;
+  pendingOpenWork?: { id: string; intent: "details" | "evidence" } | null;
+  onPendingOpenWorkConsumed?: () => void;
   onCreateCopilotTask?: (insight: CopilotInsight) => void;
   onPrepareCopilotMessage?: (insight: CopilotInsight) => void;
   weekStart?: string;
@@ -2282,6 +2286,26 @@ export function OperationsSection({
     completeTask(targetTask);
   }, [completeTask, completing, loading, onPendingCompletionConsumed, pendingCompletionTask?.id, tasks]);
 
+  useEffect(() => {
+    if (!pendingOpenWork?.id || loading) return;
+    const targetTask = [...tasks, ...historyTasks].find((task) => task.id === pendingOpenWork.id);
+    if (!targetTask) return;
+
+    if (pendingOpenWork.intent === "evidence") {
+      setEvidenceTask(targetTask);
+      onPendingOpenWorkConsumed?.();
+      return;
+    }
+
+    const focusTarget = () => {
+      const element = document.getElementById(`work-${pendingOpenWork.id}`);
+      element?.scrollIntoView({ block: "center", behavior: "smooth" });
+      element?.focus({ preventScroll: true });
+      onPendingOpenWorkConsumed?.();
+    };
+    window.requestAnimationFrame(() => window.requestAnimationFrame(focusTarget));
+  }, [historyTasks, loading, onPendingOpenWorkConsumed, pendingOpenWork, tasks]);
+
   const completeApplication = async (payload: ApplicationExecutionPayload) => {
     if (!applicationTask) return;
     const supabase = getSupabaseBrowserClient();
@@ -2870,7 +2894,7 @@ export function OperationsSection({
               </div>
               <div className="mt-4 grid gap-3">
                 {globalOverdueTasks.map((task) => (
-                  <article className="flex flex-col gap-3 border border-[#E3BDBD] bg-[#FFF9F8] p-4 lg:flex-row lg:items-center lg:justify-between" key={task.id}>
+                  <article className="flex flex-col gap-3 border border-[#E3BDBD] bg-[#FFF9F8] p-4 outline-none focus-visible:ring-2 focus-visible:ring-app-green/25 lg:flex-row lg:items-center lg:justify-between" id={`work-${task.id}`} key={task.id} tabIndex={-1}>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2"><StatusBadge tone="red">Vencido</StatusBadge><span className="text-xs text-app-muted">{formatDate(task.scheduled_date)} · {activityLabel(task)}</span></div>
                       <p className="mt-2 text-sm font-medium text-app-text">{task.title}</p>
@@ -3017,7 +3041,7 @@ export function OperationsSection({
                           ...taskStaffAssignments.map((assignment) => staffName(assignment.staff_id))
                         ];
                         return (
-                          <article key={task.id} className="min-w-0 border-t border-app-border pt-3">
+                          <article className="min-w-0 scroll-mt-28 border-t border-app-border pt-3 outline-none focus-visible:ring-2 focus-visible:ring-app-green/25" id={`work-${task.id}`} key={task.id} tabIndex={-1}>
                             <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
                               <p className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-app-muted">
                                 {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabel(task)}
