@@ -393,7 +393,7 @@ export function TodayDecisionBoard({
           <aside className="rounded-[26px] bg-white p-3 shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_8px_30px_-24px_rgba(13,13,13,0.24)] sm:p-4" aria-labelledby="next-decisions-title">
             <div className="flex items-center justify-between gap-4 px-2 pb-2 pt-1">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">En cola</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">Siguientes prioridades</p>
                 <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-app-text" id="next-decisions-title">
                   Después
                 </h2>
