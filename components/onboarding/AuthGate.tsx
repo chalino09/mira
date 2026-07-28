@@ -2,8 +2,9 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { ArrowLeft } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { RouteAccessDenied } from "@/components/access/RouteAccessDenied";
 import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
@@ -24,6 +25,7 @@ import type {
 } from "@/lib/nutrition-monitoring";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { organizationRouteSlug, publicEntityId } from "@/lib/routes";
+import { canonicalOrganizationUrl, resolveOrganizationSlug } from "@/lib/organization-routing";
 import { useGreenhouseStore } from "@/lib/store";
 import { parseNumericInput } from "@/lib/utils";
 import type {
@@ -37,7 +39,7 @@ import type {
   RiskLevel
 } from "@/types";
 
-type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error" | "access-paused";
+type AuthState = "loading" | "missing-env" | "signed-out" | "profile" | "onboarding" | "ready" | "load-error" | "access-paused" | "route-access-denied";
 
 type OnboardingForm = {
   fullName: string;
@@ -854,7 +856,10 @@ function OnboardingScreen({
 
 export function AuthGate() {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const requestedOrganizationSlug = routeOrganizationSlug(pathname);
+  const routeQuery = searchParams.toString();
   const [state, setState] = useState<AuthState>("loading");
   const [loadingStep, setLoadingStep] = useState("Cargando");
   const [session, setSession] = useState<Session | null>(null);
@@ -951,8 +956,21 @@ export function AuthGate() {
         })
         .sort((left, right) => left.organization.name.localeCompare(right.organization.name, "es-MX"));
 
-      const requestedMembership = requestedOrganizationSlug
-        ? memberships.find((item) => organizationRouteSlug(item.organization.slug ?? item.organization.name) === requestedOrganizationSlug)
+      const organizationResolution = resolveOrganizationSlug(memberships, requestedOrganizationSlug);
+      if (organizationResolution.kind === "denied") {
+        loadedOrganizationSlugRef.current = null;
+        setState("route-access-denied");
+        return;
+      }
+
+      if (organizationResolution.kind === "canonical") {
+        loadedOrganizationSlugRef.current = null;
+        router.replace(canonicalOrganizationUrl(pathname, organizationResolution.canonicalSlug, routeQuery));
+        return;
+      }
+
+      const requestedMembership = organizationResolution.kind === "matched"
+        ? organizationResolution.membership
         : undefined;
       const lastCompanyId = !requestedOrganizationSlug
         ? window.localStorage.getItem(LAST_COMPANY_STORAGE_KEY)
@@ -1142,7 +1160,7 @@ export function AuthGate() {
       setLoadError(initialLoadErrorMessage(error));
       setState("load-error");
     }
-  }, [hydrateWorkspace, requestedOrganizationSlug]);
+  }, [hydrateWorkspace, pathname, requestedOrganizationSlug, routeQuery, router]);
 
   useEffect(() => {
     if (requestedOrganizationSlug && requestedOrganizationSlug === loadedOrganizationSlugRef.current) return;
@@ -1181,6 +1199,14 @@ export function AuthGate() {
 
   if (state === "access-paused") {
     return <AccessPausedScreen message={accessPausedMessage} onSignOut={signOut} />;
+  }
+
+  if (state === "route-access-denied") {
+    return (
+      <main className="min-h-screen bg-app-background px-4 text-app-text lg:px-6">
+        <RouteAccessDenied returnHref="/" />
+      </main>
+    );
   }
 
   if (state === "load-error") {

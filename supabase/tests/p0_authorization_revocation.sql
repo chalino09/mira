@@ -27,10 +27,20 @@ begin
     (disabled_manager_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'p0-disabled@example.test', '', now(), '{}', '{}', now(), now()),
     (outsider_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'p0-outsider@example.test', '', now(), '{}', '{}', now(), now());
   insert into public.companies (id, name, created_by) values (company_a, 'P0 A', owner_id), (company_b, 'P0 B', outsider_id);
+
+  if not exists (
+    select 1 from public.company_members
+    where company_id = company_a and user_id = owner_id and role = 'owner' and status = 'active'
+  ) or not exists (
+    select 1 from public.company_members
+    where company_id = company_b and user_id = outsider_id and role = 'owner' and status = 'active'
+  ) then
+    raise exception 'Company creation did not provision its active owner membership';
+  end if;
+
   insert into public.company_members (company_id, user_id, role, status) values
-    (company_a, owner_id, 'owner', 'active'), (company_a, admin_id, 'admin', 'active'),
-    (company_a, active_manager_id, 'manager', 'active'), (company_a, disabled_manager_id, 'manager', 'disabled'),
-    (company_b, outsider_id, 'manager', 'active');
+    (company_a, admin_id, 'admin', 'active'),
+    (company_a, active_manager_id, 'manager', 'active'), (company_a, disabled_manager_id, 'manager', 'disabled');
   insert into public.greenhouses (id, company_id, name, manager_user_id) values
     (active_greenhouse, company_a, 'Activo', active_manager_id),
     (disabled_greenhouse, company_a, 'Desactivado', disabled_manager_id);
