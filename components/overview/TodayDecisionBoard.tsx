@@ -328,7 +328,7 @@ export function TodayDecisionBoard({
 
   return (
     <section className="mx-auto max-w-[1180px] pb-10 pt-4 sm:pt-8">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <header className="today-enter flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">
             <PortalMark className="h-4 w-7 shrink-0 text-app-green" />
@@ -349,13 +349,13 @@ export function TodayDecisionBoard({
         </div>
       </header>
 
-      <section aria-labelledby="today-pulse-title" className="mt-6">
+      <section aria-labelledby="today-pulse-title" className="today-enter today-enter-delay-1 mt-6">
         <h2 className="sr-only" id="today-pulse-title">Pulso del alcance</h2>
         <div className="grid grid-cols-3 overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_4px_16px_-12px_rgba(13,13,13,0.18)]">
           {pulseItems.map(({ label, value, icon: Icon, onClick }, index) => (
             <button
               className={cn(
-                "group flex min-h-[98px] min-w-0 flex-col items-start gap-2 px-3 py-3 text-start outline-offset-[-3px] transition-[background-color] duration-100 ease-out hover:bg-app-sidebar focus-visible:bg-app-sidebar sm:min-h-[72px] sm:flex-row sm:items-center sm:gap-3 sm:px-4",
+                "group flex min-h-[98px] min-w-0 flex-col items-start gap-2 px-3 py-3 text-start outline-offset-[-3px] transition-[background-color] duration-100 ease-out hover:bg-app-sidebar focus-visible:bg-app-sidebar motion-safe:transition-[background-color,transform] motion-safe:duration-150 motion-safe:hover:-translate-y-px sm:min-h-[72px] sm:flex-row sm:items-center sm:gap-3 sm:px-4",
                 index > 0 && "border-s border-app-border"
               )}
               key={label}
@@ -379,11 +379,11 @@ export function TodayDecisionBoard({
       </section>
 
       {selectedDecision ? (
-        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.8fr)]">
+        <div className="today-enter today-enter-delay-2 mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.8fr)]">
           <div aria-atomic="true" className="sr-only" role="status">
             Decisión prioritaria: {selectedDecision.title}
           </div>
-          <div id="today-focus-decision">
+          <div className="today-priority-swap" id="today-focus-decision" key={selectedDecision.id}>
             <FocusDecision
               busy={busyTaskId === selectedDecision.sourceId}
               decision={selectedDecision}
@@ -424,7 +424,7 @@ export function TodayDecisionBoard({
           </aside>
         </div>
       ) : (
-        <div className="mt-6 rounded-2xl bg-white px-6 py-10 text-center shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_12px_40px_-28px_rgba(13,13,13,0.25)]">
+        <div className="today-enter today-enter-delay-2 mt-6 rounded-2xl bg-white px-6 py-10 text-center shadow-[0_0_0_1px_rgba(13,13,13,0.055),0_12px_40px_-28px_rgba(13,13,13,0.25)]">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-app-soft text-app-green">
             <CircleCheckBig aria-hidden="true" className="h-6 w-6" strokeWidth={1.75} />
           </span>
