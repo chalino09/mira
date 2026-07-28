@@ -35,7 +35,7 @@ function task(patch: Partial<Task>): Task {
   };
 }
 
-test("prioritizes approvals for owner roles", () => {
+test("prioritizes blocked activities ahead of approvals", () => {
   const decisions = buildTodayDecisions({
     tasks: [
       task({ id: "today", status: "Pendiente" }),
@@ -49,8 +49,8 @@ test("prioritizes approvals for owner roles", () => {
   });
 
   assert.deepEqual(decisions.map((decision) => decision.kind), [
-    "approval",
     "blocked-work",
+    "approval",
     "assigned-work"
   ]);
 });
@@ -97,13 +97,20 @@ test("elevates severe pest cases as operational exceptions", () => {
   } satisfies PestAlert;
 
   const decisions = buildTodayDecisions({
-    tasks: [],
+    tasks: [
+      task({ id: "approval", status: "Completada" }),
+      task({ id: "blocked", status: "Bloqueada" })
+    ],
     alerts: [alert],
     greenhouses: [greenhouse],
-    currentUser: manager,
+    currentUser: owner,
     today: "2026-07-28"
   });
 
   assert.equal(decisions[0]?.kind, "pest-exception");
   assert.equal(decisions[0]?.primaryAction.type, "open-pest");
+  assert.deepEqual(decisions.slice(1).map((decision) => decision.kind), [
+    "blocked-work",
+    "approval"
+  ]);
 });

@@ -49,6 +49,10 @@ function daysBetween(from: string, to: string) {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86_400_000));
 }
 
+function ageScore(from: string, today: string) {
+  return Math.min(daysBetween(from.slice(0, 10), today), 99);
+}
+
 function greenhouseName(greenhouseId: string, greenhouses: Greenhouse[]) {
   return greenhouses.find((item) => item.id === greenhouseId)?.name ?? "Área productiva";
 }
@@ -94,7 +98,7 @@ function approvalDecision(task: Task, greenhouses: Greenhouse[], today: string):
     priority: "high",
     primaryAction: { type: "verify", label: "Verificar" },
     secondaryAction: { type: "open-work", label: "Revisar actividad" },
-    score: 120 + daysBetween(task.date, today)
+    score: 300 + ageScore(task.date, today)
   };
 }
 
@@ -111,13 +115,14 @@ function blockedDecision(task: Task, greenhouses: Greenhouse[], today: string): 
     timing: taskTiming(task, today),
     priority: "critical",
     primaryAction: { type: "open-work", label: "Resolver" },
-    score: 105 + daysBetween(task.date, today)
+    score: 400 + ageScore(task.date, today)
   };
 }
 
-function pestDecision(alert: PestAlert, greenhouses: Greenhouse[]): TodayDecision {
+function pestDecision(alert: PestAlert, greenhouses: Greenhouse[], today: string): TodayDecision {
   const lastUpdate = alert.updates?.at(-1);
   const stalled = lastUpdate?.status === "Sin avance";
+  const isCritical = alert.severity === "Alta" || stalled;
 
   return {
     id: `pest:${alert.id}`,
@@ -133,9 +138,9 @@ function pestDecision(alert: PestAlert, greenhouses: Greenhouse[]): TodayDecisio
       : "La excepción necesita una respuesta operativa.",
     context: `${greenhouseName(alert.greenhouseId, greenhouses)} · ${alert.caseStatus ?? "Caso abierto"}`,
     timing: pestTiming(alert),
-    priority: alert.severity === "Alta" || stalled ? "critical" : "high",
+    priority: isCritical ? "critical" : "high",
     primaryAction: { type: "open-pest", label: "Revisar caso" },
-    score: alert.severity === "Alta" || stalled ? 100 : 92
+    score: (isCritical ? 500 : 350) + ageScore(alert.detectedAt, today)
   };
 }
 
@@ -159,7 +164,7 @@ function assignedWorkDecision(task: Task, greenhouses: Greenhouse[], today: stri
     priority: overdue ? "high" : "normal",
     primaryAction: { type: "complete", label: "Completar" },
     secondaryAction: { type: "open-work", label: "Abrir actividad" },
-    score: (overdue ? 80 : 60) + daysBetween(task.date, today)
+    score: (overdue ? 200 : 100) + ageScore(task.date, today)
   };
 }
 
@@ -193,7 +198,7 @@ export function buildTodayDecisions({
 
   alerts
     .filter(isActivePestException)
-    .forEach((alert) => decisions.push(pestDecision(alert, greenhouses)));
+    .forEach((alert) => decisions.push(pestDecision(alert, greenhouses, today)));
 
   return decisions
     .filter((decision, index, items) =>
