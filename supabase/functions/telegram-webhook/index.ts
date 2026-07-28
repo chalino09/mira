@@ -799,6 +799,15 @@ async function executeTelegramWorkAction(
   note: string | null,
   executionPayload: any = {}
 ) {
+  if (action === "complete") {
+    const { error: verificationError } = await adminClient
+      .from("tasks")
+      .update({ verification_required: true })
+      .eq("id", task.id)
+      .eq("company_id", task.company_id);
+    if (verificationError) throw verificationError;
+  }
+
   const { error } = await adminClient.rpc("execute_telegram_work_action", {
     target_work_id: task.id,
     target_actor_user_id: connection.user_id,

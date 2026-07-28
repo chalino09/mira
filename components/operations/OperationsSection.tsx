@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit3,
+  Ellipsis,
   ExternalLink,
   Minus,
   Paperclip,
@@ -270,6 +271,14 @@ const statusTones: Record<OperationStatus, "neutral" | "blue" | "green" | "amber
   completada: "amber",
   verificada: "green",
   cancelada: "neutral"
+};
+
+const operationViewAccents: Record<OperationView, string> = {
+  calendar: "bg-[#35654A]",
+  plan: "bg-[#8A7650]",
+  execution: "bg-[#52757D]",
+  verification: "bg-[#76627B]",
+  history: "bg-[#687061]"
 };
 
 function workStatusIcon(status: OperationStatus) {
@@ -1627,6 +1636,7 @@ export function OperationsSection({
   const [completing, setCompleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [dispatchingTelegram, setDispatchingTelegram] = useState(false);
+  const [pendingPublicationCount, setPendingPublicationCount] = useState(0);
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -1704,6 +1714,7 @@ export function OperationsSection({
 
     setLoading(true);
     setSetupRequired(false);
+    setPendingPublicationCount(0);
     let tasksQuery = supabase
       .from("tasks")
       .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
@@ -1759,7 +1770,7 @@ export function OperationsSection({
       .map((member: any) => member.user_id)
       .filter((id: string | null): id is string => Boolean(id));
 
-    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, pendingNotificationsResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -1777,10 +1788,18 @@ export function OperationsSection({
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
         ? supabase.from("work_evidence").select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_at").in("work_id", taskIds).order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      planResponse.data?.status === "published"
+        ? supabase
+            .from("notification_outbox")
+            .select("task_id")
+            .eq("weekly_plan_id", planResponse.data.id)
+            .eq("channel", "telegram")
+            .eq("status", "pending")
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? pendingNotificationsResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1792,6 +1811,11 @@ export function OperationsSection({
     setStaffAssignments((staffAssignmentsResponse.data ?? []) as StaffAssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
     setEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
+    setPendingPublicationCount(new Set(
+      (pendingNotificationsResponse.data ?? [])
+        .map((notification: { task_id: string | null }) => notification.task_id)
+        .filter((taskId): taskId is string => Boolean(taskId))
+    ).size);
     setProductOptions((productsResponse.data ?? []) as ProductOption[]);
     setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
@@ -2136,6 +2160,7 @@ export function OperationsSection({
     }
 
     setNotice({ tone: "green", message: telegramDispatchMessage(data) });
+    await loadOperations();
   };
 
   const resendActiveTelegramForPlan = async () => {
@@ -2564,8 +2589,6 @@ export function OperationsSection({
     && (!workTypeFilter?.length || workTypeFilter.includes(task.type))
   );
   const completedCount = scopedTasks.filter((task) => ["completada", "verificada"].includes(task.status)).length;
-  const blockedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
-  const todayCount = scopedTasks.filter((task) => task.scheduled_date === todayKey && !["completada", "verificada", "cancelada"].includes(task.status)).length;
   const unassignedCount = scopedTasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
@@ -2601,9 +2624,9 @@ export function OperationsSection({
     ].filter(Boolean).join(" ").toLocaleLowerCase("es-MX").includes(normalizedHistoryQuery);
   });
   const operationViews: Array<{ id: OperationView; label: string; count?: number }> = [
-    { id: "calendar", label: "Calendario", count: scopedTasks.length },
-    { id: "plan", label: "Plan", count: scopedTasks.filter((task) => task.status === "pendiente").length },
-    { id: "execution", label: "Ejecución", count: scopedTasks.filter((task) => ["en_progreso", "bloqueada"].includes(task.status)).length },
+    { id: "calendar", label: "Semana", count: scopedTasks.length },
+    { id: "plan", label: "Por hacer", count: scopedTasks.filter((task) => task.status === "pendiente").length },
+    { id: "execution", label: "En curso", count: scopedTasks.filter((task) => ["en_progreso", "bloqueada"].includes(task.status)).length },
     { id: "verification", label: "Por verificar", count: awaitingVerificationCount },
     { id: "history", label: "Historial", count: historyScopedTasks.length || undefined }
   ];
@@ -2636,11 +2659,11 @@ export function OperationsSection({
 
   return (
     <section>
-      <header className="mb-6 border-b border-app-border pb-5 pt-5 md:pt-8">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+      <header className="mb-4 border-b border-app-border pb-4 pt-4 md:pt-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-6xl">{specialtyLabel ?? "Operación"}</h1>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-app-muted">
+            <h1 className="text-3xl font-light leading-none tracking-normal text-app-text sm:text-4xl md:text-5xl">{specialtyLabel ?? "Operación"}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-app-muted">
               {canPlan
                 ? "Planea, ejecuta, verifica y consulta cada Work desde un solo lugar."
                 : "Consulta, confirma, adjunta evidencia y reporta el avance de tus trabajos."}
@@ -2731,36 +2754,113 @@ export function OperationsSection({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 border-y border-app-border xl:grid-cols-5">
-            {[
-              ["Plan", plan?.status === "published" ? "Publicado" : plan ? "Borrador" : "Sin plan"],
-              ["Hoy", String(todayCount)],
-              ["Completadas", `${completedCount}/${tasks.length}`],
-              ["Bloqueadas", String(blockedCount)],
-              [canPlan ? "Sin asignar" : "Mi semana", canPlan ? String(unassignedCount) : String(tasks.length)]
-            ].map(([label, value], index) => (
-              <div key={label} className={`px-4 py-4 ${index ? "border-t border-app-border xl:border-l xl:border-t-0" : ""}`}>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{label}</p>
-                <p className="mt-2 text-xl font-light text-app-text sm:text-2xl">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-2 border-b border-app-border pb-4 sm:gap-3">
-            {operationViews.map((view) => (
-              <Button className="min-h-10 px-3" key={view.id} onClick={() => selectOperationView(view.id)} variant={operationView === view.id ? "primary" : "ghost"}>
-                {view.label}{view.count !== undefined ? ` · ${view.count}` : ""}
-              </Button>
-            ))}
-          </div>
-
-          {operationView !== "history" && (overdueCount || blockedScopedCount || awaitingVerificationCount) ? (
-            <div className="grid gap-2 border-b border-app-border py-4 md:grid-cols-3">
-              {overdueCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => setOverdueExpanded(true)} type="button"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{overdueCount}</strong> trabajo{overdueCount === 1 ? "" : "s"} con fecha vencida</span></button> : null}
-              {blockedScopedCount ? <button className="flex items-start gap-2 border border-[#E3BDBD] bg-[#FFF7F6] px-3 py-3 text-left" onClick={() => selectOperationView("execution")} type="button"><Ban className="mt-0.5 h-4 w-4 shrink-0 text-[#8A2E2E]" /><span className="text-sm text-[#7B2A2A]"><strong>{blockedScopedCount}</strong> bloqueo{blockedScopedCount === 1 ? "" : "s"} por resolver</span></button> : null}
-              {awaitingVerificationCount ? <button className="flex items-start gap-2 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-left" onClick={() => selectOperationView("verification")} type="button"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-app-green" /><span className="text-sm text-app-green"><strong>{awaitingVerificationCount}</strong> trabajo{awaitingVerificationCount === 1 ? "" : "s"} esperando verificación</span></button> : null}
+          <div className="flex flex-col gap-3 border-y border-app-border py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="font-medium text-app-text">
+                {plan?.status === "published" ? "Publicado" : "Borrador"}
+              </span>
+              <span className="hidden text-app-border sm:inline" aria-hidden="true">·</span>
+              <span className="text-app-muted"><strong className="font-medium text-app-text">{completedCount}/{scopedTasks.length}</strong> completadas</span>
+              {operationView !== "history" && overdueCount ? (
+                <button className="inline-flex items-center gap-1.5 border-b border-[#D8A7A4] pb-0.5 text-[#7B2A2A] transition-colors hover:border-[#8A2E2E]" onClick={() => setOverdueExpanded(true)} type="button">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <strong>{overdueCount}</strong> vencido{overdueCount === 1 ? "" : "s"}
+                </button>
+              ) : null}
+              {operationView !== "history" && blockedScopedCount ? (
+                <button className="inline-flex items-center gap-1.5 border-b border-[#D8A7A4] pb-0.5 text-[#7B2A2A] transition-colors hover:border-[#8A2E2E]" onClick={() => selectOperationView("execution")} type="button">
+                  <Ban className="h-3.5 w-3.5" />
+                  <strong>{blockedScopedCount}</strong> bloqueado{blockedScopedCount === 1 ? "" : "s"}
+                </button>
+              ) : null}
+              {canPlan && unassignedCount ? (
+                <span className="text-[#8A5A16]"><strong>{unassignedCount}</strong> sin asignar</span>
+              ) : null}
             </div>
-          ) : null}
+            {operationView !== "history" && canPlan && plan && weekTasks.length ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {plan.status === "published" && pendingPublicationCount ? (
+                  <>
+                    <span className="text-xs text-app-muted">{pendingPublicationCount} cambio{pendingPublicationCount === 1 ? "" : "s"} por enviar</span>
+                    <Button
+                      className="min-h-9 px-3"
+                      disabled={dispatchingTelegram}
+                      icon={<Send className="h-3.5 w-3.5" />}
+                      onClick={sendTelegramForPlan}
+                      variant="secondary"
+                    >
+                      {dispatchingTelegram ? "Enviando..." : "Enviar cambios pendientes"}
+                    </Button>
+                  </>
+                ) : null}
+                {plan.status === "published" ? (
+                  <details className="relative">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-app-muted transition hover:bg-app-sidebar hover:text-app-text">
+                      <Ellipsis className="h-4 w-4" />
+                      <span className="sr-only">Más opciones de publicación</span>
+                    </summary>
+                    <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-56 rounded-xl border border-app-border bg-white p-1.5 shadow-xl">
+                      <button
+                        className="flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+                        disabled={dispatchingTelegram}
+                        onClick={resendActiveTelegramForPlan}
+                        type="button"
+                      >
+                        Reenviar actividades activas
+                      </button>
+                    </div>
+                  </details>
+                ) : (
+                  <Button
+                    className="min-h-9 px-3"
+                    disabled={publishing}
+                    icon={<Send className="h-3.5 w-3.5" />}
+                    onClick={publishPlan}
+                    variant="secondary"
+                  >
+                    {publishing ? "Publicando..." : "Publicar semana"}
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="border-b border-app-border py-3">
+            <div className="max-w-full overflow-x-auto overscroll-x-contain">
+              <div className="flex min-w-max overflow-hidden md:min-w-0">
+                {operationViews.map((view) => {
+                  const active = operationView === view.id;
+                  return (
+                    <button
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "group relative flex min-h-12 items-center gap-2 border-r border-app-border/70 bg-app-background px-4 text-sm font-medium transition-colors duration-200 first:border-l first:border-app-border/70 hover:bg-app-sidebar/55 focus:outline-none focus-visible:bg-app-sidebar/70 sm:px-5 md:flex-1 md:justify-center",
+                        active ? "text-app-text" : "text-app-muted"
+                      )}
+                      key={view.id}
+                      onClick={() => selectOperationView(view.id)}
+                      type="button"
+                    >
+                      <span>{view.label}</span>
+                      {view.count !== undefined ? (
+                        <span className="rounded-full border border-app-border bg-white/70 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-app-muted">
+                          {view.count}
+                        </span>
+                      ) : null}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "absolute inset-x-0 bottom-0 h-0.5 origin-left transition-transform duration-200",
+                          operationViewAccents[view.id],
+                          active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                        )}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           {operationView !== "history" && globalOverdueTasks.length && overdueExpanded ? (
             <section className="border-b border-app-border py-4">
@@ -2785,44 +2885,6 @@ export function OperationsSection({
                 ))}
               </div>
             </section>
-          ) : null}
-
-          {operationView !== "history" && canPlan && plan && weekTasks.length ? (
-            <div className="hidden flex-col gap-3 border-b border-app-border py-4 lg:flex lg:flex-row lg:items-center lg:justify-between">
-              <p className="text-sm text-app-muted">
-                {plan.status === "published"
-                  ? "La semana está publicada. Puedes reenviarla si hiciste cambios."
-                  : "Publica cuando instrucciones y responsables estén listos."}
-              </p>
-              {plan.status === "published" ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    disabled={dispatchingTelegram}
-                    icon={<Send className="h-4 w-4" />}
-                    onClick={sendTelegramForPlan}
-                    variant="secondary"
-                  >
-                    {dispatchingTelegram ? "Enviando cambios..." : "Enviar cambios pendientes"}
-                  </Button>
-                  <Button
-                    disabled={dispatchingTelegram}
-                    onClick={resendActiveTelegramForPlan}
-                    variant="ghost"
-                  >
-                    Reenviar actividades activas
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  disabled={publishing}
-                  icon={<Send className="h-4 w-4" />}
-                  onClick={publishPlan}
-                  variant="secondary"
-                >
-                  {publishing ? "Publicando..." : "Publicar semana"}
-                </Button>
-              )}
-            </div>
           ) : null}
 
           {operationView !== "history" && canPlan ? (
@@ -2929,18 +2991,22 @@ export function OperationsSection({
           ) : loading ? (
             <div className="py-16 text-center text-sm text-app-muted">Cargando operación...</div>
           ) : scopedTasks.length ? (
-            <div className="mt-8 max-w-full overflow-x-auto overscroll-x-contain pb-2">
-              <div className="grid xl:min-w-full xl:grid-flow-col xl:grid-rows-1 xl:auto-cols-[minmax(260px,1fr)]">
-                {weekDays.map((date, dayIndex) => {
-                  const key = dateKey(date);
-                  const dayTasks = visibleTasks.filter((task) => task.scheduled_date === key);
-                  return (
-                    <section key={key} className={`min-w-0 border-t border-app-border py-4 xl:px-4 ${dayIndex ? "xl:border-l" : ""}`}>
-                    <div className="flex items-center justify-between gap-3">
+            <div className="relative mt-5">
+              <p className="mb-2 hidden text-right text-[10px] font-medium uppercase tracking-[0.14em] text-app-muted md:block min-[1720px]:hidden">
+                Desliza para ver los siete días →
+              </p>
+              <div className="max-w-full snap-x snap-proximity overflow-x-auto overscroll-x-contain scroll-smooth pb-3">
+                <div className="grid md:min-w-[1820px] md:grid-cols-7">
+                  {weekDays.map((date, dayIndex) => {
+                    const key = dateKey(date);
+                    const dayTasks = visibleTasks.filter((task) => task.scheduled_date === key);
+                    return (
+                      <section key={key} className={`min-w-0 border-t border-app-border py-3 md:snap-start md:px-2 xl:px-3 ${dayIndex ? "md:border-l" : ""}`}>
+                    <div className="flex min-h-7 items-center justify-between gap-3">
                       <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-app-muted">{dayLabel(date)}</p>
                       {key === todayKey ? <StatusBadge tone="green">Hoy</StatusBadge> : null}
                     </div>
-                    <div className="mt-4 grid gap-3">
+                    <div className="mt-3 grid gap-3">
                       {dayTasks.map((task) => {
                         const taskAssignments = assignmentsForTask(task.id);
                         const taskStaffAssignments = staffAssignmentsForTask(task.id);
@@ -2951,80 +3017,89 @@ export function OperationsSection({
                           ...taskStaffAssignments.map((assignment) => staffName(assignment.staff_id))
                         ];
                         return (
-                          <article key={task.id} className="min-w-0 border-t border-app-border pt-4">
-                            <div className="grid min-w-0 gap-2">
-                              <p className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">
+                          <article key={task.id} className="min-w-0 border-t border-app-border pt-3">
+                            <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+                              <p className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-app-muted">
                                 {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabel(task)}
                               </p>
-                              <div className="justify-self-start">
+                              <div className="shrink-0">
                                 <StatusBadge icon={workStatusIcon(task.status)} tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
                               </div>
                             </div>
-                            <h3 className="mt-3 break-words text-sm font-medium leading-5 text-app-text">{task.title}</h3>
-                            <p className="mt-1 break-words text-xs leading-5 text-app-muted">
+                            <h3 className="mt-2 line-clamp-2 break-words text-sm font-medium leading-5 text-app-text">{task.title}</h3>
+                            <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-app-muted">
                               {greenhouseName(task.greenhouse_id)} · {executionLabels[task.execution_mode]}
                             </p>
                             {assignedNames.length ? (
-                              <p className="mt-2 break-words text-xs leading-5 text-app-muted">
+                              <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-app-muted">
                                 {assignedNames.join(", ")}
                               </p>
-                            ) : <p className="mt-2 text-xs text-[#8A2E2E]">Sin encargado</p>}
-                            {task.instructions ? <p className="mt-3 break-words text-xs leading-5 text-app-text">{task.instructions}</p> : null}
-                            {planSummary ? <p className="mt-2 break-words text-xs leading-5 text-app-muted">{planSummary}</p> : null}
-                            {taskMaterials.length ? (
-                              <div className="mt-3 break-words border-l-2 border-app-green pl-2 text-xs leading-5 text-app-muted">
-                                {taskMaterials
-                                  .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
-                                  .map((material) => (
-                                    <p key={material.id}>{material.product_name}{material.dose ? ` · ${material.dose}` : ""}{material.unit ? ` ${material.unit}` : ""}</p>
-                                  ))}
-                              </div>
-                            ) : null}
+                            ) : <p className="mt-1 text-xs text-[#8A2E2E]">Sin encargado</p>}
                             {task.blocked_reason ? (
-                              <p className="mt-3 flex gap-2 text-xs leading-5 text-[#7B2A2A]">
+                              <p className="mt-2 flex gap-1.5 text-xs leading-5 text-[#7B2A2A]">
                                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                {task.blocked_reason}
+                                <span className="line-clamp-2">{task.blocked_reason}</span>
                               </p>
                             ) : null}
-                            {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
-                            {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {canPlan ? (
-                                <Button
-                                  className="hidden min-h-11 px-3 lg:inline-flex"
-                                  icon={<Edit3 className="h-3.5 w-3.5" />}
-                                  onClick={() => openEditActivity(task)}
-                                  variant="ghost"
-                                >Editar</Button>
-                              ) : null}
+                            <div className="mt-3">
                               {["pendiente", "en_progreso"].includes(task.status) ? (
-                                <>
-                                  <Button className="min-h-11 px-3" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} variant="ghost">Bloquear</Button>
-                                  <Button className="min-h-11 px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
-                                </>
-                              ) : null}
-                              {["pendiente", "bloqueada"].includes(task.status) ? (
-                                <Button className="min-h-11 px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title={task.status === "bloqueada" ? "Reanudar trabajo" : "Iniciar sólo si seguirá en curso"} variant="ghost">{task.status === "bloqueada" ? "Reanudar" : "Iniciar"}</Button>
-                              ) : null}
-                              <Button className="min-h-11 px-3" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost">Evidencia{evidenceForTask(task.id).length ? ` (${evidenceForTask(task.id).length})` : ""}</Button>
-                              {canPlan && task.status === "completada" ? (
-                                <>
-                                  <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} variant="ghost">Verificar</Button>
-                                  <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
-                                </>
-                              ) : null}
-                              {canPlan && task.status === "verificada" ? (
-                                <Button className="hidden min-h-11 px-3 lg:inline-flex" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
+                              ) : task.status === "bloqueada" ? (
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Reanudar trabajo" variant="primary">Reanudar</Button>
+                              ) : canPlan && task.status === "completada" ? (
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} variant="primary">Verificar</Button>
                               ) : null}
                             </div>
+                            <details className="mt-2 border-t border-app-border pt-1">
+                              <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium text-app-muted transition hover:text-app-text">
+                                <span>Detalles y acciones</span>
+                                <Ellipsis className="h-4 w-4" />
+                              </summary>
+                              <div className="pb-1 pt-2">
+                                {task.instructions ? <p className="break-words text-xs leading-5 text-app-text">{task.instructions}</p> : null}
+                                {planSummary ? <p className="mt-2 break-words text-xs leading-5 text-app-muted">{planSummary}</p> : null}
+                                {taskMaterials.length ? (
+                                  <div className="mt-2 break-words border-l-2 border-app-green pl-2 text-xs leading-5 text-app-muted">
+                                    {taskMaterials
+                                      .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
+                                      .map((material) => (
+                                        <p key={material.id}>{material.product_name}{material.dose ? ` · ${material.dose}` : ""}{material.unit ? ` ${material.unit}` : ""}</p>
+                                      ))}
+                                  </div>
+                                ) : null}
+                                {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
+                                {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {canPlan ? (
+                                    <Button
+                                      className="min-h-9 px-2.5"
+                                      icon={<Edit3 className="h-3.5 w-3.5" />}
+                                      onClick={() => openEditActivity(task)}
+                                      variant="ghost"
+                                    >Editar</Button>
+                                  ) : null}
+                                  {["pendiente", "en_progreso"].includes(task.status) ? (
+                                    <Button className="min-h-9 px-2.5" disabled={completing} icon={<Ban className="h-3.5 w-3.5" />} onClick={() => openBlockedTask(task)} variant="ghost">Bloquear</Button>
+                                  ) : null}
+                                  {task.status === "pendiente" ? (
+                                    <Button className="min-h-9 px-2.5" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Iniciar sólo si seguirá en curso" variant="ghost">Iniciar</Button>
+                                  ) : null}
+                                  <Button className="min-h-9 px-2.5" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost">Evidencia{evidenceForTask(task.id).length ? ` (${evidenceForTask(task.id).length})` : ""}</Button>
+                                  {canPlan && ["completada", "verificada"].includes(task.status) ? (
+                                    <Button className="min-h-9 px-2.5" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </details>
                           </article>
                         );
                       })}
                       {!dayTasks.length ? <p className="py-4 text-xs text-app-muted">Sin trabajos en esta vista</p> : null}
                     </div>
                   </section>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : (
