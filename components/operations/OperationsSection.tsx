@@ -19,7 +19,6 @@ import {
   Send
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SelectHTMLAttributes } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
@@ -321,25 +320,6 @@ const applicationCategories: ApplicationRecord["category"][] = [
 ];
 
 const doseUnitOptions = ["ml", "lt", "gr", "kg", "unidad"];
-
-function DoseUnitSelect({
-  emptyLabel = "Selecciona",
-  value,
-  ...props
-}: Omit<SelectHTMLAttributes<HTMLSelectElement>, "children" | "value"> & {
-  emptyLabel?: string;
-  value: string;
-}) {
-  const isHistorical = Boolean(value) && !doseUnitOptions.includes(value);
-
-  return (
-    <SelectInput value={value} {...props}>
-      <option value="">{emptyLabel}</option>
-      {isHistorical ? <option value={value}>{value} · histórica</option> : null}
-      {doseUnitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-    </SelectInput>
-  );
-}
 
 const rafiaWorkTypes = [
   "Anillado",
@@ -997,14 +977,16 @@ function ActivityFormModal({
                   placeholder="Dosis"
                   value={material.dose}
                 />
-                <DoseUnitSelect
+                <SelectInput
                   aria-label={`Unidad ${index + 1}`}
-                  emptyLabel="Unidad"
                   onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
                     itemIndex === index ? { ...item, unit: event.target.value } : item
                   ))}
                   value={material.unit}
-                />
+                >
+                  <option value="">Unidad</option>
+                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                </SelectInput>
                 <Button
                   aria-label={`Quitar producto ${index + 1}`}
                   className="h-11 w-11 px-0"
@@ -1216,11 +1198,14 @@ function CompleteApplicationModal({
                   />
                 </Field>
                 <Field label="Unidad">
-                  <DoseUnitSelect
+                  <SelectInput
                     onChange={(event) => updateApplication(index, { unit: event.target.value })}
                     required
                     value={application.unit}
-                  />
+                  >
+                    <option value="">Selecciona</option>
+                    {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                  </SelectInput>
                 </Field>
                 <Field label="Categoría">
                   <SelectInput
@@ -1462,11 +1447,14 @@ function CompleteNutritionModal({
                 />
               </Field>
               <Field label="Unidad">
-                <DoseUnitSelect
+                <SelectInput
                   onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, unit: event.target.value } : item))}
                   required
                   value={product.unit}
-                />
+                >
+                  <option value="">Selecciona</option>
+                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                </SelectInput>
               </Field>
               {product.materialId.startsWith("new:") ? (
                 <Button
