@@ -12,8 +12,11 @@ type RouteState = {
   period?: ContextPeriod;
   weekStart?: string;
   operationView?: "calendar" | "plan" | "execution" | "verification" | "history";
+  inventoryView?: InventoryCostsView;
   list?: ListQueryState;
 };
+
+export type InventoryCostsView = "summary" | "stock" | "movements" | "costs";
 
 export type ListQueryState = {
   tab?: "applications" | "nutrition" | "irrigation";
@@ -66,12 +69,14 @@ export function publicEntityId(prefix: "gh" | "pest" | "lot", id: string) {
   return `${prefix}-${id.replace(/-/g, "")}`;
 }
 
-export function supportsPeriod(section: SectionId) {
-  return ["records", "pests", "harvest", "costs", "reports"].includes(section);
+export function supportsPeriod(section: SectionId, inventoryView?: InventoryCostsView) {
+  return ["records", "pests", "harvest", "costs", "reports"].includes(section)
+    || (section === "inventory" && (inventoryView === "summary" || inventoryView === "costs"));
 }
 
-export function supportsGreenhouse(section: SectionId) {
-  return !["greenhouses", "inventory", "settings"].includes(section);
+export function supportsGreenhouse(section: SectionId, inventoryView?: InventoryCostsView) {
+  if (section === "inventory") return inventoryView === "summary" || inventoryView === "costs";
+  return !["greenhouses", "settings"].includes(section);
 }
 
 export function allowsAllGreenhouses(section: SectionId) {
@@ -84,6 +89,8 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   const calendarWeek = routeSegments[0] === "operations" && routeSegments[1] === "week" ? routeSegments[2] : undefined;
   const sectionKey = calendarWeek ? "operations" : routeSegments.join("/");
   const isLegacyRecordsRoute = sectionKey === "records";
+  const isLegacyCostsRoute = sectionKey === "costs";
+  const isLegacyReportsRoute = sectionKey === "reports";
   const entity = routeSegments[0] === "greenhouses" && routeSegments.length === 2
     ? { type: "greenhouse" as const, greenhousePublicId: routeSegments[1] }
     : routeSegments[0] === "greenhouses" && routeSegments[2] === "cycles" && routeSegments[3] === "current" && routeSegments.length === 4
@@ -101,12 +108,17 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
         ? "harvest"
         : isLegacyRecordsRoute
           ? "calendar"
-          : routeSections.get(sectionKey) ?? "overview";
+          : isLegacyCostsRoute
+            ? "inventory"
+            : isLegacyReportsRoute
+              ? "overview"
+              : routeSections.get(sectionKey) ?? "overview";
   const greenhouseId = searchParams.get("greenhouse") ?? undefined;
   const periodValue = searchParams.get("period");
   const tabValue = searchParams.get("tab");
   const directionValue = searchParams.get("dir");
   const operationViewValue = searchParams.get("view");
+  const inventoryViewValue = isLegacyCostsRoute ? "costs" : searchParams.get("view");
   const pageValue = Number(searchParams.get("page") ?? "1");
   const list: ListQueryState = {
     tab: tabValue === "nutrition" || tabValue === "irrigation" ? tabValue : tabValue === "applications" ? tabValue : undefined,
@@ -121,7 +133,7 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   return {
     organizationSlug,
     section,
-    isKnown: Boolean(entity) || routeSegments.length === 0 || routeSections.has(sectionKey),
+    isKnown: !isLegacyCostsRoute && !isLegacyReportsRoute && (Boolean(entity) || routeSegments.length === 0 || routeSections.has(sectionKey)),
     entity,
     greenhouseId,
     period: periodValue && periods.has(periodValue as ContextPeriod) ? periodValue as ContextPeriod : undefined,
@@ -131,13 +143,18 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
       : operationViewValue === "plan" || operationViewValue === "execution" || operationViewValue === "verification" || operationViewValue === "history"
         ? operationViewValue
         : "calendar",
+    inventoryView: section === "inventory"
+      ? inventoryViewValue === "stock" || inventoryViewValue === "movements" || inventoryViewValue === "costs"
+        ? inventoryViewValue
+        : "summary"
+      : undefined,
     list
   };
 }
 
 export function appRoute(
   organizationName: string,
-  { section, greenhouseId, period, weekStart, operationView, list }: RouteState
+  { section, greenhouseId, period, weekStart, operationView, inventoryView, list }: RouteState
 ) {
   const segments = [...sectionSegments[section]];
   if (section === "calendar") {
@@ -145,11 +162,12 @@ export function appRoute(
   }
 
   const query = new URLSearchParams();
-  if (supportsGreenhouse(section) && greenhouseId && (greenhouseId !== allGreenhousesId || allowsAllGreenhouses(section))) {
+  if (supportsGreenhouse(section, inventoryView) && greenhouseId && (greenhouseId !== allGreenhousesId || allowsAllGreenhouses(section))) {
     query.set("greenhouse", greenhouseId);
   }
-  if (supportsPeriod(section) && period) query.set("period", period);
+  if (supportsPeriod(section, inventoryView) && period) query.set("period", period);
   if (section === "calendar" && operationView && operationView !== "calendar") query.set("view", operationView);
+  if (section === "inventory" && inventoryView && inventoryView !== "summary") query.set("view", inventoryView);
   if (list?.tab && list.tab !== "applications") query.set("tab", list.tab);
   if (list?.q) query.set("q", list.q);
   if (list?.sort) query.set("sort", list.sort);

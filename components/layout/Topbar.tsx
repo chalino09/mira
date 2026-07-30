@@ -28,20 +28,21 @@ export function Topbar({
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
-  const acceptsAll = ["calendar", "records", "pests", "harvest", "costs", "reports"].includes(activeSection);
-  const acceptsPeriod = ["records", "pests", "harvest", "costs", "reports"].includes(activeSection);
+  const currentRoute = parseAppRoute(pathname, new URLSearchParams(searchParams.toString()));
+  const acceptsAll = ["calendar", "records", "pests", "harvest", "costs"].includes(activeSection);
+  const acceptsPeriod = ["records", "pests", "harvest", "costs"].includes(activeSection);
   const hasContextPeriod = acceptsPeriod || activeSection === "calendar";
   const isCompanyView = ["inventory", "greenhouses", "settings"].includes(activeSection);
   const periodLabel = activeSection === "calendar"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
   const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {
-    const currentRoute = parseAppRoute(pathname, new URLSearchParams(searchParams.toString()));
     const staysInSection = (next.section ?? activeSection) === activeSection;
     router.push(appRoute(organization.slug ?? organization.name, {
       section: next.section ?? activeSection,
       greenhouseId: next.greenhouseId ?? selectedGreenhouseId,
       period: next.period ?? selectedPeriod,
+      inventoryView: currentRoute.inventoryView,
       list: staysInSection ? { ...currentRoute.list, page: undefined } : undefined
     }));
   };

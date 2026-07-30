@@ -1,5 +1,4 @@
 import {
-  BarChart3,
   CalendarDays,
   FlaskConical,
   Home,
@@ -7,8 +6,7 @@ import {
   Package,
   Settings,
   ShieldAlert,
-  Sprout,
-  WalletCards
+  Sprout
 } from "lucide-react";
 import type { NavigationItem, UserRole } from "@/types";
 
@@ -19,9 +17,7 @@ export const navigationItems: NavigationItem[] = [
   { id: "monitoring", label: "Monitoreo", icon: FlaskConical },
   { id: "pests", label: "Plagas", icon: ShieldAlert },
   { id: "harvest", label: "Cosecha", icon: Leaf },
-  { id: "inventory", label: "Inventario", icon: Package },
-  { id: "costs", label: "Costos", icon: WalletCards },
-  { id: "reports", label: "Reportes", icon: BarChart3 },
+  { id: "inventory", label: "Inventario y costos", icon: Package },
   { id: "settings", label: "Ajustes", icon: Settings }
 ];
 

@@ -47,7 +47,7 @@ const PAGE_SIZE = 25;
 
 export function requiresWorkspaceViewData(section: SectionId, entity?: EntityRoute) {
   if (entity) return entity.type === "pestCase" || entity.type === "harvestLot";
-  return ["overview", "records", "pests", "harvest", "costs", "reports"].includes(section);
+  return ["overview", "records", "pests", "harvest", "inventory", "costs"].includes(section);
 }
 
 function dateKey(date: Date) {
@@ -306,7 +306,7 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
     });
     metaResource = "harvest";
     metaKey = "harvests";
-  } else if (section === "costs") {
+  } else if (section === "inventory" || section === "costs") {
     const search = safeSearch(list.q);
     const sort = { date: "occurred_at", category: "category", amount: "amount" }[list.sort ?? "date"] ?? "occurred_at";
     let listQuery = withPeriod(withScope(supabase.from("cost_records").select(COST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
@@ -322,14 +322,6 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
     });
     metaResource = "costs";
     metaKey = "costList";
-  } else if (section === "reports") {
-    const bounds = periodBounds(period);
-    queries.aggregates = supabase.rpc("get_view_operational_aggregates", {
-      target_company_id: companyId,
-      target_greenhouse_id: greenhouseId === "__all__" ? null : greenhouseId,
-      target_start_date: bounds?.start ?? null,
-      target_end_date: bounds?.end ?? null
-    });
   }
 
   const entries = await Promise.all(Object.entries(queries).map(async ([key, query]) => [key, await query] as const));

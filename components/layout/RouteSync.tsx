@@ -56,6 +56,7 @@ export function RouteSync() {
           period: selectedPeriod,
           weekStart: route.weekStart,
           operationView: route.operationView,
+          inventoryView: route.inventoryView,
           list: route.list
         }));
         return;
@@ -69,18 +70,18 @@ export function RouteSync() {
       const routeGreenhouseIsVisible = route.greenhouseId === "__all__"
         ? allowsAllGreenhouses(route.section)
         : greenhouses.some((greenhouse) => greenhouse.id === route.greenhouseId);
-      if (supportsGreenhouse(route.section) && route.greenhouseId && routeGreenhouseIsVisible && route.greenhouseId !== selectedGreenhouseId) {
+      if (supportsGreenhouse(route.section, route.inventoryView) && route.greenhouseId && routeGreenhouseIsVisible && route.greenhouseId !== selectedGreenhouseId) {
         setSelectedGreenhouseId(route.greenhouseId);
         return;
       }
-      if (supportsPeriod(route.section) && route.period && route.period !== selectedPeriod) {
+      if (supportsPeriod(route.section, route.inventoryView) && route.period && route.period !== selectedPeriod) {
         setSelectedPeriod(route.period);
         return;
       }
 
       if (
-        (supportsGreenhouse(route.section) && (!route.greenhouseId || !routeGreenhouseIsVisible))
-        || (supportsPeriod(route.section) && !route.period)
+        (supportsGreenhouse(route.section, route.inventoryView) && (!route.greenhouseId || !routeGreenhouseIsVisible))
+        || (supportsPeriod(route.section, route.inventoryView) && !route.period)
       ) {
         handledLocation.current = location;
         router.replace(appRoute(organizationRouteName, {
@@ -89,6 +90,7 @@ export function RouteSync() {
           period: selectedPeriod,
           weekStart: route.weekStart,
           operationView: route.operationView,
+          inventoryView: route.inventoryView,
           list: route.list
         }));
         return;
@@ -105,6 +107,7 @@ export function RouteSync() {
       period: selectedPeriod,
       weekStart: route.weekStart,
       operationView: route.operationView,
+      inventoryView: route.inventoryView,
       list: route.list
     });
     if (location !== canonicalPath) router.push(canonicalPath);

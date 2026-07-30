@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarDays, FlaskConical, Home, Menu, Send, Sprout, X } from "lucide-react";
+import { CalendarDays, FlaskConical, Home, Menu, Send, Sprout, X } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { navigationItemsForRole } from "@/data/navigation";
@@ -10,13 +10,12 @@ import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
 import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 
-const primaryIds: SectionId[] = ["overview", "calendar", "monitoring", "reports"];
+const primaryIds: SectionId[] = ["overview", "calendar", "monitoring"];
 const iconFallback = {
   overview: Home,
   greenhouses: Sprout,
   calendar: CalendarDays,
-  monitoring: FlaskConical,
-  reports: BarChart3
+  monitoring: FlaskConical
 };
 
 export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {

@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   CloudSun,
   Edit3,
-  FileDown,
   Leaf,
   MapPin,
   Package,
@@ -33,11 +32,10 @@ import { RouteSync } from "@/components/layout/RouteSync";
 import { RouteAccessDenied } from "@/components/access/RouteAccessDenied";
 import { MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
-import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
-import { CostChart, IrrigationChart, YieldChart } from "@/components/dashboard/Charts";
+import { CostChart, YieldChart } from "@/components/dashboard/Charts";
 import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
@@ -55,7 +53,7 @@ import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
-import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type ListQueryState } from "@/lib/routes";
+import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
 import { requireWorkSchema } from "@/lib/work-schema";
 import {
@@ -175,7 +173,7 @@ function useFilteredData() {
   const greenhouse = isAllGreenhouses
     ? undefined
     : state.greenhouses.find((item) => item.id === state.selectedGreenhouseId) ?? state.greenhouses[0];
-  const periodApplies = ["records", "pests", "costs", "reports"].includes(state.activeSection);
+  const periodApplies = ["records", "pests", "inventory", "costs"].includes(state.activeSection);
   const today = new Date();
   const weekStart = dateKey(startOfIsoWeek(today));
   const weekEnd = dateKey(addDays(startOfIsoWeek(today), 6));
@@ -217,6 +215,8 @@ function useListNavigation() {
       greenhouseId: route.greenhouseId,
       period: route.period,
       weekStart: route.weekStart,
+      operationView: route.operationView,
+      inventoryView: route.inventoryView,
       list: { ...route.list, ...patch }
     }));
   }, [organization.name, organization.slug, route, router]);
@@ -311,6 +311,7 @@ type CopilotSurfaceProps = {
   operationRefreshKey?: number;
   operationWeekStart?: string;
   operationView?: "calendar" | "plan" | "execution" | "verification" | "history";
+  inventoryView?: InventoryCostsView;
   onOperationWeekChange?: (weekStart: string) => void;
   onOperationViewChange?: (view: "calendar" | "plan" | "execution" | "verification" | "history") => void;
   pendingCompletionTask?: { id: string; date: string } | null;
@@ -1247,7 +1248,7 @@ function qualityCell(boxes: number, kilograms: number) {
   return `${formatNumber(kilograms)} kg`;
 }
 
-function CostsSection() {
+function CostsSection({ embedded = false }: { embedded?: boolean }) {
   const { costListRecords, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
   const { list, updateList } = useListNavigation();
   const totalCost = viewAggregates?.totalCost ?? 0;
@@ -1260,14 +1261,23 @@ function CostsSection() {
 
   return (
     <section>
-      <SectionHeader
-        action={<Button className="hidden lg:inline-flex" icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Nuevo costo</Button>}
-        title="Costos"
-        description="Mano de obra, insumos, agua, energía, renta, gasolina, refrescos y margen estimado."
-      />
+      {!embedded ? (
+        <SectionHeader
+          action={<Button icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Registrar costo</Button>}
+          title="Costos"
+          description="Mano de obra, insumos, agua, energía y otros costos necesarios para producir."
+        />
+      ) : (
+        <div className="mb-5 flex flex-col gap-3 border-y border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-6 text-app-muted">Costos automáticos y gastos registrados durante el periodo seleccionado.</p>
+          <Button className="w-full sm:w-auto" icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Registrar costo</Button>
+        </div>
+      )}
       {budgetAmount === null ? (
         <div className="mb-5 border border-[#E3D7B6] bg-[#FFF8E6] px-4 py-3 text-sm leading-6 text-[#725A1A]">
-          Presupuesto del ciclo pendiente de configurar. Puedes seguir operando y capturando costos; cuando lo agregues al área productiva se activará el comparativo.
+          {greenhouse
+            ? "Presupuesto del ciclo pendiente de configurar. Puedes seguir registrando costos; cuando lo agregues al invernadero se activará el comparativo."
+            : "Selecciona un invernadero para comparar sus costos contra el presupuesto del ciclo."}
         </div>
       ) : null}
       <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
@@ -1286,7 +1296,7 @@ function CostsSection() {
         <MetricCard icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
         <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en área" : `${budgetUsed}% usado`} tone="soft" />
         <MetricCard icon={WalletCards} label="Disponible" value={remainingBudget === null ? "--" : formatCurrency(remainingBudget)} detail={remainingBudget !== null && remainingBudget < 0 ? "Presupuesto rebasado" : "Contra costos reales"} />
-        <MetricCard icon={Leaf} label="Costo por kg" value={formatCurrency(costPerKg)} detail="Contra kg cosechados" />
+        <MetricCard icon={Leaf} label="Costo por kg" value={totalKg > 0 ? formatCurrency(costPerKg) : "--"} detail={totalKg > 0 ? "Contra kg cosechados" : "Sin cosecha en el periodo"} />
       </div>
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
         <CostChart data={costChartData} />
@@ -1308,38 +1318,101 @@ function CostsSection() {
   );
 }
 
-function ReportsSection() {
-  const viewAggregates = useGreenhouseStore((state) => state.viewAggregates);
-  const harvestChartData = (viewAggregates?.harvestDaily ?? [])
-    .slice(-7)
-    .map((record) => ({ label: dateLabel(record.date), kg: record.kg }));
-  const costChartData = viewAggregates?.costByCategory ?? [];
-  const irrigationChartData = (viewAggregates?.irrigationDaily ?? [])
-    .slice(-7)
-    .map((record) => ({ label: dateLabel(record.date), litros: record.liters }));
+function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView }) {
+  const router = useRouter();
+  const organization = useGreenhouseStore((state) => state.organization);
+  const greenhouses = useGreenhouseStore((state) => state.greenhouses);
+  const crops = useGreenhouseStore((state) => state.crops);
+  const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
+  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
+  const [displayView, setDisplayView] = useState<InventoryCostsView>(view);
+  const [animateView, setAnimateView] = useState(false);
+  useEffect(() => setDisplayView(view), [view]);
+  const tabs: { id: InventoryCostsView; label: string }[] = [
+    { id: "summary", label: "Resumen" },
+    { id: "costs", label: "Costos" },
+    { id: "stock", label: "Inventario" },
+    { id: "movements", label: "Historial" }
+  ];
+  const showContext = displayView === "summary" || displayView === "costs";
+  const navigateContext = (next: { greenhouseId?: string; period?: typeof selectedPeriod }) => {
+    router.push(appRoute(organization.slug ?? organization.name, {
+      section: "inventory",
+      greenhouseId: next.greenhouseId ?? selectedGreenhouseId,
+      period: next.period ?? selectedPeriod,
+      inventoryView: displayView
+    }));
+  };
 
   return (
     <section>
       <SectionHeader
-        title="Reportes"
-        description="Vistas ejecutivas para producción, aplicaciones, costos, sanidad y rendimiento por área productiva."
+        title="Inventario y costos"
+        description="Controla lo que tienes disponible y entiende cuánto cuesta producir, sin separar ambos flujos."
       />
-      <AtmosphericMapVisual className="mb-5" variant="reports" />
-      <div className="grid gap-5 xl:grid-cols-2">
-        <YieldChart data={harvestChartData} />
-        <CostChart data={costChartData} />
-        <IrrigationChart data={irrigationChartData} />
-        <div className="hidden border-y border-app-border py-5 lg:block">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Exportaciones</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {["Producción semanal", "Aplicaciones por cultivo", "Historial sanitario", "Rendimiento por área"].map((item) => (
-              <div key={item} className="flex h-14 items-center justify-between border-t border-app-border px-1 text-sm font-medium text-app-text">
-                {item}
-                <FileDown className="h-4 w-4 text-app-muted" />
-              </div>
-            ))}
+      <nav aria-label="Secciones de inventario y costos" className="mb-7 overflow-x-auto border-b border-app-border">
+        <div className="flex min-w-max gap-1">
+          {tabs.map((tab) => (
+            <Link
+              aria-current={displayView === tab.id ? "page" : undefined}
+              className={cn(
+                "flex min-h-11 items-center border-b-2 px-4 text-sm font-medium transition-[border-color,color] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-app-green",
+                displayView === tab.id
+                  ? "border-app-green text-app-green"
+                  : "border-transparent text-app-muted hover:border-app-border hover:text-app-text"
+              )}
+              href={appRoute(organization.slug ?? organization.name, {
+                section: "inventory",
+                greenhouseId: selectedGreenhouseId,
+                period: selectedPeriod,
+                inventoryView: tab.id
+              })}
+              key={tab.id}
+              onClick={() => {
+                setAnimateView(true);
+                setDisplayView(tab.id);
+              }}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+      </nav>
+      {showContext ? (
+        <div className="mb-6 flex flex-col gap-3 border-y border-app-border py-3 sm:flex-row sm:items-center">
+          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:min-h-10">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-app-green" />
+            <select
+              aria-label="Invernadero para inventario y costos"
+              className="h-full min-w-0 flex-1 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+              onChange={(event) => navigateContext({ greenhouseId: event.target.value })}
+              value={selectedGreenhouseId}
+            >
+              <option value="__all__">Todos los invernaderos</option>
+              {greenhouses.map((greenhouse) => (
+                <option key={greenhouse.id} value={greenhouse.id}>
+                  {greenhouseDisplayName(greenhouse, crops)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex min-h-11 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:min-h-10 sm:w-52">
+            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-app-green" />
+            <select
+              aria-label="Periodo para inventario y costos"
+              className="h-full min-w-0 flex-1 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+              onChange={(event) => navigateContext({ period: event.target.value as typeof selectedPeriod })}
+              value={selectedPeriod}
+            >
+              <option value="week">Semana actual</option>
+              <option value="month">Mes actual</option>
+              <option value="all">Todo el historial</option>
+            </select>
           </div>
         </div>
+      ) : null}
+      <div className={cn("min-h-[360px]", animateView && "inventory-view-enter")} key={displayView}>
+        {displayView === "costs" ? <CostsSection embedded /> : <InventorySection embedded view={displayView} />}
       </div>
     </section>
   );
@@ -2416,8 +2489,8 @@ function SettingsSection() {
           <Button icon={<Thermometer className="h-4 w-4" />} onClick={() => setActiveSection("irrigation")} variant="secondary">
             Revisar riego
           </Button>
-          <Button icon={<ShieldCheck className="h-4 w-4" />} onClick={() => setActiveSection("reports")} variant="secondary">
-            Ir a reportes
+          <Button icon={<WalletCards className="h-4 w-4" />} onClick={() => setActiveSection("inventory")} variant="secondary">
+            Ver inventario y costos
           </Button>
         </div>
       </div>
@@ -2456,9 +2529,7 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "applications") return <OperationsSection {...operationProps} specialtyLabel="Aplicaciones" workTypeFilter={["aplicacion_foliar"]} />;
   if (activeSection === "pests") return <PestsSection />;
   if (activeSection === "harvest") return <HarvestSection />;
-  if (activeSection === "inventory") return <InventorySection />;
-  if (activeSection === "costs") return <CostsSection />;
-  if (activeSection === "reports") return <ReportsSection />;
+  if (activeSection === "inventory") return <InventoryCostsSection view={props.inventoryView} />;
   return <SettingsSection />;
 }
 
@@ -2916,6 +2987,7 @@ export function AppShell() {
                     operationRefreshKey={operationRefreshKey}
                     operationWeekStart={activeRoute.weekStart}
                     operationView={activeRoute.operationView}
+                    inventoryView={activeRoute.inventoryView}
                     onOperationWeekChange={setOperationWeek}
                     onOperationViewChange={setOperationView}
                     pendingCompletionTask={pendingCompletionTask}
