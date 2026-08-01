@@ -88,7 +88,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end bg-black/20 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
+      className="modal-overlay-enter fixed inset-0 z-[60] flex items-end bg-black/20 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -96,7 +96,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
       <div
         aria-labelledby={titleId}
         aria-modal="true"
-        className={cn("min-h-[100dvh] w-full overflow-hidden overscroll-contain border-y border-app-border bg-white outline-none sm:min-h-0 sm:max-h-[92vh] sm:rounded-app sm:border sm:max-w-4xl", panelClassName)}
+        className={cn("modal-panel-enter min-h-[100dvh] w-full overflow-hidden overscroll-contain border-y border-app-border bg-white outline-none sm:min-h-0 sm:max-h-[92vh] sm:rounded-app sm:border sm:max-w-4xl", panelClassName)}
         ref={panelRef}
         role="dialog"
         tabIndex={-1}
@@ -111,7 +111,12 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
             variant="ghost"
           />
         </div>
-        <div className={cn("max-h-[calc(100dvh-64px)] overflow-y-auto px-4 py-5 sm:max-h-[calc(92vh-64px)] sm:px-5", bodyClassName)}>{children}</div>
+        <div
+          className={cn("max-h-[calc(100dvh-64px)] overflow-y-auto px-4 py-5 sm:max-h-[calc(92vh-64px)] sm:px-5", bodyClassName)}
+          data-modal-scroll
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

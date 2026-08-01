@@ -306,9 +306,9 @@ function FormShell({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form className="grid gap-6 lg:grid-cols-[1fr_210px]" onSubmit={onSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
-      <aside className="border-t border-app-border pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+    <form className="relative grid gap-6 lg:grid-cols-[1fr_210px]" onSubmit={onSubmit}>
+      <div className="grid gap-4 pb-4 sm:grid-cols-2">{children}</div>
+      <aside className="border-t border-app-border pb-4 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
           Registro
         </p>
@@ -339,22 +339,22 @@ function FormShell({
           </div>
         ) : null}
         {error ? <p className="mt-5 text-sm text-[#8A2E2E]">{error}</p> : null}
-        <div className="mt-6 grid gap-2">
-          <Button disabled={disabled} type="submit" variant="primary">
-            {disabled ? "Guardando..." : "Guardar"}
-          </Button>
-          <CloseButton />
-        </div>
       </aside>
+      <div className="sticky bottom-0 z-20 -mx-4 -mb-5 flex flex-col gap-2 border-t border-app-border bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:flex-row sm:justify-end sm:px-5 lg:col-span-2">
+        <CloseButton className="w-full sm:w-auto sm:min-w-28" />
+        <Button className="w-full sm:w-auto sm:min-w-28" disabled={disabled} type="submit" variant="primary">
+          {disabled ? "Guardando..." : "Guardar"}
+        </Button>
+      </div>
     </form>
   );
 }
 
-function CloseButton() {
+function CloseButton({ className }: { className?: string }) {
   const closeModal = useGreenhouseStore((state) => state.closeModal);
 
   return (
-    <Button onClick={closeModal} type="button" variant="secondary">
+    <Button className={className} onClick={closeModal} type="button" variant="secondary">
       Cancelar
     </Button>
   );
@@ -532,7 +532,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   }, [modal, organization.id]);
 
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
-  const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId);
+  const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId)
+    ?? (modal === "editGreenhouse" && selectedGreenhouseId === "__all__" ? greenhouses[0] : undefined);
   const defaultGreenhouseId = selectedGreenhouseId === "__all__"
     ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
     : selectedGreenhouseId;
@@ -1196,11 +1197,19 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     });
   };
 
+  const isGreenhouseFormModal = modal === "greenhouse" || modal === "editGreenhouse";
+
   return (
     <Modal
-      bodyClassName={modal === "cost" ? "sm:min-h-[calc(96vh-64px)] sm:max-h-[calc(96vh-64px)]" : undefined}
+      bodyClassName={cn(
+        modal === "cost" && "sm:min-h-[calc(96vh-64px)] sm:max-h-[calc(96vh-64px)]",
+        isGreenhouseFormModal && "sm:h-[calc(92vh-64px)] sm:max-h-[calc(92vh-64px)]"
+      )}
       open={modal !== null}
-      panelClassName={modal === "cost" ? "sm:max-h-[96vh] sm:min-h-[96vh] sm:max-w-5xl" : undefined}
+      panelClassName={cn(
+        modal === "cost" && "sm:max-h-[96vh] sm:min-h-[96vh] sm:max-w-5xl",
+        isGreenhouseFormModal && "sm:h-[92vh] sm:max-h-[92vh] sm:max-w-5xl"
+      )}
       title={copy?.title ?? ""}
       onClose={closeModal}
     >

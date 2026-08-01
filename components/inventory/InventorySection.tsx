@@ -438,7 +438,7 @@ export function InventorySection({
       {view === "summary" ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={Package} label="Valor del inventario" value={formatCurrency(totalValue)} detail={`${balances.length} ${balances.length === 1 ? "artículo" : "artículos"} con existencias`} />
+            <MetricCard emphasis icon={Package} label="Valor del inventario" value={formatCurrency(totalValue)} detail={`${balances.length} ${balances.length === 1 ? "artículo" : "artículos"} con existencias`} />
             <MetricCard icon={ArchiveRestore} label="Productos configurados" value={formatNumber(items.length)} detail="Catálogo del almacén central" />
             <MetricCard icon={WalletCards} label="Costos del periodo" value={formatCurrency(totalCost)} detail="Automáticos y registrados" />
             <MetricCard icon={Leaf} label="Costo por kg" value={totalHarvestKg > 0 ? formatCurrency(costPerKg) : "--"} detail={totalHarvestKg > 0 ? `${formatNumber(totalHarvestKg)} kg cosechados` : "Sin cosecha en el periodo"} />

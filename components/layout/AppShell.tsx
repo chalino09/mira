@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ActivitySquare,
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -51,7 +52,7 @@ import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
-import { cropLabelForId, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { cropLabelForId, getCropDdtStatus, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
@@ -73,6 +74,7 @@ import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFi
 import { cn, formatCurrency, formatDate, formatNumber, formatPersonName, parseNumericInput } from "@/lib/utils";
 import type {
   CostRecord,
+  CropCatalogItem,
   Greenhouse,
   HarvestRecord,
   PestAlert,
@@ -84,9 +86,21 @@ import type {
   Task
 } from "@/types";
 
-const ViewDataRefreshContext = createContext<() => void>(() => {});
+type ViewDataRefreshState = {
+  isUpdating: boolean;
+  refresh: () => void;
+};
+
+const ViewDataRefreshContext = createContext<ViewDataRefreshState>({
+  isUpdating: false,
+  refresh: () => {}
+});
 
 function useViewDataRefresh() {
+  return useContext(ViewDataRefreshContext).refresh;
+}
+
+function useViewDataRefreshState() {
   return useContext(ViewDataRefreshContext);
 }
 
@@ -160,11 +174,206 @@ function EditorialRail({
   );
 }
 
-function cropPlantDetail(greenhouse: Greenhouse) {
-  return [
-    greenhouse.stemCount === 1 ? "Un tallo" : greenhouse.stemCount === 2 ? "Doble tallo" : "Tallos sin configurar",
-    greenhouse.isGrafted === null ? "Injerto sin configurar" : greenhouse.isGrafted ? "Con injerto" : "Sin injerto"
-  ].join(" · ");
+function productiveAreaIssues(greenhouse: Greenhouse) {
+  const issues: string[] = [];
+  const hasManager = Boolean(greenhouse.managerUserId || greenhouse.managerStaffId)
+    || Boolean(greenhouse.manager && !greenhouse.manager.toLocaleLowerCase().startsWith("sin "));
+  if (greenhouse.budgetAmount === null) issues.push("Presupuesto pendiente");
+  if (!hasManager) issues.push("Responsable pendiente");
+  if (!greenhouse.surfaceM2 || greenhouse.plants <= 0 || !greenhouse.transplantDate) {
+    issues.push("Datos productivos incompletos");
+  }
+  return issues;
+}
+
+function ProductiveAreaDetail({
+  active,
+  canManage,
+  crops,
+  issues,
+  lastTask,
+  mobile = false,
+  onEdit,
+  organizationName,
+}: {
+  active: Greenhouse;
+  canManage: boolean;
+  crops: CropCatalogItem[];
+  issues: string[];
+  lastTask?: Task;
+  mobile?: boolean;
+  onEdit: () => void;
+  organizationName: string;
+}) {
+  const cropStages = useGreenhouseStore((state) => state.cropStages);
+  const [showAgronomicDetail, setShowAgronomicDetail] = useState(false);
+  const panelRootRef = useRef<HTMLDivElement>(null);
+  const agronomicTriggerRef = useRef<HTMLButtonElement>(null);
+  const backToAreaRef = useRef<HTMLButtonElement>(null);
+  const hasChangedDetailView = useRef(false);
+  const ddtStatus = getCropDdtStatus(
+    active.cropId,
+    active.transplantDate,
+    active.daysSinceTransplant,
+    cropStages
+  );
+  const detailItems = [
+    {
+      label: "Presupuesto",
+      value: active.budgetAmount === null ? "Pendiente" : formatCurrency(active.budgetAmount)
+    },
+    {
+      label: "Capacidad",
+      value: `${formatNumber(active.plants)} plantas · ${formatNumber(active.beds)} camas`
+    },
+    {
+      label: "Superficie",
+      value: active.surfaceM2 ? `${formatNumber(active.surfaceM2)} m²` : active.surface || "Pendiente"
+    },
+    {
+      label: "Responsable",
+      value: active.manager || "Pendiente"
+    }
+  ];
+  const ddtValue = ddtStatus.status === "missing-catalog"
+    ? "Sin catálogo"
+    : ddtStatus.status === "missing-date"
+      ? "Sin trasplante"
+      : `${formatNumber(ddtStatus.ddt)} DDT`;
+  const changeDetailView = (showAgronomic: boolean) => {
+    const scrollContainer = panelRootRef.current?.closest<HTMLElement>("[data-productive-area-scroll], [data-modal-scroll]");
+    if (scrollContainer) scrollContainer.scrollTop = 0;
+    setShowAgronomicDetail(showAgronomic);
+  };
+
+  useEffect(() => {
+    if (!hasChangedDetailView.current) {
+      hasChangedDetailView.current = true;
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      if (showAgronomicDetail) {
+        backToAreaRef.current?.focus();
+      } else {
+        agronomicTriggerRef.current?.focus();
+      }
+    });
+  }, [showAgronomicDetail]);
+
+  if (showAgronomicDetail) {
+    return (
+      <div className="productive-area-subview-enter" ref={panelRootRef}>
+        <div
+          className={cn(
+            "sticky top-0 z-10 border-b border-app-border bg-app-background pb-4",
+            mobile ? "-mx-4 -mt-5 px-4 pt-4" : "pt-1"
+          )}
+        >
+          <button
+            className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-app-green underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
+            onClick={() => changeDetailView(false)}
+            ref={backToAreaRef}
+            type="button"
+          >
+            <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+            Volver al área
+          </button>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Detalle agronómico</p>
+          <h3 className="mt-2 text-2xl font-light tracking-normal text-app-text">{active.name}</h3>
+          <p className="mt-2 text-sm leading-6 text-app-muted">{ddtValue} · {ddtStatus.label}</p>
+        </div>
+        <CropDdtPanel className="border-t-0 pb-8 pt-5" greenhouse={active} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="productive-area-detail-enter" ref={panelRootRef}>
+      <div
+        className={cn(
+          "sticky top-0 z-10 border-b border-app-border bg-app-background pb-5",
+          mobile ? "-mx-4 -mt-5 px-4 pt-4" : "pt-1"
+        )}
+      >
+        {!mobile ? (
+          <>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Área seleccionada</p>
+            <h3 className="mt-3 text-3xl font-light tracking-normal text-app-text">{active.name}</h3>
+          </>
+        ) : null}
+        <p className={cn("text-sm leading-6 text-app-muted", !mobile && "mt-2")}>
+          {cropLabelForId(active.cropId, crops)} · {active.variety || "Sin variedad"} · {active.stage}
+        </p>
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <Link
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-app-green bg-app-green px-3 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#244B37] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
+            href={appRoute(organizationName, { section: "calendar", greenhouseId: active.id })}
+          >
+            Abrir operación
+          </Link>
+          {canManage ? (
+            <Button
+              className="whitespace-nowrap"
+              icon={<Edit3 aria-hidden="true" className="h-4 w-4" />}
+              onClick={onEdit}
+              variant="secondary"
+            >
+              Editar área
+            </Button>
+          ) : null}
+        </div>
+        <Link
+          className="mt-3 inline-flex min-h-10 items-center text-sm font-medium text-app-green underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
+          href={greenhouseRoute(organizationName, active.publicId ?? publicEntityId("gh", active.id))}
+        >
+          Ver ficha del área
+        </Link>
+      </div>
+
+      <dl className="grid grid-cols-2 pt-5">
+        {detailItems.map((item) => (
+          <div className="border-b border-app-border py-4 pr-3 odd:border-r odd:pr-4 even:pl-4" key={item.label}>
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{item.label}</dt>
+            <dd className="mt-2 text-sm leading-5 text-app-text">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {issues.length ? (
+        <div className="mt-5 border-l-2 border-[#D7C58F] bg-[#FFF8E6] px-4 py-3 text-[#725A1A]">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <AlertTriangle aria-hidden="true" className="h-4 w-4" />
+            Requiere atención
+          </p>
+          <ul className="mt-2 grid gap-1 pl-6 text-xs leading-5">
+            {issues.map((issue) => <li className="list-disc" key={issue}>{issue}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="border-b border-app-border py-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">Actividad más reciente</p>
+        <p className="mt-2 text-sm text-app-text">{lastTask?.title ?? "Sin actividad registrada"}</p>
+        {lastTask ? (
+          <p className="mt-1 text-xs text-app-muted">{formatDate(lastTask.date)} · {lastTask.status}</p>
+        ) : null}
+      </div>
+
+      <button
+        aria-label={`Abrir detalle agronómico de ${active.name}`}
+        className="flex min-h-16 w-full items-center justify-between gap-4 border-b border-app-border py-4 text-left transition-colors duration-150 hover:text-app-green focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
+        onClick={() => changeDetailView(true)}
+        ref={agronomicTriggerRef}
+        type="button"
+      >
+          <span className="min-w-0">
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">Detalle agronómico</span>
+            <span className="mt-1 block text-sm text-app-text">{ddtValue} · {ddtStatus.label}</span>
+          </span>
+        <ArrowRight aria-hidden="true" className="h-5 w-5 shrink-0 text-app-green" />
+      </button>
+    </div>
+  );
 }
 
 function useFilteredData() {
@@ -513,9 +722,36 @@ function OverviewSection({
 }
 
 function GreenhousesSection() {
-  const { crops, currentUser, greenhouses, openModal, organization, selectedGreenhouseId, setSelectedGreenhouseId } = useGreenhouseStore();
+  const { crops, currentUser, greenhouses, openModal, organization, selectedGreenhouseId, setSelectedGreenhouseId, tasks } = useGreenhouseStore();
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
   const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
+  const totalSurfaceM2 = greenhouses.reduce((total, greenhouse) => total + (greenhouse.surfaceM2 ?? 0), 0);
+  const cropCount = new Set(greenhouses.map((greenhouse) => greenhouse.cropId).filter(Boolean)).size;
+  const areasWithIssues = greenhouses.filter((greenhouse) => productiveAreaIssues(greenhouse).length > 0).length;
+  const activeIssues = active ? productiveAreaIssues(active) : [];
+  const lastTask = active
+    ? tasks
+      .filter((task) => task.greenhouseId === active.id && task.date <= localDateKey())
+      .sort((left, right) => right.date.localeCompare(left.date))[0]
+    : undefined;
+  const organizationName = organization.slug ?? organization.name;
+  const summary = [
+    { label: "Áreas registradas", value: formatNumber(greenhouses.length) },
+    { label: "Superficie total", value: totalSurfaceM2 ? `${formatNumber(totalSurfaceM2)} m²` : "--" },
+    { label: "Cultivos", value: formatNumber(cropCount) },
+    { label: "Requieren atención", value: formatNumber(areasWithIssues), attention: areasWithIssues > 0 }
+  ];
+  const selectArea = (greenhouseId: string) => {
+    setSelectedGreenhouseId(greenhouseId);
+    if (window.matchMedia("(max-width: 1279px)").matches) {
+      setMobileDetailOpen(true);
+    }
+  };
+  const editArea = (greenhouseId: string) => {
+    setSelectedGreenhouseId(greenhouseId);
+    openModal("editGreenhouse");
+  };
 
   return (
     <section>
@@ -524,54 +760,84 @@ function GreenhousesSection() {
         title="Áreas productivas"
         description="Inventario de áreas, cultivos, variedades, responsables y estado productivo."
       />
-      <div className="grid gap-10 xl:grid-cols-[minmax(0,1.35fr)_320px]">
-        <div className="grid gap-3">
-          {greenhouses.map((greenhouse) => (
-            <div key={greenhouse.id}>
+      <dl className="mb-8 grid grid-cols-2 border-y border-app-border md:grid-cols-4">
+        {summary.map((item, index) => (
+          <div
+            className={cn(
+              "py-4",
+              index % 2 === 0 ? "pr-4" : "border-l border-app-border pl-4",
+              index > 1 && "border-t border-app-border md:border-t-0",
+              index > 0 && "md:border-l md:border-app-border md:pl-5",
+              index === 0 && "md:border-l-0 md:pl-0"
+            )}
+            key={item.label}
+          >
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{item.label}</dt>
+            <dd className={cn("mt-2 text-2xl font-light text-app-text", item.attention && "text-[#725A1A]")}>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <div>
+          <div className="grid gap-3">
+            {greenhouses.map((greenhouse) => (
               <GreenhouseCard
                 greenhouse={greenhouse}
-                onSelect={() => setSelectedGreenhouseId(greenhouse.id)}
-                selected={greenhouse.id === selectedGreenhouseId}
+                issues={productiveAreaIssues(greenhouse)}
+                key={greenhouse.id}
+                onSelect={() => selectArea(greenhouse.id)}
+                selected={greenhouse.id === active?.id}
               />
-              <Link
-                className="mt-2 inline-flex text-xs font-medium text-app-green underline-offset-4 hover:underline"
-                href={greenhouseRoute(organization.slug ?? organization.name, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
-              >
-                Abrir ficha compartible
-              </Link>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
         {active ? (
-          <EditorialRail title="Área activa">
-            <EditorialObject
-              detail={`${cropLabelForId(active.cropId, crops)} · ${active.variety || "Sin variedad"} · ${active.stage}`}
-              icon={Sprout}
-              index="01"
-              label="Área seleccionada"
-              value={active.name}
-            />
-            <EditorialObject
-              detail={`${active.beds} camas · ${active.surface} · ${cropPlantDetail(active)}`}
-              icon={Leaf}
-              index="02"
-              label="Plantas"
-              value={formatNumber(active.plants)}
-            />
-            <CropDdtPanel greenhouse={active} />
-            {canManageGreenhouses ? (
-              <Button
-                className="mt-5 w-full"
-                icon={<Edit3 className="h-4 w-4" />}
-                onClick={() => openModal("editGreenhouse")}
-                variant="secondary"
-              >
-                Editar datos
-              </Button>
-            ) : null}
-          </EditorialRail>
+          <div className="hidden xl:block">
+            <div
+              className="sticky top-24 h-[calc(100dvh-7rem)] overflow-y-auto pr-2"
+              data-productive-area-scroll
+              key={active.id}
+            >
+              <EditorialRail title="Detalle del área">
+                <ProductiveAreaDetail
+                  active={active}
+                  canManage={canManageGreenhouses}
+                  crops={crops}
+                  issues={activeIssues}
+                  lastTask={lastTask}
+                  onEdit={() => editArea(active.id)}
+                  organizationName={organizationName}
+                />
+              </EditorialRail>
+            </div>
+          </div>
         ) : null}
       </div>
+      {active ? (
+        <div className="xl:hidden">
+          <Modal
+            bodyClassName="pt-5"
+            onClose={() => setMobileDetailOpen(false)}
+            open={mobileDetailOpen}
+            panelClassName="sm:max-w-xl"
+            title={active.name}
+          >
+            <ProductiveAreaDetail
+              active={active}
+              canManage={canManageGreenhouses}
+              crops={crops}
+              issues={activeIssues}
+              lastTask={lastTask}
+              mobile
+              onEdit={() => {
+                setMobileDetailOpen(false);
+                editArea(active.id);
+              }}
+              organizationName={organizationName}
+            />
+          </Modal>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1249,7 +1515,7 @@ function qualityCell(boxes: number, kilograms: number) {
 }
 
 function CostsSection({ embedded = false }: { embedded?: boolean }) {
-  const { costListRecords, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
+  const { costListRecords, currentUser, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
   const { list, updateList } = useListNavigation();
   const totalCost = viewAggregates?.totalCost ?? 0;
   const totalKg = viewAggregates?.totalHarvestKg ?? 0;
@@ -1258,6 +1524,7 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
   const budgetAmount = greenhouse?.budgetAmount ?? null;
   const remainingBudget = budgetAmount === null ? null : budgetAmount - totalCost;
   const budgetUsed = budgetAmount && budgetAmount > 0 ? Math.min(100, Math.round((totalCost / budgetAmount) * 100)) : null;
+  const canManageBudget = currentUser.role === "owner" || currentUser.role === "admin";
 
   return (
     <section>
@@ -1274,10 +1541,31 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
       {budgetAmount === null ? (
-        <div className="mb-5 border border-[#E3D7B6] bg-[#FFF8E6] px-4 py-3 text-sm leading-6 text-[#725A1A]">
-          {greenhouse
-            ? "Presupuesto del ciclo pendiente de configurar. Puedes seguir registrando costos; cuando lo agregues al invernadero se activará el comparativo."
-            : "Selecciona un invernadero para comparar sus costos contra el presupuesto del ciclo."}
+        <div className="mb-6 flex flex-col gap-4 border border-[#E3D7B6] bg-[#FFF8E6] px-5 py-4 text-[#725A1A] sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-[#D7C58F] bg-white/60">
+              <WalletCards aria-hidden="true" className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">
+                {greenhouse ? "Configura el presupuesto del ciclo" : "Selecciona un invernadero"}
+              </p>
+              <p className="mt-1 text-sm leading-5">
+                {greenhouse
+                  ? "Define el monto para comparar los costos reales y conocer cuánto queda disponible."
+                  : "El comparativo de presupuesto está disponible al consultar un invernadero específico."}
+              </p>
+            </div>
+          </div>
+          {greenhouse && canManageBudget ? (
+            <Button
+              className="w-full shrink-0 border-[#D7C58F] bg-white/70 text-[#725A1A] hover:bg-white sm:w-auto"
+              onClick={() => openModal("editGreenhouse")}
+              variant="secondary"
+            >
+              Configurar presupuesto
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
@@ -1292,13 +1580,13 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
           <option value="transporte">Transporte</option>
         </SelectInput>
       </ListToolbar>
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
+      <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard emphasis icon={WalletCards} label="Costo acumulado" value={formatCurrency(totalCost)} detail="Registros del periodo" />
         <MetricCard icon={ActivitySquare} label="Presupuesto" value={budgetAmount === null ? "Pendiente" : formatCurrency(budgetAmount)} detail={budgetUsed === null ? "Configurar en área" : `${budgetUsed}% usado`} tone="soft" />
         <MetricCard icon={WalletCards} label="Disponible" value={remainingBudget === null ? "--" : formatCurrency(remainingBudget)} detail={remainingBudget !== null && remainingBudget < 0 ? "Presupuesto rebasado" : "Contra costos reales"} />
         <MetricCard icon={Leaf} label="Costo por kg" value={totalKg > 0 ? formatCurrency(costPerKg) : "--"} detail={totalKg > 0 ? "Contra kg cosechados" : "Sin cosecha en el periodo"} />
       </div>
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.5fr]">
+      <div className="grid gap-8 xl:grid-cols-[0.8fr_1.5fr]">
         <CostChart data={costChartData} />
         <DataTable<CostRecord>
           columns={[
@@ -1320,6 +1608,7 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
 
 function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView }) {
   const router = useRouter();
+  const { isUpdating } = useViewDataRefreshState();
   const organization = useGreenhouseStore((state) => state.organization);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const crops = useGreenhouseStore((state) => state.crops);
@@ -1350,13 +1639,13 @@ function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView
         title="Inventario y costos"
         description="Controla lo que tienes disponible y entiende cuánto cuesta producir, sin separar ambos flujos."
       />
-      <nav aria-label="Secciones de inventario y costos" className="mb-7 overflow-x-auto border-b border-app-border">
-        <div className="flex min-w-max gap-1">
+      <nav aria-label="Secciones de inventario y costos" className="mb-6 overflow-x-auto border-b border-app-border">
+        <div className="flex min-w-max gap-2">
           {tabs.map((tab) => (
             <Link
               aria-current={displayView === tab.id ? "page" : undefined}
               className={cn(
-                "flex min-h-11 items-center border-b-2 px-4 text-sm font-medium transition-[border-color,color] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-app-green",
+                "flex min-h-11 items-center border-b-2 px-3 text-sm font-medium transition-[border-color,color] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-app-green",
                 displayView === tab.id
                   ? "border-app-green text-app-green"
                   : "border-transparent text-app-muted hover:border-app-border hover:text-app-text"
@@ -1379,36 +1668,55 @@ function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView
         </div>
       </nav>
       {showContext ? (
-        <div className="mb-6 flex flex-col gap-3 border-y border-app-border py-3 sm:flex-row sm:items-center">
-          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:min-h-10">
-            <Building2 className="h-3.5 w-3.5 shrink-0 text-app-green" />
-            <select
-              aria-label="Invernadero para inventario y costos"
-              className="h-full min-w-0 flex-1 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
-              onChange={(event) => navigateContext({ greenhouseId: event.target.value })}
-              value={selectedGreenhouseId}
-            >
-              <option value="__all__">Todos los invernaderos</option>
-              {greenhouses.map((greenhouse) => (
-                <option key={greenhouse.id} value={greenhouse.id}>
-                  {greenhouseDisplayName(greenhouse, crops)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex min-h-11 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:min-h-10 sm:w-52">
-            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-app-green" />
-            <select
-              aria-label="Periodo para inventario y costos"
-              className="h-full min-w-0 flex-1 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
-              onChange={(event) => navigateContext({ period: event.target.value as typeof selectedPeriod })}
-              value={selectedPeriod}
-            >
-              <option value="week">Semana actual</option>
-              <option value="month">Mes actual</option>
-              <option value="all">Todo el historial</option>
-            </select>
-          </div>
+        <div className="relative mb-8 grid gap-1 rounded-2xl border border-app-border bg-white p-2 sm:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="flex min-h-12 min-w-0 items-center gap-3 rounded-lg px-3 py-2 transition-colors duration-150 hover:bg-app-sidebar focus-within:bg-app-sidebar">
+            <Building2 aria-hidden="true" className="h-4 w-4 shrink-0 text-app-green" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">Invernadero</span>
+              <select
+                className="mt-0.5 h-6 w-full min-w-0 cursor-pointer bg-transparent text-sm font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+                onChange={(event) => navigateContext({ greenhouseId: event.target.value })}
+                value={selectedGreenhouseId}
+              >
+                <option value="__all__">Todos los invernaderos</option>
+                {greenhouses.map((greenhouse) => (
+                  <option key={greenhouse.id} value={greenhouse.id}>
+                    {greenhouseDisplayName(greenhouse, crops)}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+          <label className="flex min-h-12 items-center gap-3 rounded-lg border-t border-app-border px-3 py-2 transition-colors duration-150 hover:bg-app-sidebar focus-within:bg-app-sidebar sm:border-l sm:border-t-0">
+            <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-app-green" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">Periodo</span>
+              <select
+                className="mt-0.5 h-6 w-full min-w-0 cursor-pointer bg-transparent text-sm font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+                onChange={(event) => navigateContext({ period: event.target.value as typeof selectedPeriod })}
+                value={selectedPeriod}
+              >
+                <option value="week">Semana actual</option>
+                <option value="month">Mes actual</option>
+                <option value="all">Todo el historial</option>
+              </select>
+            </span>
+          </label>
+          <span
+            aria-live="polite"
+            className={cn(
+              "absolute -bottom-5 right-0 flex items-center gap-2 text-xs text-app-muted transition-opacity duration-150",
+              isUpdating ? "opacity-100" : "pointer-events-none opacity-0"
+            )}
+            role="status"
+          >
+            {isUpdating ? (
+              <>
+                <RefreshCw aria-hidden="true" className="inventory-refresh-spin h-3.5 w-3.5" />
+                Actualizando…
+              </>
+            ) : null}
+          </span>
         </div>
       ) : null}
       <div className={cn("min-h-[360px]", animateView && "inventory-view-enter")} key={displayView}>
@@ -2542,6 +2850,7 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const replaceViewData = useGreenhouseStore((state) => state.replaceViewData);
   const [retryKey, setRetryKey] = useState(0);
+  const [resolvedSection, setResolvedSection] = useState<SectionId | null>(null);
   const entityKey = entity ? `${entity.type}:${"pestPublicId" in entity ? entity.pestPublicId : "lotPublicId" in entity ? entity.lotPublicId : entity.greenhousePublicId}` : "";
   const listKey = JSON.stringify(list ?? {});
   const required = requiresWorkspaceViewData(section, entity);
@@ -2570,14 +2879,18 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
 
     let active = true;
     const cached = retryKey === 0 ? getCachedViewData(cacheKey) : null;
+    const canKeepCurrentView = section === "inventory" && resolvedSection === section;
     if (cached?.isFresh) {
       replaceViewData(cached.data, cached.meta);
+      setResolvedSection(section);
       setLoadState({ key: requestKey, status: "ready", error: "" });
       return () => { active = false; };
     }
 
     if (cached) {
       replaceViewData(cached.data, cached.meta);
+      setLoadState({ key: requestKey, status: "refreshing", error: "" });
+    } else if (canKeepCurrentView) {
       setLoadState({ key: requestKey, status: "refreshing", error: "" });
     } else {
       setLoadState({ key: requestKey, status: "loading", error: "" });
@@ -2595,6 +2908,7 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
       if (!active) return;
       cacheViewData(cacheKey, data, meta);
       replaceViewData(data, meta);
+      setResolvedSection(section);
       setLoadState({ key: requestKey, status: "ready", error: "" });
     }).catch((caught) => {
       if (!active) return;
@@ -2609,15 +2923,21 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
       }
       setLoadState({
         key: requestKey,
-        status: cached ? "stale" : "error",
+        status: cached || canKeepCurrentView ? "stale" : "error",
         error: appErrorMessage(caught, "No se pudo actualizar esta vista.")
       });
     });
 
     return () => { active = false; };
-  }, [cacheKey, currentUser.fullName, entity, entityKey, greenhouseId, list, listKey, organization.id, organization.name, organization.slug, period, replaceViewData, requestKey, required, retryKey, router, section]);
+  }, [cacheKey, currentUser.fullName, entity, entityKey, greenhouseId, list, listKey, organization.id, organization.name, organization.slug, period, replaceViewData, requestKey, required, resolvedSection, retryKey, router, section]);
 
-  if (required && (loadState.key !== requestKey || loadState.status === "loading")) {
+  const canKeepCurrentView = section === "inventory" && resolvedSection === section;
+  const isStartingRequest = loadState.key !== requestKey;
+  const isUpdating = required
+    && canKeepCurrentView
+    && (isStartingRequest || loadState.status === "loading" || loadState.status === "refreshing");
+
+  if (required && !canKeepCurrentView && (isStartingRequest || loadState.status === "loading")) {
     return (
       <section aria-busy="true" aria-label="Cargando vista" className="animate-pulse py-10">
         <div className="h-3 w-28 bg-app-border" />
@@ -2643,13 +2963,23 @@ function ViewDataBoundary({ children, entity, list }: { children: React.ReactNod
 
   return (
     <>
-      {required && loadState.key === requestKey && (loadState.status === "refreshing" || loadState.status === "stale") ? (
+      {required && loadState.key === requestKey && loadState.status === "stale" ? (
         <div aria-live="polite" className="mb-4 flex flex-wrap items-center justify-between gap-3 border-y border-app-border py-3 text-xs text-app-muted">
-          <span>{loadState.status === "refreshing" ? "Actualizando datos…" : `${loadState.error} Mostrando la última información disponible.`}</span>
+          <span>{loadState.error} Mostrando la última información disponible.</span>
           <Button className="h-8 px-3 text-xs" onClick={refresh} variant="ghost">Reintentar</Button>
         </div>
       ) : null}
-      <ViewDataRefreshContext.Provider value={refresh}>{children}</ViewDataRefreshContext.Provider>
+      <ViewDataRefreshContext.Provider value={{ isUpdating, refresh }}>
+        <div
+          aria-busy={isUpdating}
+          className={cn(
+            "transition-opacity duration-150",
+            isUpdating && "opacity-70"
+          )}
+        >
+          {children}
+        </div>
+      </ViewDataRefreshContext.Provider>
     </>
   );
 }

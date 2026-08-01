@@ -10,11 +10,12 @@ import { cn, formatNumber } from "@/lib/utils";
 import type { Greenhouse } from "@/types";
 
 type CropDdtPanelProps = {
+  className?: string;
   greenhouse: Greenhouse;
   compact?: boolean;
 };
 
-export function CropDdtPanel({ greenhouse, compact = false }: CropDdtPanelProps) {
+export function CropDdtPanel({ className, greenhouse, compact = false }: CropDdtPanelProps) {
   const cropStages = useGreenhouseStore((state) => state.cropStages);
   const status = getCropDdtStatus(
     greenhouse.cropId,
@@ -26,7 +27,7 @@ export function CropDdtPanel({ greenhouse, compact = false }: CropDdtPanelProps)
   const hasTechnicalCatalog = status.status !== "missing-catalog";
 
   return (
-    <section className="border-t border-app-border py-5">
+    <section className={cn("border-t border-app-border py-5", className)}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
