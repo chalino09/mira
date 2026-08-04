@@ -611,6 +611,11 @@ function OverviewSection({
   const handleCompleteTask = async (taskId: string) => {
     const task = greenhouseTasks.find((item) => item.id === taskId);
     if (!task) return;
+    if (task.status === "Pendiente") {
+      setActiveSection("calendar");
+      setTaskNotice({ tone: "green", message: "Inicia la actividad desde Operación antes de completarla." });
+      return;
+    }
     if (isTechnicalCompletionTask(task)) {
       onRequestTechnicalCompletion?.(task);
       return;
@@ -699,13 +704,13 @@ function OverviewSection({
         <form className="grid gap-5" onSubmit={handleSimpleCompletion}>
           <div className="border-l-2 border-app-green pl-3">
             <p className="text-sm font-medium text-app-text">{simpleCompletionTask?.type} · {simpleCompletionTask?.title}</p>
-            <p className="mt-1 text-xs leading-5 text-app-muted">Confirma la ejecución antes de marcarla como completada.</p>
+            <p className="mt-1 text-xs leading-5 text-app-muted">Al completar quedará pendiente de verificación por otro supervisor.</p>
           </div>
           <Field label="Fecha real">
             <DatePickerInput name="occurredAt" required defaultValue={simpleCompletionTask?.date ?? localDateKey()} />
           </Field>
-          <Field label="Nota opcional">
-            <TextArea name="note" placeholder="Comentario breve si aplica" />
+          <Field label="Explicación de la ejecución">
+            <TextArea name="note" placeholder="Describe qué se realizó y cualquier resultado relevante." required />
           </Field>
           <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
             <Button disabled={Boolean(savingTaskId)} onClick={() => setSimpleCompletionTask(null)} type="button" variant="secondary">

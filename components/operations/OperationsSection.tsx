@@ -11,6 +11,7 @@ import {
   Edit3,
   Ellipsis,
   ExternalLink,
+  History,
   Minus,
   Paperclip,
   Plus,
@@ -82,6 +83,17 @@ type WorkEvidenceRow = {
   mime_type: string | null;
   file_size_bytes: number | null;
   note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+type WorkEventRow = {
+  id: string;
+  work_id: string;
+  actor_user_id: string | null;
+  update_type: string;
+  note: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -94,6 +106,99 @@ type HistoryTechnicalResult = {
   detail: string;
   occurredAt: string;
 };
+
+const workEventLabels: Record<string, string> = {
+  created: "Actividad planeada",
+  assigned: "Responsable asignado",
+  published: "Actividad enviada",
+  acknowledged: "Actividad confirmada",
+  started: "Actividad iniciada",
+  blocked: "Actividad bloqueada",
+  completed: "Actividad completada",
+  verified: "Actividad verificada",
+  reopened: "Actividad reabierta",
+  cancelled: "Actividad cancelada",
+  comment: "Comentario agregado",
+  question: "Pregunta enviada",
+  answer: "Respuesta recibida"
+};
+
+function workEventSource(metadata: Record<string, unknown> | null) {
+  const source = typeof metadata?.source === "string" ? metadata.source : "";
+  if (source === "telegram") return "Telegram";
+  if (source === "technical_adapter") return "App web";
+  if (source === "work") return "App web";
+  if (source === "backfill" || source === "migration") return "Migración";
+  return "Sistema";
+}
+
+function formatWorkEventDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function WorkTimeline({
+  events,
+  evidence,
+  actorName,
+  onOpenEvidence
+}: {
+  events: WorkEventRow[];
+  evidence: WorkEvidenceRow[];
+  actorName: (userId: string | null) => string;
+  onOpenEvidence: (evidence: WorkEvidenceRow) => void;
+}) {
+  const entries = [
+    ...events.map((event) => ({ kind: "event" as const, date: event.created_at, event })),
+    ...evidence.map((item) => ({ kind: "evidence" as const, date: item.created_at, evidence: item }))
+  ].sort((left, right) => left.date.localeCompare(right.date));
+
+  return (
+    <details className="mt-3 border-y border-app-border py-1">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-1 text-xs font-medium text-app-text outline-none transition-colors hover:bg-app-sidebar focus-visible:ring-2 focus-visible:ring-app-green/25">
+        <span className="flex items-center gap-2"><History aria-hidden="true" className="h-4 w-4 text-app-muted" />Bitácora</span>
+        <span className="font-mono text-[10px] text-app-muted">{entries.length} movimiento{entries.length === 1 ? "" : "s"}</span>
+      </summary>
+      {entries.length ? (
+        <ol className="ml-2 mt-2 border-l border-app-border pb-2 pl-4" aria-label="Historial de la actividad">
+          {entries.map((entry) => {
+            if (entry.kind === "evidence") {
+              const item = entry.evidence;
+              return (
+                <li className="relative pb-4 last:pb-0" key={`evidence-${item.id}`}>
+                  <span aria-hidden="true" className="absolute -left-[19px] top-1.5 h-2 w-2 rounded-full bg-app-amber ring-4 ring-white" />
+                  <p className="text-xs font-medium text-app-text">Evidencia adjuntada</p>
+                  <p className="mt-1 text-[11px] leading-5 text-app-muted">{actorName(item.created_by)} · {formatWorkEventDate(item.created_at)} · App web</p>
+                  {item.note ? <p className="mt-1 break-words text-xs leading-5 text-app-text">{item.note}</p> : null}
+                  <Button className="mt-1 min-h-8 px-2 text-xs" icon={<ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => onOpenEvidence(item)} variant="ghost">Abrir {item.file_name}</Button>
+                </li>
+              );
+            }
+
+            const event = entry.event;
+            return (
+              <li className="relative pb-4 last:pb-0" key={event.id}>
+                <span aria-hidden="true" className="absolute -left-[19px] top-1.5 h-2 w-2 rounded-full bg-app-green ring-4 ring-white" />
+                <p className="text-xs font-medium text-app-text">{workEventLabels[event.update_type] ?? "Actividad actualizada"}</p>
+                <p className="mt-1 text-[11px] leading-5 text-app-muted">{actorName(event.actor_user_id)} · {formatWorkEventDate(event.created_at)} · {workEventSource(event.metadata)}</p>
+                {event.note ? <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-app-text">{event.note}</p> : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="px-1 pb-2 pt-1 text-xs leading-5 text-app-muted">La bitácora aparecerá cuando se registre la primera acción.</p>
+      )}
+    </details>
+  );
+}
 
 type AssignmentRow = {
   id: string;
@@ -1580,6 +1685,54 @@ function WorkEvidenceModal({
   );
 }
 
+function CompleteWorkModal({
+  task,
+  saving,
+  onClose,
+  onSave
+}: {
+  task: OperationTaskRow | null;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (note: string) => Promise<void>;
+}) {
+  const [note, setNote] = useState("");
+
+  useEffect(() => setNote(""), [task?.id]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onSave(note.trim());
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar actividad completada">
+      <form className="grid gap-5" key={task?.id ?? "complete-work"} onSubmit={handleSubmit}>
+        <div>
+          <p className="text-sm font-medium text-app-text">{task?.title}</p>
+          <p className="mt-2 text-sm leading-6 text-app-muted">
+            Al completar, la actividad quedará pendiente de verificación por otro supervisor. No se aprobará automáticamente.
+          </p>
+        </div>
+        <Field label="Explicación de la ejecución">
+          <TextArea
+            autoFocus
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Describe qué se realizó y cualquier resultado relevante."
+            required
+            value={note}
+          />
+        </Field>
+        <p className="text-xs leading-5 text-app-muted">Puedes adjuntar fotos o documentos desde “Evidencia” antes o después de completar.</p>
+        <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving || !note.trim()} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y enviar a verificación"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function OperationsSection({
   copilotInsights = [],
   operationRefreshKey = 0,
@@ -1628,6 +1781,9 @@ export function OperationsSection({
   const [historyResultsByTaskId, setHistoryResultsByTaskId] = useState<Record<string, HistoryTechnicalResult[]>>({});
   const [evidence, setEvidence] = useState<WorkEvidenceRow[]>([]);
   const [historyEvidence, setHistoryEvidence] = useState<WorkEvidenceRow[]>([]);
+  const [workEvents, setWorkEvents] = useState<WorkEventRow[]>([]);
+  const [historyWorkEvents, setHistoryWorkEvents] = useState<WorkEventRow[]>([]);
+  const [auditActorNames, setAuditActorNames] = useState<Record<string, string>>({});
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [staffAssignments, setStaffAssignments] = useState<StaffAssignmentRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
@@ -1654,6 +1810,8 @@ export function OperationsSection({
   const [blockedReason, setBlockedReason] = useState("");
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
+  const [completionTask, setCompletionTask] = useState<OperationTaskRow | null>(null);
+  const [undoCompletionTask, setUndoCompletionTask] = useState<OperationTaskRow | null>(null);
   const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
   const [operationView, setOperationView] = useState<OperationView>("calendar");
   const [overdueExpanded, setOverdueExpanded] = useState(false);
@@ -1742,9 +1900,8 @@ export function OperationsSection({
       tasksQuery,
       supabase
         .from("company_members")
-        .select("user_id")
+        .select("user_id, role")
         .eq("company_id", organization.id)
-        .eq("role", "manager")
         .eq("status", "active"),
       supabase
         .from("company_staff")
@@ -1771,11 +1928,16 @@ export function OperationsSection({
     const taskRows = (tasksResponse.data ?? []) as OperationTaskRow[];
     const taskIds = taskRows.map((task) => task.id);
     const taskGreenhouseIds = Array.from(new Set(taskRows.map((task) => task.greenhouse_id).filter(Boolean)));
-    const managerIds = (membersResponse.data ?? [])
+    const activeMembers = (membersResponse.data ?? []) as Array<{ user_id: string | null; role: string }>;
+    const memberUserIds = activeMembers
       .map((member: any) => member.user_id)
       .filter((id: string | null): id is string => Boolean(id));
+    const managerIds = activeMembers
+      .filter((member) => member.role === "manager")
+      .map((member) => member.user_id)
+      .filter((id): id is string => Boolean(id));
 
-    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, pendingNotificationsResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, eventsResponse, pendingNotificationsResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -1785,14 +1947,17 @@ export function OperationsSection({
       taskIds.length
         ? supabase.from("task_materials").select("id, task_id, product_id, product_name, composition, dose, unit, mixing_order, notes").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
-      managerIds.length
-        ? supabase.from("profiles").select("id, full_name, email").in("id", managerIds)
+      memberUserIds.length
+        ? supabase.from("profiles").select("id, full_name, email").in("id", memberUserIds)
         : Promise.resolve({ data: [], error: null }),
       taskGreenhouseIds.length
         ? supabase.from("greenhouses").select("id, name").eq("company_id", organization.id).in("id", taskGreenhouseIds)
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
-        ? supabase.from("work_evidence").select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_at").in("work_id", taskIds).order("created_at", { ascending: false })
+        ? supabase.from("work_evidence").select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_by, created_at").in("work_id", taskIds).order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      taskIds.length
+        ? supabase.from("work_events").select("id, work_id, actor_user_id, update_type, note, metadata, created_at").in("work_id", taskIds).order("created_at", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       planResponse.data?.status === "published"
         ? supabase
@@ -1804,7 +1969,7 @@ export function OperationsSection({
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? pendingNotificationsResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? eventsResponse.error ?? pendingNotificationsResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1816,6 +1981,11 @@ export function OperationsSection({
     setStaffAssignments((staffAssignmentsResponse.data ?? []) as StaffAssignmentRow[]);
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
     setEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
+    setWorkEvents((eventsResponse.data ?? []) as WorkEventRow[]);
+    setAuditActorNames(Object.fromEntries((profilesResponse.data ?? []).map((profile: any) => [
+      profile.id,
+      profile.full_name ?? profile.email?.split("@")[0] ?? "Miembro del equipo"
+    ])));
     setPendingPublicationCount(new Set(
       (pendingNotificationsResponse.data ?? [])
         .map((notification: { task_id: string | null }) => notification.task_id)
@@ -1870,11 +2040,12 @@ export function OperationsSection({
       setHistoryTasks([]);
       setHistoryResultsByTaskId({});
       setHistoryEvidence([]);
+      setHistoryWorkEvents([]);
       setHistoryLoading(false);
       return;
     }
 
-    const [irrigationResponse, nutritionResponse, applicationsResponse, harvestResponse, evidenceResponse] = await Promise.all([
+    const [irrigationResponse, nutritionResponse, applicationsResponse, harvestResponse, evidenceResponse, eventsResponse] = await Promise.all([
       supabase
         .from("irrigation_records")
         .select("source_task_id, occurred_at, duration_min, estimated_liters, sector, ph, ec")
@@ -1893,16 +2064,22 @@ export function OperationsSection({
         .in("source_task_id", workIds),
       supabase
         .from("work_evidence")
-        .select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_at")
+        .select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_by, created_at")
         .in("work_id", workIds)
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("work_events")
+        .select("id, work_id, actor_user_id, update_type, note, metadata, created_at")
+        .in("work_id", workIds)
+        .order("created_at", { ascending: true })
     ]);
 
     const detailError = irrigationResponse.error
       ?? nutritionResponse.error
       ?? applicationsResponse.error
       ?? harvestResponse.error
-      ?? evidenceResponse.error;
+      ?? evidenceResponse.error
+      ?? eventsResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "No se pudieron cargar todos los resultados técnicos.") });
     }
@@ -1967,6 +2144,7 @@ export function OperationsSection({
     setHistoryTasks(workRows);
     setHistoryResultsByTaskId(resultsByTaskId);
     setHistoryEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
+    setHistoryWorkEvents((eventsResponse.data ?? []) as WorkEventRow[]);
     setHistoryLoading(false);
   }, [organization.id, selectedGreenhouseId]);
 
@@ -1982,6 +2160,8 @@ export function OperationsSection({
   const assignmentsForTask = (taskId: string) => assignments.filter((item) => item.task_id === taskId);
   const staffAssignmentsForTask = (taskId: string) => staffAssignments.filter((item) => item.task_id === taskId);
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
+  const eventsForTask = (taskId: string) => [...workEvents, ...historyWorkEvents].filter((item) => item.work_id === taskId);
+  const auditActorName = (userId: string | null) => userId ? auditActorNames[userId] ?? "Miembro del equipo" : "Sistema";
   const managerName = (userId: string) => managers.find((manager) => manager.id === userId)?.name ?? "Encargado";
   const staffName = (staffId: string) => staff.find((person) => person.id === staffId)?.name ?? "Encargado";
   const greenhouseName = (greenhouseId: string) =>
@@ -2196,7 +2376,7 @@ export function OperationsSection({
     setNotice({ tone: "green", message: telegramDispatchMessage(data) });
   };
 
-  const completeTask = useCallback(async (task: OperationTaskRow) => {
+  const completeTask = useCallback(async (task: OperationTaskRow, note?: string) => {
     if (task.type === "aplicacion_foliar") {
       if (!materials.some((material) => material.task_id === task.id)) {
         setNotice({
@@ -2227,6 +2407,10 @@ export function OperationsSection({
       setHarvestTask(task);
       return;
     }
+    if (!note?.trim()) {
+      setCompletionTask(task);
+      return;
+    }
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
@@ -2235,7 +2419,7 @@ export function OperationsSection({
     setNotice(null);
     const { data, error } = await supabase.rpc("complete_work", {
       target_work_id: task.id,
-      target_payload: { occurredAt: new Date().toISOString() }
+      target_payload: { occurredAt: new Date().toISOString(), note: note || null }
     });
     setCompleting(false);
 
@@ -2243,9 +2427,34 @@ export function OperationsSection({
       setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
       return;
     }
-    setNotice({ tone: "green", message: data?.status === "verificada" ? "Actividad completada y verificada." : "Actividad completada." });
+    setCompletionTask(null);
+    setUndoCompletionTask(task);
+    setNotice({ tone: "green", message: "Actividad completada. Quedó pendiente de verificación." });
     await loadOperations();
   }, [loadOperations, materials]);
+
+  const undoCompletion = async () => {
+    if (!undoCompletionTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setCompleting(true);
+    const { error } = await supabase.rpc("undo_work_completion", { target_work_id: undoCompletionTask.id });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "Ya no se pudo deshacer la finalización.") });
+      setUndoCompletionTask(null);
+      return;
+    }
+    setUndoCompletionTask(null);
+    setNotice({ tone: "green", message: "Se deshizo la finalización. La actividad volvió a estar en ejecución." });
+    await loadOperations();
+  };
+
+  useEffect(() => {
+    if (!undoCompletionTask) return;
+    const timeout = window.setTimeout(() => setUndoCompletionTask(null), 30_000);
+    return () => window.clearTimeout(timeout);
+  }, [undoCompletionTask]);
 
   const startTask = async (task: OperationTaskRow) => {
     const supabase = getSupabaseBrowserClient();
@@ -2684,6 +2893,12 @@ export function OperationsSection({
 
   return (
     <section>
+      {undoCompletionTask ? (
+        <div className="mb-4 flex flex-col gap-3 border border-[#C8DFC9] bg-app-soft px-3 py-3 text-sm text-app-green sm:flex-row sm:items-center sm:justify-between" role="status">
+          <span>La actividad quedó pendiente de verificación. Puedes deshacer esta finalización durante 30 segundos.</span>
+          <Button disabled={completing} onClick={undoCompletion} variant="secondary">Deshacer finalización</Button>
+        </div>
+      ) : null}
       <header className="mb-4 border-b border-app-border pb-4 pt-4 md:pt-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -2990,6 +3205,12 @@ export function OperationsSection({
                             </p>
                           )}
                           {resultKinds.length ? <div className="mt-3 flex flex-wrap gap-1.5">{resultKinds.map((kind) => <StatusBadge key={kind} tone="green">{historyKindLabel(kind)}</StatusBadge>)}</div> : null}
+                          <WorkTimeline
+                            actorName={auditActorName}
+                            events={eventsForTask(task.id)}
+                            evidence={taskEvidence}
+                            onOpenEvidence={openEvidence}
+                          />
                         </div>
 
                         <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -3067,7 +3288,9 @@ export function OperationsSection({
                               </p>
                             ) : null}
                             <div className="mt-3">
-                              {["pendiente", "en_progreso"].includes(task.status) ? (
+                              {task.status === "pendiente" ? (
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} variant="primary">Iniciar</Button>
+                              ) : task.status === "en_progreso" ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
                               ) : task.status === "bloqueada" ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Reanudar actividad" variant="primary">Reanudar</Button>
@@ -3093,7 +3316,16 @@ export function OperationsSection({
                                   </div>
                                 ) : null}
                                 {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
+                                {canPlan && task.status === "completada" ? (
+                                  <p className="mt-2 text-xs leading-5 text-app-muted">Revisión pendiente: verifica solo actividades realizadas por otra persona. Si la ejecutaste tú, otro admin u owner debe aprobarla.</p>
+                                ) : null}
                                 {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
+                                <WorkTimeline
+                                  actorName={auditActorName}
+                                  events={eventsForTask(task.id)}
+                                  evidence={evidenceForTask(task.id)}
+                                  onOpenEvidence={openEvidence}
+                                />
                                 <div className="mt-3 flex flex-wrap gap-1.5">
                                   {canPlan ? (
                                     <Button
@@ -3215,6 +3447,13 @@ export function OperationsSection({
         onSave={saveEvidence}
         saving={saving}
         task={evidenceTask}
+      />
+
+      <CompleteWorkModal
+        onClose={() => setCompletionTask(null)}
+        onSave={(note) => completionTask ? completeTask(completionTask, note) : Promise.resolve()}
+        saving={completing}
+        task={completionTask}
       />
 
       <Modal open={Boolean(blockedTask)} onClose={() => { setBlockedTask(null); setBlockedReason(""); }} title="Reportar bloqueo">

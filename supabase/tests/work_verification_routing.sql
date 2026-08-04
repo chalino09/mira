@@ -84,14 +84,32 @@ begin
   perform set_config('request.jwt.claim.sub', owner_id::text, true);
   perform set_config('request.jwt.claim.role', 'authenticated', true);
 
+  perform public.start_work(direct_work);
+
   direct_result := public.complete_work(
     direct_work,
-    jsonb_build_object('occurredAt', now())
+    jsonb_build_object('occurredAt', now(), 'note', 'Mantenimiento realizado')
   );
 
-  if direct_result->>'status' <> 'verificada' then
-    raise exception 'A direct Mira completion should remain automatically verified';
+  if direct_result->>'status' <> 'completada' then
+    raise exception 'A direct Mira completion should await verification';
   end if;
+
+  if exists (
+    select 1 from public.tasks
+    where id = direct_work and (verified_at is not null or verified_by is not null)
+  ) then
+    raise exception 'A direct Mira completion retained verification metadata';
+  end if;
+
+  begin
+    perform public.verify_work(direct_work);
+    raise exception 'The completing user should not verify the same Work';
+  exception when others then
+    if sqlerrm <> 'work_verification_requires_different_supervisor' then
+      raise;
+    end if;
+  end;
 
   perform public.block_work(blocked_work, 'Falta una refacción');
 
@@ -106,7 +124,7 @@ begin
   perform public.start_work(blocked_work);
   blocked_result := public.complete_work(
     blocked_work,
-    jsonb_build_object('occurredAt', now())
+    jsonb_build_object('occurredAt', now(), 'note', 'Mantenimiento realizado tras el bloqueo')
   );
 
   if blocked_result->>'status' <> 'completada' then
