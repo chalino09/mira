@@ -123,7 +123,8 @@ begin
   limit 1;
 
   if target_company_id is null or target_greenhouse_id is null then
-    raise exception 'mercadia_hectarea_4_not_found';
+    raise notice 'Mercadia / Hectárea 4 no existe; se omite la importación histórica.';
+    return;
   end if;
 
   select id into tomato_id from public.crops where slug = 'jitomate' limit 1;
@@ -685,6 +686,11 @@ begin
     and public.route_slug(greenhouse.name) = 'hectarea-4'
     and greenhouse.is_active
   limit 1;
+
+  if target_company_id is null or target_greenhouse_id is null then
+    raise notice 'Mercadia / Hectárea 4 no existe; se omite la conciliación histórica.';
+    return;
+  end if;
 
   select count(*), coalesce(sum(amount), 0) into cost_count, cost_total
   from public.cost_records
