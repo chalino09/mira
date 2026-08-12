@@ -109,6 +109,10 @@ type AppState = {
 
 const allGreenhousesId = "__all__";
 
+export function defaultPeriodForSection(section: SectionId): ContextPeriod {
+  return section === "harvest" || section === "inventory" || section === "costs" ? "all" : "month";
+}
+
 export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   activeSection: "overview",
   selectedGreenhouseId: allGreenhousesId,
@@ -150,7 +154,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
       : state.greenhouses.some((greenhouse) => greenhouse.id === savedContext?.greenhouseId);
     const context = hasValidGreenhouse && savedContext ? savedContext : {
       greenhouseId: ["overview", "monitoring"].includes(section) ? state.greenhouses[0]?.id ?? "" : allGreenhousesId,
-      period: "month" as ContextPeriod
+      period: defaultPeriodForSection(section)
     };
     return { activeSection: section, selectedGreenhouseId: context.greenhouseId, selectedPeriod: context.period };
   }),
@@ -192,7 +196,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         nutritionObservationRules: data.nutritionObservationRules,
         greenhouses: data.greenhouses,
         selectedGreenhouseId,
-        selectedPeriod: "month",
+        selectedPeriod: defaultPeriodForSection(activeSection),
         viewContexts: {},
         modal: null,
         tasks: [],

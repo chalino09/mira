@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { navigationItemsForRole } from "@/data/navigation";
 import { cn } from "@/lib/utils";
-import { useGreenhouseStore } from "@/lib/store";
+import { defaultPeriodForSection, useGreenhouseStore } from "@/lib/store";
 import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
 import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
@@ -23,7 +23,7 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const organization = useGreenhouseStore((state) => state.organization);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
-  const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
+  const viewContexts = useGreenhouseStore((state) => state.viewContexts);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const navigationItems = useMemo(() => navigationItemsForRole(currentUser.role), [currentUser.role]);
   const mobileNavigationItems = useMemo(
@@ -37,8 +37,8 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
 
   const sectionHref = (section: SectionId) => appRoute(organization.slug ?? organization.name, {
     section,
-    greenhouseId: selectedGreenhouseId,
-    period: selectedPeriod
+    greenhouseId: viewContexts[section]?.greenhouseId ?? selectedGreenhouseId,
+    period: viewContexts[section]?.period ?? defaultPeriodForSection(section)
   });
 
   return (

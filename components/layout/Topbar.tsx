@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appRoute, parseAppRoute } from "@/lib/routes";
 import { weekOfYear } from "@/lib/date";
-import { useGreenhouseStore } from "@/lib/store";
+import { defaultPeriodForSection, useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
 
 export function Topbar({
@@ -25,6 +25,7 @@ export function Topbar({
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
   const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
+  const viewContexts = useGreenhouseStore((state) => state.viewContexts);
   const organization = useGreenhouseStore((state) => state.organization);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
@@ -37,11 +38,13 @@ export function Topbar({
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
   const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {
-    const staysInSection = (next.section ?? activeSection) === activeSection;
+    const targetSection = next.section ?? activeSection;
+    const staysInSection = targetSection === activeSection;
+    const savedContext = viewContexts[targetSection];
     router.push(appRoute(organization.slug ?? organization.name, {
-      section: next.section ?? activeSection,
-      greenhouseId: next.greenhouseId ?? selectedGreenhouseId,
-      period: next.period ?? selectedPeriod,
+      section: targetSection,
+      greenhouseId: next.greenhouseId ?? (staysInSection ? selectedGreenhouseId : savedContext?.greenhouseId ?? selectedGreenhouseId),
+      period: next.period ?? (staysInSection ? selectedPeriod : savedContext?.period ?? defaultPeriodForSection(targetSection)),
       inventoryView: currentRoute.inventoryView,
       list: staysInSection ? { ...currentRoute.list, page: undefined } : undefined
     }));
