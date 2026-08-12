@@ -1537,7 +1537,7 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
         <SectionHeader
           action={<Button icon={<WalletCards className="h-4 w-4" />} onClick={() => openModal("cost")} variant="secondary">Registrar costo</Button>}
           title="Costos"
-          description="Mano de obra, insumos, agua, energía y otros costos necesarios para producir."
+          description="Nómina, insumos, agua, energía y otros costos necesarios para producir."
         />
       ) : (
         <div className="mb-5 flex flex-col gap-3 border-y border-app-border py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1576,7 +1576,7 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
       <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
         <SelectInput aria-label="Categoría de costo" className="h-10" value={list.status ?? ""} onChange={(event) => updateList({ status: event.target.value || undefined, page: undefined })}>
           <option value="">Todas las categorías</option>
-          <option value="mano_obra">Mano de obra</option>
+          <option value="mano_obra">Nómina</option>
           <option value="fertilizantes">Fertilizantes</option>
           <option value="agroinsumos">Agroinsumos</option>
           <option value="agua">Agua</option>

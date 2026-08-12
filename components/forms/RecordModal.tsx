@@ -10,6 +10,7 @@ import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { appErrorMessage } from "@/lib/errors";
+import { costCategoryToDb } from "@/lib/cost-categories";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
@@ -176,20 +177,6 @@ const nutritionObjectiveToDb: Record<NutritionRecord["objective"], string> = {
   Cuajado: "cuajado",
   Engorde: "engorde",
   Calidad: "calidad"
-};
-
-const costCategoryToDb: Record<CostRecord["category"], string> = {
-  "Mano de obra": "mano_obra",
-  Fertilizantes: "fertilizantes",
-  Agroinsumos: "agroinsumos",
-  Agua: "agua",
-  Energía: "energia",
-  Plásticos: "plasticos",
-  Mantenimiento: "mantenimiento",
-  Transporte: "transporte",
-  Refrescos: "refrescos",
-  Renta: "renta",
-  Gasolina: "gasolina"
 };
 
 const pestFollowUpStatuses = [

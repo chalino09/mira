@@ -1,4 +1,4 @@
-import { formatCurrency, formatNumber, parseNumericInput } from "@/lib/utils";
+import { formatCurrency, formatNumber, parseNumericInput } from "./utils.ts";
 
 export type HarvestCaptureValues = {
   boxCount: number;
@@ -18,6 +18,69 @@ export type HarvestCaptureValues = {
   estimatedPrice: number;
   estimatedRevenue: number;
 };
+
+export type HarvestBoxReconciliation = {
+  classifiedBoxes: number;
+  difference: number;
+  isBalanced: boolean;
+  message: string;
+};
+
+function boxesLabel(value: number) {
+  return `${formatNumber(value)} ${Math.abs(value) === 1 ? "caja" : "cajas"}`;
+}
+
+export function reconcileHarvestBoxes({
+  boxCount,
+  firstQualityBoxes,
+  secondQualityBoxes,
+  thirdQualityBoxes,
+  mermaBoxes
+}: Pick<HarvestCaptureValues,
+  | "boxCount"
+  | "firstQualityBoxes"
+  | "secondQualityBoxes"
+  | "thirdQualityBoxes"
+  | "mermaBoxes"
+>): HarvestBoxReconciliation {
+  const classifiedBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + mermaBoxes;
+  const difference = classifiedBoxes - boxCount;
+  const isBalanced = boxCount > 0 && Math.abs(difference) < 0.000001;
+
+  if (boxCount <= 0) {
+    return {
+      classifiedBoxes,
+      difference,
+      isBalanced: false,
+      message: "Captura una cantidad mayor a cero en Cajas totales."
+    };
+  }
+
+  if (difference > 0) {
+    return {
+      classifiedBoxes,
+      difference,
+      isBalanced,
+      message: `Reduce ${boxesLabel(difference)}. Las calidades suman ${boxesLabel(classifiedBoxes)} y el total es ${boxesLabel(boxCount)}.`
+    };
+  }
+
+  if (difference < 0) {
+    return {
+      classifiedBoxes,
+      difference,
+      isBalanced,
+      message: `Clasifica ${boxesLabel(Math.abs(difference))} más. Las calidades suman ${boxesLabel(classifiedBoxes)} de ${boxesLabel(boxCount)}.`
+    };
+  }
+
+  return {
+    classifiedBoxes,
+    difference,
+    isBalanced,
+    message: `${boxesLabel(classifiedBoxes)} clasificadas.`
+  };
+}
 
 function formNumber(form: FormData, key: string) {
   return parseNumericInput(String(form.get(key) ?? "")) ?? 0;

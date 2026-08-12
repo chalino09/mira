@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FormattedNumberInput } from "@/components/forms/FormControls";
-import { harvestSummary } from "@/lib/harvest";
+import { harvestSummary, reconcileHarvestBoxes } from "@/lib/harvest";
 import { cn, parseNumericInput } from "@/lib/utils";
 
 type HarvestCaptureFieldsProps = {
@@ -15,6 +15,8 @@ function numberValue(value: string) {
 }
 
 export function HarvestCaptureFields({ compact = false, showPrices = true }: HarvestCaptureFieldsProps) {
+  const reconciliationId = useId();
+  const boxCountRef = useRef<HTMLInputElement>(null);
   const [boxCount, setBoxCount] = useState("");
   const [boxWeightKg, setBoxWeightKg] = useState("20");
   const [firstQualityBoxes, setFirstQualityBoxes] = useState("");
@@ -72,6 +74,24 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
     thirdQualityPrice
   ]);
 
+  const hasBoxValues = [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes]
+    .some((value) => value.trim() !== "");
+  const reconciliation = useMemo(() => reconcileHarvestBoxes({
+    boxCount: numberValue(boxCount),
+    firstQualityBoxes: numberValue(firstQualityBoxes),
+    secondQualityBoxes: numberValue(secondQualityBoxes),
+    thirdQualityBoxes: numberValue(thirdQualityBoxes),
+    mermaBoxes: numberValue(mermaBoxes)
+  }), [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes]);
+  const reconciliationMessage = hasBoxValues ? reconciliation.message : "";
+  const reconciliationInvalid = hasBoxValues && !reconciliation.isBalanced;
+
+  useEffect(() => {
+    boxCountRef.current?.setCustomValidity(
+      reconciliationInvalid ? reconciliation.message : ""
+    );
+  }, [reconciliation, reconciliationInvalid]);
+
   const qualityFields = [
     {
       key: "first",
@@ -111,11 +131,15 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
         <label className="grid gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Cajas totales</span>
           <FormattedNumberInput
+            aria-describedby={reconciliationMessage ? reconciliationId : undefined}
+            aria-invalid={reconciliationInvalid ? "true" : undefined}
+            className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
             min={0}
             name="boxCount"
             onChange={(event) => setBoxCount(event.target.value)}
             placeholder="500"
             required
+            ref={boxCountRef}
             value={boxCount}
           />
         </label>
@@ -137,7 +161,10 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{field.title}</p>
             <div className="mt-3 grid gap-2">
               <FormattedNumberInput
+                aria-describedby={reconciliationMessage ? reconciliationId : undefined}
+                aria-invalid={reconciliationInvalid ? "true" : undefined}
                 aria-label={`Cajas ${field.title}`}
+                className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
                 min={0}
                 name={field.boxesName}
                 onChange={(event) => field.setBoxes(event.target.value)}
@@ -161,7 +188,10 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Merma</p>
           <div className="mt-3 grid gap-2">
             <FormattedNumberInput
+              aria-describedby={reconciliationMessage ? reconciliationId : undefined}
+              aria-invalid={reconciliationInvalid ? "true" : undefined}
               aria-label="Cajas merma"
+              className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
               min={0}
               name="mermaBoxes"
               onChange={(event) => setMermaBoxes(event.target.value)}
@@ -172,6 +202,17 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
           </div>
         </div>
       </div>
+
+      <p
+        aria-live="polite"
+        className={cn(
+          "min-h-5 text-xs leading-5",
+          reconciliationInvalid ? "text-[#8A2E2E]" : "text-app-muted"
+        )}
+        id={reconciliationId}
+      >
+        {reconciliationMessage}
+      </p>
 
       <div className={cn(
         "grid gap-3 border-y border-app-border py-4",

@@ -70,7 +70,9 @@ const knownMessages: Record<string, string> = {
   surface_m2_invalid: "La superficie no puede ser negativa.",
   plants_count_invalid: "El número de plantas no puede ser negativo.",
   beds_count_invalid: "El número de camas no puede ser negativo.",
-  transplant_date_invalid: "La fecha de trasplante no puede estar en el futuro."
+  transplant_date_invalid: "La fecha de trasplante no puede estar en el futuro.",
+  harvest_box_count_required: "Captura una cantidad mayor a cero en Cajas totales.",
+  harvest_box_reconciliation_required: "Las cajas de 1ra, 2da, 3ra y merma deben sumar exactamente las Cajas totales."
 };
 
 const knownCodes: Record<string, string> = {

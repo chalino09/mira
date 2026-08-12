@@ -51,7 +51,7 @@ type InventoryForm = "entry" | "item" | "adjustment" | "rate" | null;
 
 const categories = [
   ["agroinsumos", "Agroinsumos"], ["fertilizantes", "Fertilizantes"], ["agua", "Agua"],
-  ["energia", "Energía"], ["mano_obra", "Mano de obra"], ["mantenimiento", "Mantenimiento"]
+  ["energia", "Energía"], ["mano_obra", "Nómina"], ["mantenimiento", "Mantenimiento"]
 ] as const;
 
 const movementLabels: Record<Movement["movement_type"], string> = {

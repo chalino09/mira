@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn, formatNumericInput, formatQuantityInput } from "@/lib/utils";
 
@@ -49,16 +49,16 @@ type FormattedInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | 
   value?: FormattedInputValue;
 };
 
-function FormattedInput({
+const FormattedInput = forwardRef<HTMLInputElement, FormattedInputProps & {
+  formatter: (value: FormattedInputValue) => string;
+}>(function FormattedInput({
   className,
   defaultValue,
   value: controlledValue,
   onChange,
   formatter,
   ...props
-}: FormattedInputProps & {
-  formatter: (value: FormattedInputValue) => string;
-}) {
+}, ref) {
   const isControlled = controlledValue !== undefined;
   const formattedDefaultValue = defaultValue == null ? "" : formatter(defaultValue);
   const [value, setValue] = useState(formattedDefaultValue);
@@ -71,6 +71,7 @@ function FormattedInput({
 
   return (
     <input
+      ref={ref}
       className={cn(fieldClass, className)}
       inputMode="decimal"
       type="text"
@@ -86,15 +87,15 @@ function FormattedInput({
       {...props}
     />
   );
-}
+});
 
-export function FormattedNumberInput(props: FormattedInputProps) {
-  return <FormattedInput {...props} formatter={formatNumericInput} />;
-}
+export const FormattedNumberInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedNumberInput(props, ref) {
+  return <FormattedInput {...props} formatter={formatNumericInput} ref={ref} />;
+});
 
-export function FormattedQuantityInput(props: FormattedInputProps) {
-  return <FormattedInput {...props} formatter={formatQuantityInput} />;
-}
+export const FormattedQuantityInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedQuantityInput(props, ref) {
+  return <FormattedInput {...props} formatter={formatQuantityInput} ref={ref} />;
+});
 
 export function SelectInput({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (

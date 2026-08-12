@@ -17,6 +17,7 @@ import type {
   TaskType,
   ViewOperationalAggregates
 } from "@/types";
+import { mapCostCategory } from "@/lib/cost-categories";
 
 const TASK_COLUMNS = "id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, technical_plan";
 const IRRIGATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, duration_min, estimated_liters, sector, ph, ec, notes";
@@ -142,15 +143,6 @@ function mapApplicationCategory(category?: string | null): ApplicationRecord["ca
     sanitizante_desinfectante: "Sanitizante / Desinfectante", regulador_crecimiento: "Regulador de crecimiento"
   };
   return labels[category ?? ""] ?? "Bioestimulante";
-}
-
-function mapCostCategory(category?: string | null): CostRecord["category"] {
-  const labels: Record<string, CostRecord["category"]> = {
-    mano_obra: "Mano de obra", fertilizantes: "Fertilizantes", agroinsumos: "Agroinsumos",
-    agua: "Agua", energia: "Energía", plasticos: "Plásticos", mantenimiento: "Mantenimiento",
-    transporte: "Transporte", refrescos: "Refrescos", renta: "Renta", gasolina: "Gasolina"
-  };
-  return labels[category ?? ""] ?? "Agroinsumos";
 }
 
 function mapRows(rows: Record<string, any[]>, currentUserName: string): WorkspaceViewData {

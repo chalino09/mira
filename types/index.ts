@@ -287,7 +287,7 @@ export type CostRecord = {
   greenhouseId: string;
   date: string;
   category:
-    | "Mano de obra"
+    | "Nómina"
     | "Fertilizantes"
     | "Agroinsumos"
     | "Agua"
