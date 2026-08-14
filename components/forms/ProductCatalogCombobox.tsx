@@ -7,6 +7,7 @@ import { normalizedProductName } from "@/lib/product-search";
 export type ProductCatalogOption = {
   id: string;
   name: string;
+  category?: string | null;
   composition?: string | null;
   description?: string | null;
 };
@@ -14,6 +15,7 @@ export type ProductCatalogOption = {
 export type ProductCatalogSelection = {
   productId: string;
   productName: string;
+  category: string | null;
   composition: string;
 };
 
@@ -56,6 +58,7 @@ export function ProductCatalogCombobox({
     onChange({
       productId: product.id,
       productName: product.name,
+      category: product.category ?? null,
       composition: product.composition ?? ""
     });
     setOpen(false);
@@ -76,6 +79,7 @@ export function ProductCatalogCombobox({
           onChange({
             productId: nextMatch?.id ?? "",
             productName: nextName,
+            category: nextMatch?.category ?? null,
             composition: nextMatch?.composition ?? ""
           });
           setOpen(true);
@@ -111,7 +115,7 @@ export function ProductCatalogCombobox({
               className="sticky bottom-0 block w-full border-t border-app-border bg-white px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
-                onChange({ productId: "", productName: value.trim(), composition: "" });
+                onChange({ productId: "", productName: value.trim(), category: null, composition: "" });
                 setOpen(false);
               }}
               type="button"
