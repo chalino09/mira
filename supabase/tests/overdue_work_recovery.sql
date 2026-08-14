@@ -10,7 +10,7 @@ declare
   owner_id uuid := '83000000-0000-0000-0000-000000000001';
   irrigation_work uuid := '84000000-0000-0000-0000-000000000001';
 begin
-  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values (owner_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'overdue-recovery-owner@example.test', '', now(), '{}', '{}', now(), now());
   insert into public.companies (id, name, created_by) values (test_company, 'Overdue recovery test', owner_id);
   insert into public.greenhouses (id, company_id, name, manager_user_id) values (test_greenhouse, test_company, 'Invernadero de prueba', owner_id);
