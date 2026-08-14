@@ -3,7 +3,9 @@
 import { Building2, CalendarDays, Plus, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MiraCopilotCommand } from "@/components/copilot/MiraCopilot";
+import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 import { Button } from "@/components/ui/Button";
+import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { appRoute, parseAppRoute } from "@/lib/routes";
 import { weekOfYear } from "@/lib/date";
@@ -56,40 +58,41 @@ export function Topbar({
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
           <div className="flex h-11 min-w-0 w-full items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:h-9 sm:w-auto">
             <Building2 className="h-3.5 w-3.5 shrink-0 text-app-green" />
-            <span className="max-w-28 truncate font-medium text-app-text">{organization.name || "Empresa"}</span>
+            <OrganizationSwitcher className="h-full max-w-40" compact showIcon={false} />
             <span aria-hidden="true">→</span>
             {isCompanyView ? (
               <span className="font-medium text-app-text">Toda la empresa</span>
             ) : (
-              <select
-                aria-label="Alcance de invernaderos"
-                className="h-full min-w-0 cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+              <SelectionMenu
+                ariaLabel="Alcance de invernaderos"
+                buttonClassName="min-h-0 h-full min-w-44 border-0 bg-transparent px-1 shadow-none hover:bg-app-sidebar"
                 value={selectedGreenhouseId}
-                onChange={(event) => navigate({ greenhouseId: event.target.value })}
-              >
-                {acceptsAll ? <option value="__all__">Todos los invernaderos</option> : null}
-                {greenhouses.map((greenhouse) => (
-                  <option key={greenhouse.id} value={greenhouse.id}>
-                    {greenhouseDisplayName(greenhouse, crops)}
-                  </option>
-                ))}
-              </select>
+                onChange={(greenhouseId) => navigate({ greenhouseId })}
+                options={[
+                  ...(acceptsAll ? [{ value: "__all__", label: "Todos los invernaderos" }] : []),
+                  ...greenhouses.map((greenhouse) => ({
+                    value: greenhouse.id,
+                    label: greenhouseDisplayName(greenhouse, crops)
+                  }))
+                ]}
+              />
             )}
           </div>
           {hasContextPeriod ? (
             <div className="flex h-11 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:h-9">
               <CalendarDays className="h-3.5 w-3.5 text-app-green" />
               {acceptsPeriod ? (
-                <select
-                  aria-label="Periodo"
-                  className="h-full cursor-pointer bg-transparent font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+                <SelectionMenu
+                  ariaLabel="Periodo"
+                  buttonClassName="min-h-0 h-full min-w-36 border-0 bg-transparent px-1 shadow-none hover:bg-app-sidebar"
                   value={selectedPeriod}
-                  onChange={(event) => navigate({ period: event.target.value as typeof selectedPeriod })}
-                >
-                  <option value="week">Semana actual</option>
-                  <option value="month">Mes actual</option>
-                  <option value="all">Todo el historial</option>
-                </select>
+                  onChange={(period) => navigate({ period: period as typeof selectedPeriod })}
+                  options={[
+                    { value: "week", label: "Semana actual" },
+                    { value: "month", label: "Mes actual" },
+                    { value: "all", label: "Todo el historial" }
+                  ]}
+                />
               ) : <span className="font-medium text-app-text">{periodLabel}</span>}
             </div>
           ) : null}

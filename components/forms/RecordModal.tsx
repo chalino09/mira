@@ -9,6 +9,7 @@ import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextA
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
+import { applicationCategories, applicationCategoryFromDb, applicationCategoryToDb } from "@/lib/application-categories";
 import { appErrorMessage } from "@/lib/errors";
 import { costCategoryToDb } from "@/lib/cost-categories";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -94,7 +95,7 @@ type NutritionProductDraft = {
 
 type ApplicationProductDraft = {
   productId: string;
-  category: ApplicationRecord["category"];
+  category: ApplicationRecord["category"] | "";
   product: string;
   composition: string;
   dose: string;
@@ -111,7 +112,7 @@ function emptyNutritionProduct(): NutritionProductDraft {
 }
 
 function emptyApplicationProduct(): ApplicationProductDraft {
-  return { productId: "", category: "Bioestimulante", product: "", composition: "", dose: "" };
+  return { productId: "", category: "", product: "", composition: "", dose: "" };
 }
 
 function insertedId(row: { id?: string } | null | undefined, fallback: string) {
@@ -146,22 +147,6 @@ const riskLevelToDb: Record<RiskLevel, string> = {
   Baja: "baja",
   Media: "media",
   Alta: "alta"
-};
-
-const applicationCategoryToDb: Record<ApplicationRecord["category"], string> = {
-  Fertilizante: "fertilizante",
-  Bioestimulante: "bioestimulante",
-  Corrector: "corrector",
-  "Acondicionador de agua": "acondicionador_agua",
-  "Adyuvante / Coadyuvante": "adyuvante_coadyuvante",
-  Microorganismos: "microorganismos",
-  Fungicida: "fungicida",
-  Insecticida: "insecticida",
-  Acaricida: "acaricida",
-  Nematicida: "nematicida",
-  Bactericida: "bactericida",
-  "Sanitizante / Desinfectante": "sanitizante_desinfectante",
-  "Regulador de crecimiento": "regulador_crecimiento"
 };
 
 const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
@@ -497,7 +482,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       const { data, error: productsError } = await supabase
         .from("products")
-        .select("id, name, composition")
+        .select("id, name, category, composition")
         .eq("company_id", organization.id)
         .order("name", { ascending: true });
 
@@ -692,7 +677,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     productId: string;
     product: string;
     composition?: string;
-    category?: ApplicationRecord["category"];
+    category?: ApplicationRecord["category"] | "";
   }) => {
     const productName = product.trim();
     if (!productName) return { productId: "", product: productName, composition: composition ?? "" };
@@ -718,7 +703,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         category: category ? applicationCategoryToDb[category] : null,
         composition: composition?.trim() || null
       })
-      .select("id, name, composition")
+      .select("id, name, category, composition")
       .single();
 
     if (!data) return { productId: "", product: productName, composition: composition ?? "" };
@@ -995,6 +980,11 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
   const handleApplication = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (applicationProducts.some((product) => !product.category)) {
+      setError("Selecciona la categoría de los productos que todavía no la tienen en el catálogo.");
+      event.currentTarget.querySelector<HTMLSelectElement>('select:invalid')?.focus();
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const duplicateRecords = applicationProducts.map((product) => ({
       greenhouseId: String(form.get("greenhouseId")),
@@ -1007,7 +997,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       const records = applicationProducts.map((product, index) => ({
         greenhouseId: String(form.get("greenhouseId")),
         date: String(form.get("date")),
-        category: product.category,
+        category: product.category as ApplicationRecord["category"],
         productId: resolvedProducts[index].productId,
         product: resolvedProducts[index].product,
         composition: resolvedProducts[index].composition,
@@ -1484,6 +1474,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
                       ...item,
                       productId: selection.productId,
                       product: selection.productName,
+                      category: applicationCategoryFromDb(selection.category),
                       composition: selection.composition
                     } : item
                   ))}
@@ -1492,9 +1483,11 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
                 <SelectInput
                   aria-label={`Categoría ${index + 1}`}
                   onChange={(event) => setApplicationProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value as ApplicationRecord["category"] } : item))}
+                  required
                   value={product.category}
                 >
-                  {Object.keys(applicationCategoryToDb).map((item) => <option key={item}>{item}</option>)}
+                  <option disabled value="">Selecciona el tipo</option>
+                  {applicationCategories.map((item) => <option key={item}>{item}</option>)}
                 </SelectInput>
                 <Button aria-label={`Quitar producto ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus className="h-4 w-4" />} onClick={() => setApplicationProducts((current) => current.length === 1 ? [emptyApplicationProduct()] : current.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="ghost" />
               </div>

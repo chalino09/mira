@@ -22,7 +22,7 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CopilotInlineSuggestions } from "@/components/copilot/MiraCopilot";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { Button } from "@/components/ui/Button";
@@ -30,6 +30,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PageTitle } from "@/components/ui/PageTitle";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import {
+  applicationCategories,
+  applicationCategoryFromDb,
+  applicationCategoryToDb
+} from "@/lib/application-categories";
 import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -72,6 +77,7 @@ type OperationTaskRow = {
   occurred_at: string | null;
   completed_at: string | null;
   verified_at: string | null;
+  verification_required: boolean;
   technical_plan: TechnicalPlan;
 };
 
@@ -95,6 +101,12 @@ type WorkEventRow = {
   note: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+};
+
+type TaskNotificationRow = {
+  task_id: string | null;
+  status: "pending" | "processing" | "sent" | "failed" | "cancelled";
+  last_error: string | null;
 };
 
 type OperationView = "calendar" | "plan" | "execution" | "verification" | "history";
@@ -408,24 +420,6 @@ const executionLabels: Record<ExecutionMode, string> = {
   both: "Encargado y cuadrilla"
 };
 
-const applicationCategories: ApplicationRecord["category"][] = [
-  "Fertilizante",
-  "Bioestimulante",
-  "Corrector",
-  "Acondicionador de agua",
-  "Adyuvante / Coadyuvante",
-  "Microorganismos",
-  "Fungicida",
-  "Insecticida",
-  "Acaricida",
-  "Nematicida",
-  "Bactericida",
-  "Sanitizante / Desinfectante",
-  "Regulador de crecimiento"
-];
-
-const doseUnitOptions = ["ml", "lt", "gr", "kg", "unidad"];
-
 const rafiaWorkTypes = [
   "Anillado",
   "Enredado",
@@ -449,22 +443,6 @@ const cyclePreparationTypes = [
   "Desinfección/acondicionamiento",
   "Otro inicio de ciclo"
 ];
-
-const applicationCategoryToDb: Record<ApplicationRecord["category"], string> = {
-  Fertilizante: "fertilizante",
-  Bioestimulante: "bioestimulante",
-  Corrector: "corrector",
-  "Acondicionador de agua": "acondicionador_agua",
-  "Adyuvante / Coadyuvante": "adyuvante_coadyuvante",
-  Microorganismos: "microorganismos",
-  Fungicida: "fungicida",
-  Insecticida: "insecticida",
-  Acaricida: "acaricida",
-  Nematicida: "nematicida",
-  Bactericida: "bactericida",
-  "Sanitizante / Desinfectante": "sanitizante_desinfectante",
-  "Regulador de crecimiento": "regulador_crecimiento"
-};
 
 const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
   Fertirriego: "fertirriego",
@@ -563,6 +541,15 @@ function emptyMaterial(): MaterialDraft {
 function canonicalNumericText(value?: string | null) {
   const parsed = parseNumericInput(value ?? "");
   return parsed === null ? "" : String(parsed);
+}
+
+function doseWithUnit(dose?: string | null, unit?: string | null) {
+  const normalizedDose = dose?.trim() ?? "";
+  const normalizedUnit = unit?.trim() ?? "";
+  if (!normalizedUnit || !normalizedDose) return normalizedDose || normalizedUnit;
+  return normalizedDose.toLocaleLowerCase("es-MX").endsWith(normalizedUnit.toLocaleLowerCase("es-MX"))
+    ? normalizedDose
+    : `${normalizedDose} ${normalizedUnit}`;
 }
 
 function technicalPlanForType(type: string, plan: TechnicalPlan): TechnicalPlan {
@@ -771,7 +758,7 @@ function ActivityFormModal({
       materials: productActivityTypes.includes(activityType)
         ? materialRows
           .filter((item) => item.productName.trim())
-          .map((item) => ({ ...item, dose: canonicalNumericText(item.dose) }))
+          .map((item) => ({ ...item, dose: item.dose.trim(), unit: item.unit.trim() }))
         : [],
       technicalPlan: technicalPlanForType(activityType, technicalPlan)
     });
@@ -1074,24 +1061,22 @@ function ActivityFormModal({
                     } : item
                   ))}
                 />
-                <FormattedNumberInput
+                <TextInput
                   aria-label={`Dosis ${index + 1}`}
+                  inputMode="decimal"
                   onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
                     itemIndex === index ? { ...item, dose: event.target.value } : item
                   ))}
                   placeholder="Dosis"
                   value={material.dose}
                 />
-                <SelectInput
+                <UnitSelectInput
                   aria-label={`Unidad ${index + 1}`}
                   onChange={(event) => setMaterialRows((current) => current.map((item, itemIndex) =>
                     itemIndex === index ? { ...item, unit: event.target.value } : item
                   ))}
                   value={material.unit}
-                >
-                  <option value="">Unidad</option>
-                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
-                </SelectInput>
+                />
                 <Button
                   aria-label={`Quitar producto ${index + 1}`}
                   className="h-11 w-11 px-0"
@@ -1166,6 +1151,7 @@ function CompleteApplicationModal({
   productOptions,
   greenhouseName,
   saving,
+  error,
   onClose,
   onSave
 }: {
@@ -1174,6 +1160,7 @@ function CompleteApplicationModal({
   productOptions: ProductOption[];
   greenhouseName: string;
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (payload: ApplicationExecutionPayload) => Promise<void>;
 }) {
@@ -1189,23 +1176,27 @@ function CompleteApplicationModal({
       materials
         .slice()
         .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
-        .map((material) => ({
-          materialId: material.id,
-          productId: material.product_id ?? "",
-          productName: material.product_name,
-          dose: material.dose ?? "",
-          unit: material.unit ?? "",
-          category: "",
-          composition: material.composition ?? "",
-          safetyInterval: "",
-          reentryInterval: "",
-          effectiveness: "",
-          reviewDate: "",
-          reapplicationDate: "",
-          notes: material.notes ?? ""
-        }))
+        .map((material) => {
+          const catalogProduct = productOptions.find((product) => product.id === material.product_id)
+            ?? productOptions.find((product) => normalizedProductName(product.name) === normalizedProductName(material.product_name));
+          return {
+            materialId: material.id,
+            productId: material.product_id ?? catalogProduct?.id ?? "",
+            productName: catalogProduct?.name ?? material.product_name,
+            dose: material.dose ?? "",
+            unit: material.unit ?? "",
+            category: applicationCategoryFromDb(catalogProduct?.category),
+            composition: material.composition ?? catalogProduct?.composition ?? "",
+            safetyInterval: "",
+            reentryInterval: "",
+            effectiveness: "",
+            reviewDate: "",
+            reapplicationDate: "",
+            notes: material.notes ?? ""
+          };
+        })
     );
-  }, [materials, task]);
+  }, [materials, productOptions, task]);
 
   const updateApplication = (index: number, patch: Partial<ApplicationExecutionDraft>) => {
     setApplications((current) => current.map((item, itemIndex) =>
@@ -1218,10 +1209,7 @@ function CompleteApplicationModal({
     await onSave({
       occurredAt,
       appliedArea,
-      applications: applications.map((application) => ({
-        ...application,
-        dose: canonicalNumericText(application.dose)
-      }))
+      applications
     });
   };
 
@@ -1287,6 +1275,7 @@ function CompleteApplicationModal({
                     onChange={(selection) => updateApplication(index, {
                       productId: selection.productId,
                       productName: selection.productName,
+                      category: applicationCategoryFromDb(selection.category),
                       composition: selection.composition
                     })}
                     productId={application.productId}
@@ -1296,24 +1285,23 @@ function CompleteApplicationModal({
                   />
                 </Field>
                 <Field label="Dosis real">
-                  <FormattedNumberInput
+                  <TextInput
+                    inputMode="decimal"
                     onChange={(event) => updateApplication(index, { dose: event.target.value })}
                     required
                     value={application.dose}
                   />
                 </Field>
                 <Field label="Unidad">
-                  <SelectInput
+                  <UnitSelectInput
                     onChange={(event) => updateApplication(index, { unit: event.target.value })}
                     required
                     value={application.unit}
-                  >
-                    <option value="">Selecciona</option>
-                    {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
-                  </SelectInput>
+                  />
                 </Field>
                 <Field label="Categoría">
                   <SelectInput
+                    aria-describedby={`application-category-help-${index}`}
                     onChange={(event) => updateApplication(index, {
                       category: event.target.value as ApplicationExecutionDraft["category"]
                     })}
@@ -1323,6 +1311,9 @@ function CompleteApplicationModal({
                     <option value="">Selecciona el tipo</option>
                     {applicationCategories.map((category) => <option key={category}>{category}</option>)}
                   </SelectInput>
+                  <span className="text-xs normal-case leading-5 tracking-normal text-app-muted" id={`application-category-help-${index}`}>
+                    Se completa desde el producto y, si falta, se recordará para las próximas actividades.
+                  </span>
                 </Field>
                 {application.materialId.startsWith("new:") ? (
                   <Button
@@ -1373,8 +1364,9 @@ function CompleteApplicationModal({
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
+          {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !applications.length || applications.some((application) => !application.productId || !application.dose.trim() || !application.unit || !application.category)} type="submit" variant="primary">
+          <Button disabled={saving || !applications.length || applications.some((application) => !application.productName.trim() || !application.dose.trim() || !application.unit || !application.category || (application.materialId.startsWith("new:") && !application.productId))} type="submit" variant="primary">
             {saving ? "Guardando..." : "Completar y guardar registro"}
           </Button>
         </div>
@@ -1387,12 +1379,14 @@ function CompleteIrrigationModal({
   task,
   greenhouseName,
   saving,
+  error,
   onClose,
   onSave
 }: {
   task: OperationTaskRow | null;
   greenhouseName: string;
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (payload: IrrigationExecutionPayload) => Promise<void>;
 }) {
@@ -1431,6 +1425,7 @@ function CompleteIrrigationModal({
           </div>
         </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
         </div>
@@ -1445,6 +1440,7 @@ function CompleteNutritionModal({
   productOptions,
   greenhouseName,
   saving,
+  error,
   onClose,
   onSave
 }: {
@@ -1453,6 +1449,7 @@ function CompleteNutritionModal({
   productOptions: ProductOption[];
   greenhouseName: string;
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (payload: NutritionExecutionPayload) => Promise<void>;
 }) {
@@ -1480,10 +1477,7 @@ function CompleteNutritionModal({
       ph: optionalFormNumber(form.get("ph")),
       ec: optionalFormNumber(form.get("ec")),
       notes: String(form.get("notes") ?? ""),
-      products: products.map((product) => ({
-        ...product,
-        dose: canonicalNumericText(product.dose)
-      }))
+      products
     });
   };
 
@@ -1545,21 +1539,19 @@ function CompleteNutritionModal({
                 />
               </Field>
               <Field label="Dosis real">
-                <FormattedNumberInput
+                <TextInput
+                  inputMode="decimal"
                   onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dose: event.target.value } : item))}
                   required
                   value={product.dose}
                 />
               </Field>
               <Field label="Unidad">
-                <SelectInput
+                <UnitSelectInput
                   onChange={(event) => setProducts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, unit: event.target.value } : item))}
                   required
                   value={product.unit}
-                >
-                  <option value="">Selecciona</option>
-                  {doseUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
-                </SelectInput>
+                />
               </Field>
               {product.materialId.startsWith("new:") ? (
                 <Button
@@ -1585,8 +1577,9 @@ function CompleteNutritionModal({
           </div>
         </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !products.length || products.some((product) => !product.productId || !product.dose.trim() || !product.unit)} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+          <Button disabled={saving || !products.length || products.some((product) => !product.productName.trim() || !product.dose.trim() || !product.unit || (product.materialId.startsWith("new:") && !product.productId))} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
         </div>
       </form>
     </Modal>
@@ -1597,12 +1590,14 @@ function CompleteHarvestModal({
   task,
   greenhouseName,
   saving,
+  error,
   onClose,
   onSave
 }: {
   task: OperationTaskRow | null;
   greenhouseName: string;
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (payload: HarvestExecutionPayload) => Promise<void>;
 }) {
@@ -1637,6 +1632,7 @@ function CompleteHarvestModal({
           </div>
         </MoreDataDetails>
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
+          {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
         </div>
@@ -1688,45 +1684,131 @@ function WorkEvidenceModal({
 function CompleteWorkModal({
   task,
   saving,
+  error,
   onClose,
   onSave
 }: {
   task: OperationTaskRow | null;
   saving: boolean;
+  error: string;
   onClose: () => void;
-  onSave: (note: string) => Promise<void>;
+  onSave: (payload: { occurredAt: string; note: string }) => Promise<void>;
 }) {
   const [note, setNote] = useState("");
+  const [occurredAt, setOccurredAt] = useState(() => dateKey(new Date()));
 
-  useEffect(() => setNote(""), [task?.id]);
+  useEffect(() => {
+    setNote("");
+    setOccurredAt(dateKey(new Date()));
+  }, [task?.id]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await onSave(note.trim());
+    await onSave({ occurredAt, note: note.trim() });
   };
 
   return (
-    <Modal open={Boolean(task)} onClose={onClose} title="Confirmar actividad completada">
+    <Modal open={Boolean(task)} onClose={onClose} title="Registrar actividad realizada">
       <form className="grid gap-5" key={task?.id ?? "complete-work"} onSubmit={handleSubmit}>
         <div>
           <p className="text-sm font-medium text-app-text">{task?.title}</p>
           <p className="mt-2 text-sm leading-6 text-app-muted">
-            Al completar, la actividad quedará pendiente de verificación por otro supervisor. No se aprobará automáticamente.
+            Se conservará la actividad y su registro quedará en el historial operativo.
           </p>
         </div>
-        <Field label="Explicación de la ejecución">
+        <Field label="Fecha real">
+          <DatePickerInput onChange={(event) => setOccurredAt(event.target.value)} required value={occurredAt} />
+        </Field>
+        <Field label="Nota (opcional)">
           <TextArea
             autoFocus
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Describe qué se realizó y cualquier resultado relevante."
-            required
+            placeholder="Agrega un detalle solo si es necesario."
             value={note}
           />
         </Field>
-        <p className="text-xs leading-5 text-app-muted">Puedes adjuntar fotos o documentos desde “Evidencia” antes o después de completar.</p>
+        {error ? <p className="text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
+        <p className="text-xs leading-5 text-app-muted">Puedes adjuntar fotos o documentos desde “Evidencia” antes o después de registrarla.</p>
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !note.trim()} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y enviar a verificación"}</Button>
+          <Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando..." : "Marcar como realizada"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function QuickCompletionModal({
+  task,
+  greenhouseName,
+  plannedSummary,
+  canUsePlan,
+  unavailableReason,
+  saving,
+  error,
+  onClose,
+  onConfirm,
+  onChangeDetails
+}: {
+  task: OperationTaskRow | null;
+  greenhouseName: string;
+  plannedSummary: string;
+  canUsePlan: boolean;
+  unavailableReason: string;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: (occurredAt: string) => Promise<void>;
+  onChangeDetails: () => void;
+}) {
+  const [occurredAt, setOccurredAt] = useState(() => dateKey(new Date()));
+
+  useEffect(() => {
+    setOccurredAt(dateKey(new Date()));
+  }, [task?.id]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await onConfirm(occurredAt);
+  };
+
+  return (
+    <Modal open={Boolean(task)} onClose={onClose} panelClassName="sm:max-w-xl" title="Registrar actividad realizada">
+      <form className="grid gap-5" onSubmit={handleSubmit}>
+        <div className="border-l-2 border-app-green pl-3">
+          <p className="text-sm font-medium text-app-text">{task?.title}</p>
+          <p className="mt-1 text-xs leading-5 text-app-muted">{greenhouseName} · {task ? activityLabel(task) : "Actividad"}</p>
+        </div>
+
+        {plannedSummary ? (
+          <div className="rounded-xl border border-app-border bg-app-sidebar px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-app-muted">Datos planeados</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-app-text">{plannedSummary}</p>
+          </div>
+        ) : null}
+
+        {canUsePlan ? (
+          <Field label="Fecha real">
+            <DatePickerInput onChange={(event) => setOccurredAt(event.target.value)} required value={occurredAt} />
+          </Field>
+        ) : (
+          <p className="rounded-xl border border-[#E8D2A8] bg-[#FFF9ED] px-4 py-3 text-sm leading-6 text-[#765116]">
+            {unavailableReason}
+          </p>
+        )}
+
+        {error ? <p className="text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
+
+        <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving} onClick={onChangeDetails} type="button" variant="secondary">
+            {canUsePlan ? "Cambiar datos" : "Completar datos"}
+          </Button>
+          {canUsePlan ? (
+            <Button disabled={saving} icon={<CheckCircle2 aria-hidden="true" className="h-4 w-4" />} type="submit" variant="primary">
+              {saving ? "Guardando..." : "Guardar como se planeó"}
+            </Button>
+          ) : null}
         </div>
       </form>
     </Modal>
@@ -1782,6 +1864,7 @@ export function OperationsSection({
   const [evidence, setEvidence] = useState<WorkEvidenceRow[]>([]);
   const [historyEvidence, setHistoryEvidence] = useState<WorkEvidenceRow[]>([]);
   const [workEvents, setWorkEvents] = useState<WorkEventRow[]>([]);
+  const [taskNotifications, setTaskNotifications] = useState<TaskNotificationRow[]>([]);
   const [historyWorkEvents, setHistoryWorkEvents] = useState<WorkEventRow[]>([]);
   const [auditActorNames, setAuditActorNames] = useState<Record<string, string>>({});
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
@@ -1811,6 +1894,8 @@ export function OperationsSection({
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [completionTask, setCompletionTask] = useState<OperationTaskRow | null>(null);
+  const [quickCompletionTask, setQuickCompletionTask] = useState<OperationTaskRow | null>(null);
+  const [completionError, setCompletionError] = useState("");
   const [undoCompletionTask, setUndoCompletionTask] = useState<OperationTaskRow | null>(null);
   const [evidenceTask, setEvidenceTask] = useState<OperationTaskRow | null>(null);
   const [operationView, setOperationView] = useState<OperationView>("calendar");
@@ -1880,9 +1965,9 @@ export function OperationsSection({
     setPendingPublicationCount(0);
     let tasksQuery = supabase
       .from("tasks")
-      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
+      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, verification_required, technical_plan")
       .eq("company_id", organization.id)
-      .or(`and(scheduled_date.gte.${weekStartKey},scheduled_date.lte.${weekEndKey}),and(scheduled_date.lt.${todayKey},status.in.(pendiente,en_progreso,bloqueada))`)
+      .or(`and(scheduled_date.gte.${weekStartKey},scheduled_date.lte.${weekEndKey}),and(scheduled_date.lt.${todayKey},status.in.(pendiente,en_progreso,bloqueada)),and(status.eq.completada,verification_required.eq.true)`)
       .order("scheduled_date", { ascending: true })
       .order("scheduled_time", { ascending: true });
 
@@ -1912,7 +1997,7 @@ export function OperationsSection({
         .order("full_name", { ascending: true }),
       supabase
         .from("products")
-        .select("id, name, composition")
+        .select("id, name, category, composition")
         .eq("company_id", organization.id)
         .order("name", { ascending: true })
     ]);
@@ -1937,7 +2022,7 @@ export function OperationsSection({
       .map((member) => member.user_id)
       .filter((id): id is string => Boolean(id));
 
-    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, eventsResponse, pendingNotificationsResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, eventsResponse, taskNotificationsResponse, pendingNotificationsResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -1959,6 +2044,9 @@ export function OperationsSection({
       taskIds.length
         ? supabase.from("work_events").select("id, work_id, actor_user_id, update_type, note, metadata, created_at").in("work_id", taskIds).order("created_at", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
+      taskIds.length
+        ? supabase.from("notification_outbox").select("task_id, status, last_error").eq("channel", "telegram").in("task_id", taskIds)
+        : Promise.resolve({ data: [], error: null }),
       planResponse.data?.status === "published"
         ? supabase
             .from("notification_outbox")
@@ -1969,7 +2057,7 @@ export function OperationsSection({
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? eventsResponse.error ?? pendingNotificationsResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? eventsResponse.error ?? taskNotificationsResponse.error ?? pendingNotificationsResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -1982,6 +2070,7 @@ export function OperationsSection({
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
     setEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
     setWorkEvents((eventsResponse.data ?? []) as WorkEventRow[]);
+    setTaskNotifications((taskNotificationsResponse.data ?? []) as TaskNotificationRow[]);
     setAuditActorNames(Object.fromEntries((profilesResponse.data ?? []).map((profile: any) => [
       profile.id,
       profile.full_name ?? profile.email?.split("@")[0] ?? "Miembro del equipo"
@@ -2016,9 +2105,9 @@ export function OperationsSection({
     setHistoryLoading(true);
     let tasksQuery = supabase
       .from("tasks")
-      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, technical_plan")
+      .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, verification_required, technical_plan")
       .eq("company_id", organization.id)
-      .in("status", ["verificada", "cancelada"])
+      .or("status.in.(verificada,cancelada),and(status.eq.completada,verification_required.eq.false)")
       .order("occurred_at", { ascending: false, nullsFirst: false })
       .order("scheduled_date", { ascending: false })
       .limit(200);
@@ -2376,38 +2465,29 @@ export function OperationsSection({
     setNotice({ tone: "green", message: telegramDispatchMessage(data) });
   };
 
-  const completeTask = useCallback(async (task: OperationTaskRow, note?: string) => {
+  const openCompletionDetails = useCallback(async (task: OperationTaskRow, completion?: { occurredAt: string; note: string }) => {
     if (task.type === "aplicacion_foliar") {
-      if (!materials.some((material) => material.task_id === task.id)) {
-        setNotice({
-          tone: "red",
-          message: "Agrega al menos un producto y su dosis antes de completar la aplicación."
-        });
-        return;
-      }
       setApplicationTask(task);
+      setCompletionError("");
       return;
     }
     if (task.type === "riego") {
       setIrrigationTask(task);
+      setCompletionError("");
       return;
     }
     if (task.type === "fertirriego" || task.type === "fertilizacion") {
-      if (!materials.some((material) => material.task_id === task.id)) {
-        setNotice({
-          tone: "red",
-          message: "Agrega al menos un producto y su dosis antes de completar la nutrición."
-        });
-        return;
-      }
       setNutritionTask(task);
+      setCompletionError("");
       return;
     }
     if (task.type === "cosecha") {
       setHarvestTask(task);
+      setCompletionError("");
       return;
     }
-    if (!note?.trim()) {
+    if (!completion) {
+      setCompletionError("");
       setCompletionTask(task);
       return;
     }
@@ -2417,21 +2497,235 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
+    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: task.id });
+    if (reviewError) {
+      setCompleting(false);
+      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta actividad.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
+      return;
+    }
     const { data, error } = await supabase.rpc("complete_work", {
       target_work_id: task.id,
-      target_payload: { occurredAt: new Date().toISOString(), note: note || null }
+      target_payload: { occurredAt: completion.occurredAt, note: completion.note || null }
     });
     setCompleting(false);
 
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la actividad.") });
+      const message = appErrorMessage(error, "No se pudo actualizar la actividad.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
     setCompletionTask(null);
+    setCompletionError("");
     setUndoCompletionTask(task);
-    setNotice({ tone: "green", message: "Actividad completada. Quedó pendiente de verificación." });
+    setNotice({ tone: "green", message: "Actividad completada con cambios. Quedó pendiente de revisión." });
     await loadOperations();
-  }, [loadOperations, materials]);
+  }, [loadOperations]);
+
+  const plannedCompletionState = useCallback((task: OperationTaskRow) => {
+    const taskMaterials = materials.filter((material) => material.task_id === task.id);
+    if (task.type === "aplicacion_foliar") {
+      const complete = taskMaterials.length > 0 && taskMaterials.every((material) => {
+        const product = productOptions.find((option) => option.id === material.product_id);
+        return Boolean(material.product_id && material.product_name.trim() && material.dose?.trim()
+          && material.unit?.trim() && applicationCategoryFromDb(product?.category));
+      });
+      return {
+        canUsePlan: complete,
+        reason: "Falta ligar un producto, dosis, unidad o categoría. Completa esos datos para registrar la aplicación."
+      };
+    }
+    if (task.type === "fertirriego" || task.type === "fertilizacion") {
+      const complete = taskMaterials.length > 0 && taskMaterials.every((material) =>
+        Boolean(material.product_id && material.product_name.trim() && material.dose?.trim() && material.unit?.trim())
+      );
+      return {
+        canUsePlan: complete,
+        reason: "Falta ligar un producto, dosis o unidad. Completa esos datos para registrar la nutrición."
+      };
+    }
+    if (task.type === "riego") {
+      const duration = parseNumericInput(task.technical_plan?.plannedDurationMin ?? "");
+      const liters = parseNumericInput(task.technical_plan?.plannedLiters ?? "");
+      return {
+        canUsePlan: duration !== null && duration > 0 && liters !== null && liters > 0,
+        reason: "El riego necesita duración y litros reales. Completa esos datos para registrarlo."
+      };
+    }
+    return { canUsePlan: true, reason: "" };
+  }, [materials, productOptions]);
+
+  const plannedCompletionSummary = useCallback((task: OperationTaskRow) => {
+    const planSummary = technicalPlanSummary(task);
+    const materialSummary = materials
+      .filter((material) => material.task_id === task.id)
+      .sort((left, right) => (left.mixing_order ?? 0) - (right.mixing_order ?? 0))
+      .map((material) => `${material.product_name}${material.dose ? ` · ${material.dose}` : ""}${material.unit ? ` ${material.unit}` : ""}`)
+      .join("\n");
+    return [planSummary, materialSummary].filter(Boolean).join("\n");
+  }, [materials]);
+
+  const requestCompletion = useCallback((task: OperationTaskRow) => {
+    setCompletionError("");
+    if (task.type === "cosecha") {
+      setHarvestTask(task);
+      return;
+    }
+    setQuickCompletionTask(task);
+  }, []);
+
+  const completeAsPlanned = useCallback(async (task: OperationTaskRow, occurredAt: string) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    const taskMaterials = materials
+      .filter((material) => material.task_id === task.id)
+      .sort((left, right) => (left.mixing_order ?? 0) - (right.mixing_order ?? 0));
+    setCompleting(true);
+    setNotice(null);
+    setCompletionError("");
+
+    try {
+      if (task.type === "aplicacion_foliar") {
+        const applications = taskMaterials.map((material) => {
+          const product = productOptions.find((option) => option.id === material.product_id);
+          const category = applicationCategoryFromDb(product?.category);
+          if (!category) throw new Error("application_category_required");
+          return {
+            material,
+            product,
+            category
+          };
+        });
+        const { data, error } = await supabase.rpc("complete_application_task", {
+          target_task_id: task.id,
+          target_occurred_at: occurredAt,
+          target_applied_area: task.technical_plan?.appliedArea || null,
+          target_applications: applications.map(({ material, product, category }) => ({
+            materialId: material.id,
+            productName: material.product_name,
+            dose: doseWithUnit(material.dose, material.unit),
+            category: applicationCategoryToDb[category as ApplicationRecord["category"]],
+            composition: material.composition ?? product?.composition ?? "",
+            safetyInterval: "",
+            reentryInterval: "",
+            notes: material.notes ?? task.instructions ?? ""
+          }))
+        });
+        if (error) throw error;
+        const recordIds = rpcRecordIds(data);
+        addApplicationRecords(applications.map(({ material, product, category }, index) => ({
+          id: recordIds[index],
+          sourceTaskId: task.id,
+          greenhouseId: task.greenhouse_id,
+          date: occurredAt,
+          category: category as ApplicationRecord["category"],
+          product: material.product_name,
+          composition: material.composition ?? product?.composition ?? "",
+          dose: doseWithUnit(material.dose, material.unit),
+          area: task.technical_plan?.appliedArea ?? "",
+          responsible: currentUser.fullName,
+          safetyInterval: "",
+          reentry: "",
+          notes: material.notes ?? task.instructions ?? ""
+        })));
+      } else if (task.type === "fertirriego" || task.type === "fertilizacion") {
+        const method = task.technical_plan?.method ?? "Fertirriego";
+        const objective = task.technical_plan?.objective ?? "Desarrollo";
+        const ph = parseNumericInput(task.technical_plan?.targetPh ?? "");
+        const ec = parseNumericInput(task.technical_plan?.targetEc ?? "");
+        const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === task.greenhouse_id);
+        const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, occurredAt));
+        const { data, error } = await supabase.rpc("complete_nutrition_task", {
+          target_task_id: task.id,
+          target_occurred_at: occurredAt,
+          target_method: nutritionMethodToDb[method],
+          target_crop_stage: cropStageToDbValue(cropStage),
+          target_objective: nutritionObjectiveToDb[objective],
+          target_ph: ph,
+          target_ec: ec,
+          target_notes: task.instructions || null,
+          target_products: taskMaterials.map((material) => ({
+            materialId: material.id,
+            productName: material.product_name,
+            dose: doseWithUnit(material.dose, material.unit)
+          }))
+        });
+        if (error) throw error;
+        const recordIds = rpcRecordIds(data);
+        taskMaterials.forEach((material, index) => addNutrition({
+          id: recordIds[index],
+          sourceTaskId: task.id,
+          greenhouseId: task.greenhouse_id,
+          date: occurredAt,
+          product: material.product_name,
+          dose: doseWithUnit(material.dose, material.unit),
+          method,
+          ph: ph ?? 0,
+          ec: ec ?? 0,
+          stage: cropStage,
+          objective,
+          notes: task.instructions ?? ""
+        }));
+      } else if (task.type === "riego") {
+        const durationMin = parseNumericInput(task.technical_plan?.plannedDurationMin ?? "");
+        const liters = parseNumericInput(task.technical_plan?.plannedLiters ?? "");
+        if (durationMin === null || liters === null) throw new Error("irrigation_actuals_required");
+        const payload: IrrigationExecutionPayload = {
+          date: occurredAt,
+          durationMin,
+          liters,
+          sector: task.technical_plan?.sector ?? "",
+          ph: parseNumericInput(task.technical_plan?.targetPh ?? ""),
+          ec: parseNumericInput(task.technical_plan?.targetEc ?? ""),
+          notes: task.instructions ?? ""
+        };
+        const { data, error } = await supabase.rpc("complete_irrigation_task", {
+          target_task_id: task.id,
+          target_occurred_at: payload.date,
+          target_duration_min: payload.durationMin,
+          target_estimated_liters: payload.liters,
+          target_sector: payload.sector || null,
+          target_ph: payload.ph,
+          target_ec: payload.ec,
+          target_notes: payload.notes || null
+        });
+        if (error) throw error;
+        addIrrigation({
+          ...payload,
+          id: rpcRecordId(data),
+          sourceTaskId: task.id,
+          greenhouseId: task.greenhouse_id,
+          responsible: currentUser.fullName
+        });
+      } else {
+        const { error } = await supabase.rpc("complete_work", {
+          target_work_id: task.id,
+          target_payload: { occurredAt, note: "Realizada conforme a lo planeado." }
+        });
+        if (error) throw error;
+        setUndoCompletionTask(task);
+      }
+
+      setQuickCompletionTask(null);
+      setCompletionError("");
+      setNotice({
+        tone: "green",
+        message: task.verification_required
+          ? "Actividad completada con los datos planeados. Quedó pendiente de revisión."
+          : "Actividad completada con los datos planeados."
+      });
+      await loadOperations();
+    } catch (caught) {
+      const message = appErrorMessage(caught, "No se pudo registrar la actividad como planeada.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
+    } finally {
+      setCompleting(false);
+    }
+  }, [addApplicationRecords, addIrrigation, addNutrition, currentUser.fullName, greenhouses, loadOperations, materials, productOptions]);
 
   const undoCompletion = async () => {
     if (!undoCompletionTask) return;
@@ -2493,8 +2787,8 @@ export function OperationsSection({
     const targetTask = tasks.find((task) => task.id === pendingCompletionTask.id);
     if (!targetTask) return;
     onPendingCompletionConsumed?.();
-    completeTask(targetTask);
-  }, [completeTask, completing, loading, onPendingCompletionConsumed, pendingCompletionTask?.id, tasks]);
+    requestCompletion(targetTask);
+  }, [completing, loading, onPendingCompletionConsumed, pendingCompletionTask?.id, requestCompletion, tasks]);
 
   useEffect(() => {
     if (!pendingOpenWork?.id || loading) return;
@@ -2523,23 +2817,38 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
-      target_work_id: applicationTask.id,
-      target_materials: payload.applications.map((application) => ({
-        materialId: application.materialId,
-        productId: application.productId,
-        productName: application.productName,
-        composition: application.composition,
-        dose: application.dose,
-        unit: application.unit
-      }))
-    });
-    if (syncError) {
+    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: applicationTask.id });
+    if (reviewError) {
       setCompleting(false);
-      setNotice({ tone: "red", message: appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.") });
+      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta aplicación.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
-    const syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
+    const requiresCatalogSync = payload.applications.some((application) => application.materialId.startsWith("new:"))
+      || payload.applications.every((application) => Boolean(application.productId));
+    let syncedMaterialIds = payload.applications.map((application) => application.materialId);
+    if (requiresCatalogSync) {
+      const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
+        target_work_id: applicationTask.id,
+        target_materials: payload.applications.map((application) => ({
+          materialId: application.materialId,
+          productId: application.productId,
+          productName: application.productName,
+          composition: application.composition,
+          dose: application.dose,
+          unit: application.unit
+        }))
+      });
+      if (syncError) {
+        setCompleting(false);
+        const message = appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.");
+        setCompletionError(message);
+        setNotice({ tone: "red", message });
+        return;
+      }
+      syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
+    }
     const { data, error } = await supabase.rpc("complete_application_task", {
       target_task_id: applicationTask.id,
       target_occurred_at: payload.occurredAt,
@@ -2547,7 +2856,7 @@ export function OperationsSection({
       target_applications: payload.applications.map((application, index) => ({
         materialId: syncedMaterialIds[index],
         productName: application.productName,
-        dose: [application.dose, application.unit].filter(Boolean).join(" "),
+        dose: doseWithUnit(application.dose, application.unit),
         category: applicationCategoryToDb[application.category as ApplicationRecord["category"]],
         composition: application.composition,
         safetyInterval: application.safetyInterval,
@@ -2558,7 +2867,9 @@ export function OperationsSection({
     setCompleting(false);
 
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar el registro técnico.") });
+      const message = appErrorMessage(error, "No se pudo guardar el registro técnico.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
 
@@ -2571,7 +2882,7 @@ export function OperationsSection({
       category: application.category as ApplicationRecord["category"],
       product: application.productName,
       composition: application.composition,
-      dose: [application.dose, application.unit].filter(Boolean).join(" "),
+      dose: doseWithUnit(application.dose, application.unit),
       area: payload.appliedArea,
       responsible: currentUser.fullName,
       safetyInterval: application.safetyInterval,
@@ -2579,6 +2890,7 @@ export function OperationsSection({
       notes: applicationNotesWithFollowUp(application)
     })));
     setApplicationTask(null);
+    setCompletionError("");
     setNotice({ tone: "green", message: "Aplicación completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
@@ -2590,6 +2902,14 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
+    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: irrigationTask.id });
+    if (reviewError) {
+      setCompleting(false);
+      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de este riego.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
+      return;
+    }
     const { data, error } = await supabase.rpc("complete_irrigation_task", {
       target_task_id: irrigationTask.id,
       target_occurred_at: payload.date,
@@ -2602,7 +2922,9 @@ export function OperationsSection({
     });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar el riego técnico.") });
+      const message = appErrorMessage(error, "No se pudo guardar el riego técnico.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
 
@@ -2614,6 +2936,7 @@ export function OperationsSection({
       responsible: currentUser.fullName
     });
     setIrrigationTask(null);
+    setCompletionError("");
     setNotice({ tone: "green", message: "Riego completado y guardado en el Historial de Operación." });
     await loadOperations();
   };
@@ -2625,25 +2948,40 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === nutritionTask.greenhouse_id);
-    const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, payload.date));
-    const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
-      target_work_id: nutritionTask.id,
-      target_materials: payload.products.map((product) => ({
-        materialId: product.materialId,
-        productId: product.productId,
-        productName: product.productName,
-        composition: product.composition,
-        dose: product.dose,
-        unit: product.unit
-      }))
-    });
-    if (syncError) {
+    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: nutritionTask.id });
+    if (reviewError) {
       setCompleting(false);
-      setNotice({ tone: "red", message: appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.") });
+      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta nutrición.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
-    const syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
+    const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === nutritionTask.greenhouse_id);
+    const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, payload.date));
+    const requiresCatalogSync = payload.products.some((product) => product.materialId.startsWith("new:"))
+      || payload.products.every((product) => Boolean(product.productId));
+    let syncedMaterialIds = payload.products.map((product) => product.materialId);
+    if (requiresCatalogSync) {
+      const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
+        target_work_id: nutritionTask.id,
+        target_materials: payload.products.map((product) => ({
+          materialId: product.materialId,
+          productId: product.productId,
+          productName: product.productName,
+          composition: product.composition,
+          dose: product.dose,
+          unit: product.unit
+        }))
+      });
+      if (syncError) {
+        setCompleting(false);
+        const message = appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.");
+        setCompletionError(message);
+        setNotice({ tone: "red", message });
+        return;
+      }
+      syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
+    }
     const { data, error } = await supabase.rpc("complete_nutrition_task", {
       target_task_id: nutritionTask.id,
       target_occurred_at: payload.date,
@@ -2656,12 +2994,14 @@ export function OperationsSection({
       target_products: payload.products.map((product, index) => ({
         materialId: syncedMaterialIds[index],
         productName: product.productName,
-        dose: [product.dose, product.unit].filter(Boolean).join(" ")
+        dose: doseWithUnit(product.dose, product.unit)
       }))
     });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar la nutrición técnica.") });
+      const message = appErrorMessage(error, "No se pudo guardar la nutrición técnica.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
 
@@ -2672,7 +3012,7 @@ export function OperationsSection({
       greenhouseId: nutritionTask.greenhouse_id,
       date: payload.date,
       product: product.productName,
-      dose: [product.dose, product.unit].filter(Boolean).join(" "),
+      dose: doseWithUnit(product.dose, product.unit),
       method: payload.method,
       ph: payload.ph ?? 0,
       ec: payload.ec ?? 0,
@@ -2681,6 +3021,7 @@ export function OperationsSection({
       notes: payload.notes
     }));
     setNutritionTask(null);
+    setCompletionError("");
     setNotice({ tone: "green", message: "Nutrición completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
@@ -2692,6 +3033,14 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
+    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: harvestTask.id });
+    if (reviewError) {
+      setCompleting(false);
+      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta cosecha.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
+      return;
+    }
     const { data, error } = await supabase.rpc("complete_harvest_task", {
       target_task_id: harvestTask.id,
       target_occurred_at: payload.date,
@@ -2715,12 +3064,15 @@ export function OperationsSection({
     });
     setCompleting(false);
     if (error) {
-      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo guardar la cosecha técnica.") });
+      const message = appErrorMessage(error, "No se pudo guardar la cosecha técnica.");
+      setCompletionError(message);
+      setNotice({ tone: "red", message });
       return;
     }
 
     addHarvest({ ...payload, id: rpcRecordId(data), sourceTaskId: harvestTask.id, greenhouseId: harvestTask.greenhouse_id });
     setHarvestTask(null);
+    setCompletionError("");
     setNotice({ tone: "green", message: "Cosecha completada y guardada en el Historial de Operación." });
     await loadOperations();
   };
@@ -2826,17 +3178,32 @@ export function OperationsSection({
   const unassignedCount = scopedTasks.filter((task) =>
     !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
   ).length;
-  const viewStatuses: Record<Exclude<OperationView, "calendar" | "history">, OperationStatus[]> = {
+  const viewStatuses: Record<Exclude<OperationView, "calendar" | "history" | "verification">, OperationStatus[]> = {
     plan: ["pendiente"],
-    execution: ["en_progreso", "bloqueada"],
-    verification: ["completada"]
+    execution: ["en_progreso", "bloqueada"]
   };
   const visibleTasks = operationView === "calendar" || operationView === "history"
     ? scopedTasks
-    : scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
+    : operationView === "verification"
+      ? tasks.filter((task) => task.status === "completada" && task.verification_required && (!workTypeFilter?.length || workTypeFilter.includes(task.type)))
+      : scopedTasks.filter((task) => viewStatuses[operationView].includes(task.status));
   const overdueCount = globalOverdueTasks.length;
+  const overdueWithoutAssigneeCount = globalOverdueTasks.filter((task) =>
+    !assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length
+  ).length;
+  const overdueBlockedCount = globalOverdueTasks.filter((task) => task.status === "bloqueada").length;
+  const overdueWithoutDeliveryCount = globalOverdueTasks.filter((task) => {
+    if (!assignmentsForTask(task.id).length) return false;
+    const notifications = taskNotifications.filter((item) => item.task_id === task.id);
+    return !notifications.some((item) => item.status === "sent");
+  }).length;
+  const overdueWithIncompleteMaterialsCount = globalOverdueTasks.filter((task) => {
+    if (!["aplicacion_foliar", "fertirriego", "fertilizacion"].includes(task.type)) return false;
+    const taskMaterials = materialsForTask(task.id);
+    return !taskMaterials.length || taskMaterials.some((material) => !material.product_id || !material.dose?.trim() || !material.unit?.trim());
+  }).length;
   const blockedScopedCount = scopedTasks.filter((task) => task.status === "bloqueada").length;
-  const awaitingVerificationCount = scopedTasks.filter((task) => task.status === "completada").length;
+  const awaitingVerificationCount = tasks.filter((task) => task.status === "completada" && task.verification_required && (!workTypeFilter?.length || workTypeFilter.includes(task.type))).length;
   const historyScopedTasks = workTypeFilter?.length
     ? historyTasks.filter((task) => workTypeFilter.includes(task.type))
     : historyTasks;
@@ -2857,6 +3224,9 @@ export function OperationsSection({
       ...technicalResults.map((result) => `${result.label} ${result.detail}`)
     ].filter(Boolean).join(" ").toLocaleLowerCase("es-MX").includes(normalizedHistoryQuery);
   });
+  const quickCompletionState = quickCompletionTask
+    ? plannedCompletionState(quickCompletionTask)
+    : { canUsePlan: false, reason: "" };
   const operationViews: Array<{ id: OperationView; label: string; count?: number }> = [
     { id: "calendar", label: "Semana", count: scopedTasks.length },
     { id: "plan", label: "Por hacer", count: scopedTasks.filter((task) => task.status === "pendiente").length },
@@ -3105,8 +3475,17 @@ export function OperationsSection({
           {operationView !== "history" && globalOverdueTasks.length && overdueExpanded ? (
             <section className="border-b border-app-border py-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-medium text-app-text">Actividades vencidas</p>
+                <div>
+                  <p className="text-sm font-medium text-app-text">Actividades vencidas</p>
+                  <p className="mt-1 text-xs leading-5 text-app-muted">Se agrupan por causa para no asumir que todas fueron incumplidas.</p>
+                </div>
                 <Button onClick={() => setOverdueExpanded(false)} variant="ghost">Ocultar</Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {overdueWithoutAssigneeCount ? <span className="border border-[#E8D2A8] bg-[#FFF9ED] px-2 py-1 text-[#765116]">{overdueWithoutAssigneeCount} sin encargado</span> : null}
+                {overdueWithoutDeliveryCount ? <span className="border border-[#E8D2A8] bg-[#FFF9ED] px-2 py-1 text-[#765116]">{overdueWithoutDeliveryCount} sin envío confirmado</span> : null}
+                {overdueWithIncompleteMaterialsCount ? <span className="border border-[#E3BDBD] bg-[#FFF9F8] px-2 py-1 text-[#7B2A2A]">{overdueWithIncompleteMaterialsCount} con datos técnicos incompletos</span> : null}
+                {overdueBlockedCount ? <span className="border border-[#E3BDBD] bg-[#FFF9F8] px-2 py-1 text-[#7B2A2A]">{overdueBlockedCount} bloqueadas</span> : null}
               </div>
               <div className="mt-4 grid gap-3">
                 {globalOverdueTasks.map((task) => (
@@ -3115,10 +3494,14 @@ export function OperationsSection({
                       <div className="flex flex-wrap items-center gap-2"><StatusBadge tone="red">Vencido</StatusBadge><span className="text-xs text-app-muted">{formatDate(task.scheduled_date)} · {activityLabel(task)}</span></div>
                       <p className="mt-2 text-sm font-medium text-app-text">{task.title}</p>
                       <p className="mt-1 text-xs text-app-muted">{greenhouseName(task.greenhouse_id)}{task.blocked_reason ? ` · ${task.blocked_reason}` : ""}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {!assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length ? <StatusBadge tone="amber">Sin encargado</StatusBadge> : null}
+                        {assignmentsForTask(task.id).length && !taskNotifications.some((item) => item.task_id === task.id && item.status === "sent") ? <StatusBadge tone="amber">Sin envío confirmado</StatusBadge> : null}
+                        {["aplicacion_foliar", "fertirriego", "fertilizacion"].includes(task.type) && (!materialsForTask(task.id).length || materialsForTask(task.id).some((material) => !material.product_id || !material.dose?.trim() || !material.unit?.trim())) ? <StatusBadge tone="red">Revisar datos técnicos</StatusBadge> : null}
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
-                      {task.status !== "en_progreso" ? <Button disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} variant="ghost">Iniciar opcional</Button> : null}
+                      <Button disabled={completing} icon={<CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => requestCompletion(task)} variant="primary">Marcar como realizada</Button>
                       <Button icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title="Adjuntar evidencia opcional" variant="ghost">Evidencia</Button>
                     </div>
                   </article>
@@ -3236,21 +3619,25 @@ export function OperationsSection({
             </section>
           ) : loading ? (
             <div className="py-16 text-center text-sm text-app-muted">Cargando operación...</div>
-          ) : scopedTasks.length ? (
+          ) : visibleTasks.length ? (
             <div className="relative mt-5">
-              <p className="mb-2 hidden text-right text-[10px] font-medium uppercase tracking-[0.14em] text-app-muted md:block min-[1720px]:hidden">
-                Desliza para ver los siete días →
-              </p>
+              {operationView !== "verification" ? (
+                <p className="mb-2 hidden text-right text-[10px] font-medium uppercase tracking-[0.14em] text-app-muted md:block min-[1720px]:hidden">
+                  Desliza para ver los siete días →
+                </p>
+              ) : null}
               <div className="max-w-full snap-x snap-proximity overflow-x-auto overscroll-x-contain scroll-smooth pb-3">
-                <div className="grid md:min-w-[1820px] md:grid-cols-7">
-                  {weekDays.map((date, dayIndex) => {
+                <div className={operationView === "verification" ? "grid max-w-3xl gap-3" : "grid md:min-w-[1820px] md:grid-cols-7"}>
+                  {(operationView === "verification" ? [weekDays[0]] : weekDays).map((date, dayIndex) => {
                     const key = dateKey(date);
-                    const dayTasks = visibleTasks.filter((task) => task.scheduled_date === key);
+                    const dayTasks = operationView === "verification"
+                      ? visibleTasks
+                      : visibleTasks.filter((task) => task.scheduled_date === key);
                     return (
                       <section key={key} className={`min-w-0 border-t border-app-border py-3 md:snap-start md:px-2 xl:px-3 ${dayIndex ? "md:border-l" : ""}`}>
                     <div className="flex min-h-7 items-center justify-between gap-3">
-                      <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-app-muted">{dayLabel(date)}</p>
-                      {key === todayKey ? <StatusBadge tone="green">Hoy</StatusBadge> : null}
+                      <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-app-muted">{operationView === "verification" ? "PENDIENTES DE REVISIÓN" : dayLabel(date)}</p>
+                      {operationView !== "verification" && key === todayKey ? <StatusBadge tone="green">Hoy</StatusBadge> : null}
                     </div>
                     <div className="mt-3 grid gap-3">
                       {dayTasks.map((task) => {
@@ -3266,7 +3653,7 @@ export function OperationsSection({
                           <article className="min-w-0 scroll-mt-28 border-t border-app-border pt-3 outline-none focus-visible:ring-2 focus-visible:ring-app-green/25" id={`work-${task.id}`} key={task.id} tabIndex={-1}>
                             <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
                               <p className="min-w-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-app-muted">
-                                {task.scheduled_time?.slice(0, 5) || "Sin hora"} · {activityLabel(task)}
+                                {operationView === "verification" ? formatDate(task.scheduled_date) : (task.scheduled_time?.slice(0, 5) || "Sin hora")} · {activityLabel(task)}
                               </p>
                               <div className="shrink-0">
                                 <StatusBadge icon={workStatusIcon(task.status)} tone={statusTones[task.status]}>{statusLabels[task.status]}</StatusBadge>
@@ -3289,12 +3676,12 @@ export function OperationsSection({
                             ) : null}
                             <div className="mt-3">
                               {task.status === "pendiente" ? (
-                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} variant="primary">Iniciar</Button>
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => requestCompletion(task)} variant="primary">Marcar como realizada</Button>
                               ) : task.status === "en_progreso" ? (
-                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => completeTask(task)} variant="primary">Completar</Button>
+                                <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => requestCompletion(task)} variant="primary">Marcar como realizada</Button>
                               ) : task.status === "bloqueada" ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Reanudar actividad" variant="primary">Reanudar</Button>
-                              ) : canPlan && task.status === "completada" ? (
+                              ) : canPlan && task.status === "completada" && task.verification_required ? (
                                 <Button className="min-h-9 w-full px-3" disabled={completing} icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => verifyTask(task)} variant="primary">Verificar</Button>
                               ) : null}
                             </div>
@@ -3316,7 +3703,7 @@ export function OperationsSection({
                                   </div>
                                 ) : null}
                                 {task.occurred_at ? <p className="mt-2 text-xs text-app-muted">Realizado: {formatDate(task.occurred_at)}</p> : null}
-                                {canPlan && task.status === "completada" ? (
+                                {canPlan && task.status === "completada" && task.verification_required ? (
                                   <p className="mt-2 text-xs leading-5 text-app-muted">Revisión pendiente: verifica solo actividades realizadas por otra persona. Si la ejecutaste tú, otro admin u owner debe aprobarla.</p>
                                 ) : null}
                                 {task.verified_at ? <p className="mt-1 text-xs text-app-muted">Verificado: {formatDate(task.verified_at)}</p> : null}
@@ -3404,37 +3791,62 @@ export function OperationsSection({
         </div>
       </Modal>
 
+      <QuickCompletionModal
+        canUsePlan={quickCompletionState.canUsePlan}
+        error={completionError}
+        greenhouseName={quickCompletionTask ? greenhouseName(quickCompletionTask.greenhouse_id) : ""}
+        onChangeDetails={() => {
+          if (!quickCompletionTask) return;
+          const targetTask = quickCompletionTask;
+          setQuickCompletionTask(null);
+          setCompletionError("");
+          void openCompletionDetails(targetTask);
+        }}
+        onClose={() => { setQuickCompletionTask(null); setCompletionError(""); }}
+        onConfirm={(occurredAt) => quickCompletionTask
+          ? completeAsPlanned(quickCompletionTask, occurredAt)
+          : Promise.resolve()}
+        plannedSummary={quickCompletionTask ? plannedCompletionSummary(quickCompletionTask) : ""}
+        saving={completing}
+        task={quickCompletionTask}
+        unavailableReason={quickCompletionState.reason}
+      />
+
       <CompleteApplicationModal
+        error={completionError}
         greenhouseName={applicationTask ? greenhouseName(applicationTask.greenhouse_id) : ""}
         materials={applicationTask ? materialsForTask(applicationTask.id) : []}
         productOptions={productOptions}
-        onClose={() => setApplicationTask(null)}
+        onClose={() => { setApplicationTask(null); setCompletionError(""); }}
         onSave={completeApplication}
         saving={completing}
         task={applicationTask}
       />
 
       <CompleteIrrigationModal
+        error={completionError}
         greenhouseName={irrigationTask ? greenhouseName(irrigationTask.greenhouse_id) : ""}
-        onClose={() => setIrrigationTask(null)}
+        onClose={() => { setIrrigationTask(null); setCompletionError(""); }}
         onSave={completeIrrigation}
         saving={completing}
         task={irrigationTask}
       />
 
       <CompleteNutritionModal
+        error={completionError}
         greenhouseName={nutritionTask ? greenhouseName(nutritionTask.greenhouse_id) : ""}
         materials={nutritionTask ? materialsForTask(nutritionTask.id) : []}
         productOptions={productOptions}
-        onClose={() => setNutritionTask(null)}
+        onClose={() => { setNutritionTask(null); setCompletionError(""); }}
         onSave={completeNutrition}
         saving={completing}
         task={nutritionTask}
       />
 
       <CompleteHarvestModal
+        error={completionError}
         greenhouseName={harvestTask ? greenhouseName(harvestTask.greenhouse_id) : ""}
-        onClose={() => setHarvestTask(null)}
+        onClose={() => { setHarvestTask(null); setCompletionError(""); }}
         onSave={completeHarvest}
         saving={completing}
         task={harvestTask}
@@ -3450,8 +3862,9 @@ export function OperationsSection({
       />
 
       <CompleteWorkModal
-        onClose={() => setCompletionTask(null)}
-        onSave={(note) => completionTask ? completeTask(completionTask, note) : Promise.resolve()}
+        error={completionError}
+        onClose={() => { setCompletionTask(null); setCompletionError(""); }}
+        onSave={(payload) => completionTask ? openCompletionDetails(completionTask, payload) : Promise.resolve()}
         saving={completing}
         task={completionTask}
       />

@@ -1,8 +1,9 @@
 "use client";
 
-import { Building2, ChevronDown } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { navigationItemsForRole } from "@/data/navigation";
+import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { appRoute } from "@/lib/routes";
 import { useGreenhouseStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,15 @@ function roleLabel(role: "owner" | "admin" | "manager") {
   return role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Manager";
 }
 
-export function OrganizationSwitcher({ className }: { className?: string }) {
+export function OrganizationSwitcher({
+  className,
+  compact = false,
+  showIcon = true
+}: {
+  className?: string;
+  compact?: boolean;
+  showIcon?: boolean;
+}) {
   const router = useRouter();
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const organization = useGreenhouseStore((state) => state.organization);
@@ -19,7 +28,17 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const selectedPeriod = useGreenhouseStore((state) => state.selectedPeriod);
 
   if (memberships.length <= 1) {
-    return <p className={cn("truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted", className)}>{organization.name}</p>;
+    return (
+      <p className={cn(
+        "truncate",
+        compact
+          ? "flex h-full items-center text-xs font-medium normal-case leading-none tracking-normal text-app-text"
+          : "text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted",
+        className
+      )}>
+        {organization.name}
+      </p>
+    );
   }
 
   const changeOrganization = (companyId: string) => {
@@ -34,22 +53,25 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   };
 
   return (
-    <label className={cn("relative flex min-w-0 items-center", className)}>
-      <Building2 className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-app-green" />
-      <span className="sr-only">Empresa activa</span>
-      <select
-        aria-label="Empresa activa"
-        className="h-8 min-w-0 w-full appearance-none truncate rounded-lg border border-app-border bg-white pl-7 pr-6 text-[11px] font-semibold text-app-text outline-none transition focus:border-app-green"
-        onChange={(event) => changeOrganization(event.target.value)}
+    <div className={cn("relative min-w-0", className)}>
+      {showIcon ? <Building2 aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-app-green" /> : null}
+      <SelectionMenu
+        ariaLabel="Cambiar empresa"
+        buttonClassName={cn(
+          compact
+            ? "min-h-0 h-full border-0 bg-transparent px-1 text-xs shadow-none hover:bg-app-sidebar"
+            : "h-8 text-[11px] font-semibold",
+          showIcon && !compact && "pl-7"
+        )}
+        menuClassName="min-w-64"
+        onChange={changeOrganization}
+        options={memberships.map((membership) => ({
+          value: membership.companyId,
+          label: membership.organization.name,
+          description: roleLabel(membership.role)
+        }))}
         value={organization.id}
-      >
-        {memberships.map((membership) => (
-          <option key={membership.id} value={membership.companyId}>
-            {membership.organization.name} · {roleLabel(membership.role)}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-app-muted" />
-    </label>
+      />
+    </div>
   );
 }
