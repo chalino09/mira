@@ -63,6 +63,7 @@ export function OrganizationSwitcher({
             : "h-8 text-[11px] font-semibold",
           showIcon && !compact && "pl-7"
         )}
+        className={compact ? "h-full" : undefined}
         menuClassName="min-w-64"
         onChange={changeOrganization}
         options={memberships.map((membership) => ({
