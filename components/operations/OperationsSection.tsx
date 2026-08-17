@@ -1266,7 +1266,7 @@ function CompleteApplicationModal({
           </div>
           {applications.map((application, index) => (
             <section key={application.materialId} className="grid gap-3 border-b border-app-border pb-5 last:border-b-0">
-              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.65fr_0.55fr_0.9fr_auto]">
+              <div className="grid items-start gap-3 sm:grid-cols-[1.2fr_0.65fr_0.55fr_0.9fr_auto]">
                 <Field label={`Producto ${index + 1}`}>
                   <ProductCatalogCombobox
                     allowCustom={false}
@@ -1315,16 +1315,15 @@ function CompleteApplicationModal({
                     Se completa desde el producto y, si falta, se recordará para las próximas actividades.
                   </span>
                 </Field>
-                {application.materialId.startsWith("new:") ? (
-                  <Button
-                    aria-label={`Quitar producto ${index + 1}`}
-                    className="mt-[27px] h-11 w-11 px-0"
-                    icon={<Minus className="h-4 w-4" />}
-                    onClick={() => setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                    type="button"
-                    variant="ghost"
-                  />
-                ) : <span />}
+                <Button
+                  aria-label={`Quitar ${application.productName || `producto ${index + 1}`} de lo aplicado`}
+                  className="mt-[27px] h-11 w-11 px-0"
+                  icon={<Minus aria-hidden="true" className="h-4 w-4" />}
+                  onClick={() => setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  title="Quitar de lo aplicado"
+                  type="button"
+                  variant="ghost"
+                />
               </div>
 
               <MoreDataDetails>
@@ -1361,6 +1360,11 @@ function CompleteApplicationModal({
               </MoreDataDetails>
             </section>
           ))}
+          {!applications.length ? (
+            <p className="border-l-2 border-app-amber pl-3 text-sm leading-6 text-app-muted" role="status">
+              No hay productos aplicados. Cierra este formulario y marca la actividad como no realizada.
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
@@ -1520,7 +1524,7 @@ function CompleteNutritionModal({
             </Button>
           </div>
           {products.map((product, index) => (
-            <div key={product.materialId} className="grid gap-2 sm:grid-cols-[1.2fr_0.65fr_0.55fr_auto]">
+            <div key={product.materialId} className="grid items-start gap-2 sm:grid-cols-[1.2fr_0.65fr_0.55fr_auto]">
               <Field label={`Producto ${index + 1}`}>
                 <ProductCatalogCombobox
                   allowCustom={false}
@@ -1553,18 +1557,22 @@ function CompleteNutritionModal({
                   value={product.unit}
                 />
               </Field>
-              {product.materialId.startsWith("new:") ? (
-                <Button
-                  aria-label={`Quitar producto ${index + 1}`}
-                  className="mt-[27px] h-11 w-11 px-0"
-                  icon={<Minus className="h-4 w-4" />}
-                  onClick={() => setProducts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                  type="button"
-                  variant="ghost"
-                />
-              ) : <span />}
+              <Button
+                aria-label={`Quitar ${product.productName || `producto ${index + 1}`} de lo aplicado`}
+                className="mt-[27px] h-11 w-11 px-0"
+                icon={<Minus aria-hidden="true" className="h-4 w-4" />}
+                onClick={() => setProducts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                title="Quitar de lo aplicado"
+                type="button"
+                variant="ghost"
+              />
             </div>
           ))}
+          {!products.length ? (
+            <p className="border-l-2 border-app-amber pl-3 text-sm leading-6 text-app-muted" role="status">
+              No hay productos aplicados. Cierra este formulario y marca la actividad como no realizada.
+            </p>
+          ) : null}
         </div>
         <MoreDataDetails>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1891,6 +1899,8 @@ export function OperationsSection({
   const [editingTask, setEditingTask] = useState<OperationTaskRow | null>(null);
   const [blockedTask, setBlockedTask] = useState<OperationTaskRow | null>(null);
   const [blockedReason, setBlockedReason] = useState("");
+  const [notPerformedTask, setNotPerformedTask] = useState<OperationTaskRow | null>(null);
+  const [notPerformedReason, setNotPerformedReason] = useState("");
   const [reopenTask, setReopenTask] = useState<OperationTaskRow | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [completionTask, setCompletionTask] = useState<OperationTaskRow | null>(null);
@@ -3097,6 +3107,29 @@ export function OperationsSection({
     await loadOperations();
   };
 
+  const markTaskNotPerformed = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!notPerformedTask) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setCompleting(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("cancel_work", {
+      target_work_id: notPerformedTask.id,
+      target_note: notPerformedReason
+    });
+    setCompleting(false);
+    if (error) {
+      setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo marcar la actividad como no realizada.") });
+      return;
+    }
+    setNotPerformedTask(null);
+    setNotPerformedReason("");
+    setNotice({ tone: "green", message: "Actividad marcada como no realizada. El motivo quedó en el historial." });
+    await loadOperations();
+  };
+
   const reopenCompletedWork = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!reopenTask) return;
@@ -3254,6 +3287,11 @@ export function OperationsSection({
   const openBlockedTask = (task: OperationTaskRow) => {
     setBlockedReason("");
     setBlockedTask(task);
+  };
+
+  const openNotPerformedTask = (task: OperationTaskRow) => {
+    setNotPerformedReason("");
+    setNotPerformedTask(task);
   };
 
   const openReopenTask = (task: OperationTaskRow) => {
@@ -3502,6 +3540,9 @@ export function OperationsSection({
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button disabled={completing} icon={<CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => requestCompletion(task)} variant="primary">Marcar como realizada</Button>
+                      {canPlan ? (
+                        <Button disabled={completing} icon={<Ban aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => openNotPerformedTask(task)} variant="secondary">No se realizó</Button>
+                      ) : null}
                       <Button icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title="Adjuntar evidencia opcional" variant="ghost">Evidencia</Button>
                     </div>
                   </article>
@@ -3728,6 +3769,9 @@ export function OperationsSection({
                                   {task.status === "pendiente" ? (
                                     <Button className="min-h-9 px-2.5" disabled={completing} icon={<Play className="h-3.5 w-3.5" />} onClick={() => startTask(task)} title="Iniciar sólo si seguirá en curso" variant="ghost">Iniciar</Button>
                                   ) : null}
+                                  {canPlan && ["pendiente", "en_progreso", "bloqueada"].includes(task.status) ? (
+                                    <Button className="min-h-9 px-2.5" disabled={completing} icon={<Ban aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => openNotPerformedTask(task)} variant="ghost">No se realizó</Button>
+                                  ) : null}
                                   <Button className="min-h-9 px-2.5" icon={<Paperclip className="h-3.5 w-3.5" />} onClick={() => setEvidenceTask(task)} title={evidenceForTask(task.id).length ? `Evidencia opcional · ${evidenceForTask(task.id).length}` : "Adjuntar evidencia opcional"} variant="ghost">Evidencia{evidenceForTask(task.id).length ? ` (${evidenceForTask(task.id).length})` : ""}</Button>
                                   {canPlan && ["completada", "verificada"].includes(task.status) ? (
                                     <Button className="min-h-9 px-2.5" disabled={completing} icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => openReopenTask(task)} variant="ghost">Reabrir</Button>
@@ -3886,6 +3930,29 @@ export function OperationsSection({
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setBlockedTask(null); setBlockedReason(""); }} type="button" variant="secondary">Cancelar</Button>
             <Button icon={<Ban className="h-4 w-4" />} type="submit" variant="primary">Reportar bloqueo</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={Boolean(notPerformedTask)} onClose={() => { setNotPerformedTask(null); setNotPerformedReason(""); }} title="Marcar como no realizada">
+        <form className="grid gap-5" onSubmit={markTaskNotPerformed}>
+          <div>
+            <p className="text-sm font-medium text-app-text">{notPerformedTask?.title}</p>
+            <p className="mt-2 text-sm leading-6 text-app-muted">La actividad saldrá de pendientes. La planeación y el motivo se conservarán en el historial.</p>
+          </div>
+          <Field label="Motivo">
+            <TextArea
+              onChange={(event) => setNotPerformedReason(event.target.value)}
+              placeholder="Ej. No fue necesaria, cambió el tratamiento o se reprogramó."
+              required
+              value={notPerformedReason}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => { setNotPerformedTask(null); setNotPerformedReason(""); }} type="button" variant="secondary">Volver</Button>
+            <Button disabled={completing} icon={<Ban aria-hidden="true" className="h-4 w-4" />} type="submit" variant="primary">
+              {completing ? "Guardando..." : "Marcar como no realizada"}
+            </Button>
           </div>
         </form>
       </Modal>
