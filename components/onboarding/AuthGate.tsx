@@ -9,11 +9,10 @@ import { AppShell } from "@/components/layout/AppShell";
 import { MiraBrand, PortalMark } from "@/components/brand/MiraBrand";
 import { AtmosphericMapVisual } from "@/components/visuals/AtmosphericMapVisual";
 import { Button } from "@/components/ui/Button";
-import { DatePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, SelectInput, TextInput } from "@/components/forms/FormControls";
+import { Field, SelectInput, TextInput } from "@/components/forms/FormControls";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { appErrorMessage } from "@/lib/errors";
-import { getCropDdtStatus, INITIAL_CROP_ID, isNutrientKey } from "@/lib/crop-ddt";
+import { INITIAL_CROP_ID, isNutrientKey } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import type {
   NutritionAnalyteKey,
@@ -51,13 +50,6 @@ type OnboardingForm = {
   latitude: number | null;
   longitude: number | null;
   locationAccuracyM: number | null;
-  transplantDate: string;
-  surfaceM2: number | null;
-  budgetAmount: number | null;
-  plants: number;
-  stemCount: 1 | 2 | null;
-  isGrafted: boolean | null;
-  beds: number;
 };
 
 const DEFAULT_CROP_OPTIONS: CropCatalogItem[] = [
@@ -170,37 +162,8 @@ function daysSince(date?: string | null) {
   return Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000));
 }
 
-function dbCropStageFromTransplant(
-  cropId: string,
-  transplantDate: string,
-  cropStages: CropStageCatalog[]
-) {
-  const ddtStatus = getCropDdtStatus(cropId, transplantDate, daysSince(transplantDate), cropStages);
-  const stageText = `${ddtStatus.stage?.label ?? ""} ${ddtStatus.stage?.name ?? ""}`.toLowerCase();
-
-  if (stageText.includes("vegetativo") || stageText.includes("establecimiento")) return "vegetativo";
-  if (stageText.includes("cuajado") && !stageText.includes("flor")) return "cuajado";
-  if (stageText.includes("flor")) return "floracion";
-  if (stageText.includes("cosecha") || stageText.includes("engorde")) return "produccion";
-
-  if (ddtStatus.stage) {
-    if (ddtStatus.stage.number <= 2) return "vegetativo";
-    if (ddtStatus.stage.number === 3) return "floracion";
-    return "produccion";
-  }
-
-  if (ddtStatus.ddt < 43) return "vegetativo";
-  if (ddtStatus.ddt < 78) return "floracion";
-  return "produccion";
-}
-
 function optionalNumber(value: FormDataEntryValue | null) {
   return parseNumericInput(String(value ?? ""));
-}
-
-function optionalInteger(value: FormDataEntryValue | null) {
-  const number = optionalNumber(value);
-  return number === null ? 0 : Math.trunc(number);
 }
 
 function AuthCard({
@@ -612,9 +575,7 @@ function OnboardingScreen({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [cropOptions, setCropOptions] = useState<CropCatalogItem[]>(DEFAULT_CROP_OPTIONS);
-  const [cropStageOptions, setCropStageOptions] = useState<CropStageCatalog[]>([]);
   const [selectedCropId, setSelectedCropId] = useState(INITIAL_CROP_ID);
-  const [transplantDate, setTransplantDate] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -623,23 +584,15 @@ function OnboardingScreen({
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
 
-      const [cropsResponse, stagesResponse] = await Promise.all([
-        supabase
-          .from("crops")
-          .select("id, slug, name, scientific_name, default_cycle_days, is_active")
-          .eq("is_active", true)
-          .order("name", { ascending: true }),
-        supabase
-          .from("crop_stages")
-          .select("id, crop_id, stage_number, stage_label, stage_name, ddt_start, ddt_end, duration_days")
-          .eq("is_active", true)
-          .order("stage_number", { ascending: true })
-      ]);
+      const cropsResponse = await supabase
+        .from("crops")
+        .select("id, slug, name, scientific_name, default_cycle_days, is_active")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
 
       if (!cancelled) {
         const mapped = mapCrops(cropsResponse.data);
         setCropOptions(mapped.length ? mapped : DEFAULT_CROP_OPTIONS);
-        setCropStageOptions(mapCropStages(stagesResponse.data, []));
       }
     }
 
@@ -666,23 +619,8 @@ function OnboardingScreen({
       location: String(form.get("location") ?? ""),
       latitude: optionalNumber(form.get("latitude")),
       longitude: optionalNumber(form.get("longitude")),
-      locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
-      transplantDate: String(form.get("transplantDate") ?? ""),
-      surfaceM2: optionalNumber(form.get("surfaceM2")),
-      budgetAmount: optionalNumber(form.get("budgetAmount")),
-      plants: optionalInteger(form.get("plants")),
-      stemCount: Number(form.get("stemCount")) === 1 || Number(form.get("stemCount")) === 2
-        ? Number(form.get("stemCount")) as 1 | 2
-        : null,
-      isGrafted: String(form.get("isGrafted") ?? "") === "" ? null : String(form.get("isGrafted")) === "true",
-      beds: optionalInteger(form.get("beds"))
+      locationAccuracyM: optionalNumber(form.get("locationAccuracyM"))
     };
-
-    if (!values.transplantDate) {
-      setLoading(false);
-      setError("Selecciona la fecha de trasplante para calcular DDT.");
-      return;
-    }
 
     const { error: onboardingError } = await supabase.rpc("create_initial_workspace_with_coordinates", {
       full_name: values.fullName,
@@ -692,14 +630,14 @@ function OnboardingScreen({
       tomato_variety: values.cropId === INITIAL_CROP_ID ? values.variety : null,
       crop_variety: values.variety,
       initial_crop_id: values.cropId,
-      initial_crop_stage: dbCropStageFromTransplant(values.cropId, values.transplantDate, cropStageOptions),
-      initial_transplant_date: values.transplantDate || null,
-      initial_surface_m2: values.surfaceM2,
-      initial_budget_amount: values.budgetAmount,
-      initial_plants_count: values.plants,
-      initial_stem_count: values.stemCount,
-      initial_is_grafted: values.isGrafted,
-      initial_beds_count: values.beds,
+      initial_crop_stage: "vegetativo",
+      initial_transplant_date: null,
+      initial_surface_m2: null,
+      initial_budget_amount: null,
+      initial_plants_count: 0,
+      initial_stem_count: null,
+      initial_is_grafted: null,
+      initial_beds_count: 0,
       initial_latitude: values.latitude,
       initial_longitude: values.longitude,
       initial_location_accuracy_m: values.locationAccuracyM
@@ -714,13 +652,8 @@ function OnboardingScreen({
   };
 
   const emailName = session.user.email?.split("@")[0] ?? "";
-  const today = new Date().toISOString().slice(0, 10);
   const selectedCrop = cropOptions.find((crop) => crop.id === selectedCropId) ?? cropOptions[0];
   const varietyOptions = cropVarietyOptionsForSlug(selectedCrop?.slug);
-  const ddtStatus = getCropDdtStatus(selectedCropId, transplantDate, daysSince(transplantDate), cropStageOptions);
-  const ddtStageLabel = transplantDate
-    ? `${ddtStatus.ddt} DDT · ${ddtStatus.stage ? ddtStatus.label : ddtStatus.detail}`
-    : "Selecciona trasplante";
 
   return (
     <AuthCard kicker="Primer acceso" title="Configura tu empresa y primera área productiva.">
@@ -759,7 +692,7 @@ function OnboardingScreen({
               Primera área productiva
             </p>
             <p className="mt-3 text-sm leading-6 text-app-muted">
-              Una ficha inicial para entrar con datos útiles desde el primer día.
+              Agrega lo esencial para comenzar. Podrás completar los datos productivos después.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -795,51 +728,6 @@ function OnboardingScreen({
               </SelectInput>
             </Field>
             <PreciseLocationField inputClassName="rounded-lg bg-app-background" />
-            <Field label="Trasplante">
-              <DatePickerInput
-                className="rounded-lg bg-app-background"
-                max={today}
-                name="transplantDate"
-                onChange={(event) => setTransplantDate(event.target.value)}
-                required
-                value={transplantDate}
-              />
-            </Field>
-            <Field label="Etapa por DDT">
-              <div className="flex h-11 items-center rounded-lg border border-app-border bg-app-sidebar px-3 text-sm font-medium text-app-text">
-                {ddtStageLabel}
-              </div>
-            </Field>
-            <Field label="Superficie m2">
-              <FormattedNumberInput className="rounded-lg bg-app-background" name="surfaceM2" placeholder="1,000" />
-            </Field>
-            <Field label="Presupuesto del ciclo">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-app-muted">$</span>
-                <FormattedNumberInput className="rounded-lg bg-app-background pl-7 pr-14" name="budgetAmount" placeholder="Opcional" />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-app-muted">MXN</span>
-              </div>
-            </Field>
-            <Field label="Plantas">
-              <FormattedNumberInput className="rounded-lg bg-app-background" name="plants" defaultValue={0} />
-            </Field>
-            <Field label="Manejo de tallos">
-              <SelectInput className="rounded-lg bg-app-background" name="stemCount" defaultValue="">
-                <option value="">Sin configurar</option>
-                <option value="1">Un tallo</option>
-                <option value="2">Doble tallo</option>
-              </SelectInput>
-            </Field>
-            <Field label="Injerto">
-              <SelectInput className="rounded-lg bg-app-background" name="isGrafted" defaultValue="">
-                <option value="">Sin configurar</option>
-                <option value="true">Sí</option>
-                <option value="false">No</option>
-              </SelectInput>
-            </Field>
-            <Field label="Camas">
-              <FormattedNumberInput className="rounded-lg bg-app-background" name="beds" defaultValue={0} />
-            </Field>
           </div>
         </section>
         {error ? <p className="text-sm text-[#8A2E2E]">{error}</p> : null}
