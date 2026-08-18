@@ -593,11 +593,21 @@ function OverviewSection({
     organization,
     currentUser,
     completeTask,
+    openModal,
     setActiveSection
   } = useFilteredData();
   const [taskNotice, setTaskNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [simpleCompletionTask, setSimpleCompletionTask] = useState<Task | null>(null);
+  const hasIncompleteProductiveData = greenhouse
+    ? !greenhouse.transplantDate
+      || !greenhouse.surfaceM2
+      || greenhouse.budgetAmount === null
+      || greenhouse.plants <= 0
+      || greenhouse.stemCount === null
+      || greenhouse.isGrafted === null
+      || greenhouse.beds <= 0
+    : false;
 
   if (!greenhouse) {
     return (
@@ -673,6 +683,23 @@ function OverviewSection({
   return (
     <>
       {taskNotice ? <InlineNotice tone={taskNotice.tone}>{taskNotice.message}</InlineNotice> : null}
+      {hasIncompleteProductiveData && (currentUser.role === "owner" || currentUser.role === "admin") ? (
+        <aside className="mb-6 grid gap-4 border-l-2 border-app-green bg-app-sidebar px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div>
+            <p className="text-sm font-semibold text-app-text">Completa los datos productivos de tu área</p>
+            <p className="mt-1 text-sm leading-6 text-app-muted">
+              Agrega trasplante, superficie, presupuesto y capacidad cuando los tengas disponibles.
+            </p>
+          </div>
+          <Button
+            icon={<Edit3 aria-hidden="true" className="h-4 w-4" />}
+            onClick={() => openModal("editGreenhouse")}
+            variant="secondary"
+          >
+            Completar datos
+          </Button>
+        </aside>
+      ) : null}
       <TodayDecisionBoard
         alerts={greenhousePests}
         busyTaskId={savingTaskId}
