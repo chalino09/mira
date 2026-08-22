@@ -1609,6 +1609,7 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
           <option value="agua">Agua</option>
           <option value="energia">Energía</option>
           <option value="mantenimiento">Mantenimiento</option>
+          <option value="material_produccion">Material de producción</option>
           <option value="transporte">Transporte</option>
         </SelectInput>
       </ListToolbar>
@@ -1625,7 +1626,21 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
             { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: true },
             { key: "category", label: "Categoría", render: (item) => item.category, sortable: true },
             { key: "amount", label: "Monto", render: (item) => formatCurrency(item.amount), sortable: true },
-            { key: "notes", label: "Notas", render: (item) => item.notes }
+            {
+              key: "notes",
+              label: "Concepto",
+              render: (item) => (
+                <span>
+                  <span className="block">{item.notes || "Sin concepto"}</span>
+                  {item.quantity != null || item.unitPrice != null ? (
+                    <span className="block text-xs text-app-muted">
+                      {item.quantity != null ? formatNumber(item.quantity) : "--"}{item.unit ? ` ${item.unit}` : ""}
+                      {item.unitPrice != null ? ` × ${formatCurrency(item.unitPrice)}` : ""}
+                    </span>
+                  ) : null}
+                </span>
+              )
+            }
           ]}
           data={costListRecords}
           getRowKey={(item) => item.id}

@@ -297,8 +297,12 @@ export type CostRecord = {
     | "Transporte"
     | "Refrescos"
     | "Renta"
+    | "Material de producción"
     | "Gasolina";
   amount: number;
+  quantity?: number | null;
+  unit?: string;
+  unitPrice?: number | null;
   notes: string;
 };
 

@@ -26,7 +26,7 @@ const APPLICATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, cat
 const PEST_COLUMNS = "id, public_id, greenhouse_id, problem, severity, affected_zone, detected_at, action_taken, follow_up, case_status, photo_storage_path, photo_url";
 const PEST_UPDATE_COLUMNS = "id, pest_alert_id, greenhouse_id, update_status, severity, action_type, notes, next_review_date, photo_storage_path, created_at";
 const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, estimated_price, destination, notes";
-const COST_COLUMNS = "id, greenhouse_id, occurred_at, category, amount, notes";
+const COST_COLUMNS = "id, greenhouse_id, occurred_at, category, amount, quantity, unit, unit_price, notes";
 
 type ViewDataRequest = {
   supabase: SupabaseClient;
@@ -186,11 +186,15 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
   }));
   const costRecords: CostRecord[] = (rows.costs ?? []).map((row) => ({
     id: row.id, greenhouseId: row.greenhouse_id ?? "", date: row.occurred_at,
-    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0), notes: row.notes ?? ""
+    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
+    quantity: row.quantity == null ? null : Number(row.quantity), unit: row.unit ?? "",
+    unitPrice: row.unit_price == null ? null : Number(row.unit_price), notes: row.notes ?? ""
   }));
   const costListRecords: CostRecord[] = (rows.costList ?? []).map((row) => ({
     id: row.id, greenhouseId: row.greenhouse_id ?? "", date: row.occurred_at,
-    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0), notes: row.notes ?? ""
+    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
+    quantity: row.quantity == null ? null : Number(row.quantity), unit: row.unit ?? "",
+    unitPrice: row.unit_price == null ? null : Number(row.unit_price), notes: row.notes ?? ""
   }));
   return { tasks, irrigationRecords, nutritionRecords, applicationRecords, harvestRecords, costRecords, costListRecords };
 }

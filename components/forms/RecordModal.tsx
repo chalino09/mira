@@ -4,6 +4,7 @@ import { Minus, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
@@ -11,6 +12,7 @@ import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { applicationCategories, applicationCategoryFromDb, applicationCategoryToDb } from "@/lib/application-categories";
 import { appErrorMessage } from "@/lib/errors";
+import { calculatedCostAmount } from "@/lib/cost-entry";
 import { costCategoryToDb } from "@/lib/cost-categories";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
@@ -19,7 +21,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { harvestValuesFromForm } from "@/lib/harvest";
 import { normalizedProductName } from "@/lib/product-search";
-import { cn, parseNumericInput } from "@/lib/utils";
+import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
@@ -71,6 +73,9 @@ function sameOptionalText(left: string | null | undefined, right: string | null 
 type CostDraft = {
   category: CostRecord["category"];
   amount: string;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
   notes: string;
 };
 
@@ -82,7 +87,7 @@ type ManagerOption = {
 };
 
 function emptyCost(): CostDraft {
-  return { category: "Agroinsumos", amount: "", notes: "" };
+  return { category: "Agroinsumos", amount: "", quantity: "", unit: "", unitPrice: "", notes: "" };
 }
 
 type ProductOption = ProductCatalogOption;
@@ -148,6 +153,17 @@ const riskLevelToDb: Record<RiskLevel, string> = {
   Media: "media",
   Alta: "alta"
 };
+
+const costCategoryOptions = Object.keys(costCategoryToDb).map((category) => ({
+  label: category,
+  value: category
+}));
+
+const costUnitOptions = [
+  { label: "Seleccionar unidad", value: "", disabled: true },
+  ...["Pieza", "Litro", "Kilogramo", "Bulto", "Rollo", "Metro", "Caja", "Hora", "Lote", "Año"]
+    .map((unit) => ({ label: unit, value: unit }))
+];
 
 const nutritionMethodToDb: Record<NutritionRecord["method"], string> = {
   Fertirriego: "fertirriego",
@@ -365,6 +381,10 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
   const pendingDuplicateSaveRef = useRef<(() => Promise<void>) | null>(null);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
+  const costBatchTotal = useMemo(
+    () => costRows.reduce((total, cost) => total + (parseNumericInput(cost.amount) ?? 0), 0),
+    [costRows]
+  );
 
   useEffect(() => {
     setError("");
@@ -1150,6 +1170,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         date: String(form.get("date")),
         category: cost.category,
         amount: requiredNumber(cost.amount),
+        quantity: optionalNumber(cost.quantity),
+        unit: cost.unit.trim(),
+        unitPrice: optionalNumber(cost.unitPrice),
         notes: cost.notes
       }));
       const { data, error: insertError } = await getSupabaseBrowserClient()!
@@ -1159,6 +1182,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
           greenhouse_id: record.greenhouseId || null,
           category: costCategoryToDb[record.category],
           amount: record.amount,
+          quantity: record.quantity,
+          unit: record.unit || null,
+          unit_price: record.unitPrice,
           occurred_at: record.date,
           notes: record.notes,
           created_by: currentUser.id
@@ -1399,7 +1425,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Productos y mezcla</p>
                 <p className="mt-2 text-xs text-app-muted">Registra productos, dosis y mezcla aplicada.</p>
@@ -1535,61 +1561,129 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <section className="grid gap-3 sm:col-span-2">
+          <section aria-labelledby="cost-items-title" className="grid gap-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Gastos</p>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted" id="cost-items-title">Partidas de costo</p>
+                <p className="mt-1 text-xs leading-5 text-app-muted">Captura el monto directamente o agrega cantidad y precio unitario para calcularlo.</p>
+              </div>
               <Button
-                className="h-8"
+                className="min-h-10 w-full shrink-0 sm:w-auto"
                 icon={<Plus className="h-3.5 w-3.5" />}
                 onClick={() => setCostRows((current) => [...current, emptyCost()])}
                 type="button"
                 variant="ghost"
               >
-                Agregar costo
+                Agregar partida
               </Button>
             </div>
             {costRows.map((cost, index) => (
-              <div key={index} className="grid gap-2 border-t border-app-border pt-3 sm:grid-cols-[1fr_0.65fr_1fr_auto]">
-                <SelectInput
-                  aria-label={`Categoría ${index + 1}`}
-                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, category: event.target.value as CostRecord["category"] } : item
-                  ))}
-                  value={cost.category}
-                >
-                  {Object.keys(costCategoryToDb).map((item) => <option key={item}>{item}</option>)}
-                </SelectInput>
-                <FormattedNumberInput
-                  aria-label={`Monto ${index + 1}`}
-                  min="0.01"
-                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, amount: event.target.value } : item
-                  ))}
-                  placeholder="Monto"
-                  required
-                  step="0.01"
-                  value={cost.amount}
-                />
-                <TextInput
-                  aria-label={`Notas ${index + 1}`}
-                  onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, notes: event.target.value } : item
-                  ))}
-                  placeholder="Nota opcional"
-                  value={cost.notes}
-                />
-                <Button
-                  aria-label={`Quitar costo ${index + 1}`}
-                  className="h-11 w-11 px-0"
-                  icon={<Minus className="h-4 w-4" />}
-                  onClick={() => setCostRows((current) =>
-                    current.length === 1 ? [emptyCost()] : current.filter((_, itemIndex) => itemIndex !== index)
-                  )}
-                  type="button"
-                  variant="ghost"
-                />
-              </div>
+              <fieldset key={index} className="grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4">
+                <legend className="px-2 text-xs font-semibold text-app-text">Partida {index + 1}</legend>
+                <div className="grid gap-3 lg:grid-cols-[1fr_1.6fr_0.75fr_auto]">
+                  <Field label="Categoría">
+                    <SelectionMenu
+                      ariaLabel={`Categoría de la partida ${index + 1}`}
+                      buttonClassName="h-11 rounded-xl px-3 text-sm font-normal"
+                      menuClassName="max-h-72 overflow-y-auto"
+                      onChange={(category) => setCostRows((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, category: category as CostRecord["category"] } : item
+                      ))}
+                      options={costCategoryOptions}
+                      value={cost.category}
+                    />
+                  </Field>
+                  <Field label="Concepto">
+                    <TextInput
+                      aria-label={`Concepto de la partida ${index + 1}`}
+                      onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, notes: event.target.value } : item
+                      ))}
+                      placeholder="Ej. reparación de fumigadora"
+                      required
+                      value={cost.notes}
+                    />
+                  </Field>
+                  <Field label="Monto">
+                    <FormattedNumberInput
+                      aria-label={`Monto de la partida ${index + 1}`}
+                      min="0.01"
+                      onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, amount: event.target.value } : item
+                      ))}
+                      placeholder="$0.00"
+                      required
+                      step="0.01"
+                      value={cost.amount}
+                    />
+                  </Field>
+                  <div className="flex items-end justify-end">
+                    <Button
+                      aria-label={`Quitar partida ${index + 1}`}
+                      className="h-11 w-11 px-0"
+                      icon={<Minus aria-hidden="true" className="h-4 w-4" />}
+                      onClick={() => setCostRows((current) =>
+                        current.length === 1 ? [emptyCost()] : current.filter((_, itemIndex) => itemIndex !== index)
+                      )}
+                      type="button"
+                      variant="ghost"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Cantidad">
+                    <FormattedNumberInput
+                      aria-label={`Cantidad de la partida ${index + 1}`}
+                      min="0"
+                      onChange={(event) => {
+                        const quantity = event.target.value;
+                        setCostRows((current) => current.map((item, itemIndex) => {
+                          if (itemIndex !== index) return item;
+                          const calculatedAmount = calculatedCostAmount(quantity, item.unitPrice);
+                          return { ...item, quantity, amount: calculatedAmount === null ? item.amount : String(calculatedAmount) };
+                        }));
+                      }}
+                      placeholder="1"
+                      step="0.01"
+                      value={cost.quantity}
+                    />
+                  </Field>
+                  <Field label="Unidad">
+                    <SelectionMenu
+                      ariaLabel={`Unidad de la partida ${index + 1}`}
+                      buttonClassName="h-11 rounded-xl px-3 text-sm font-normal"
+                      menuClassName="max-h-64 overflow-y-auto"
+                      onChange={(unit) => setCostRows((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, unit } : item
+                      ))}
+                      options={costUnitOptions}
+                      value={cost.unit}
+                    />
+                  </Field>
+                  <Field label="Precio unitario">
+                    <FormattedNumberInput
+                      aria-label={`Precio unitario de la partida ${index + 1}`}
+                      min="0"
+                      onChange={(event) => {
+                        const unitPrice = event.target.value;
+                        setCostRows((current) => current.map((item, itemIndex) => {
+                          if (itemIndex !== index) return item;
+                          const calculatedAmount = calculatedCostAmount(item.quantity, unitPrice);
+                          return { ...item, unitPrice, amount: calculatedAmount === null ? item.amount : String(calculatedAmount) };
+                        }));
+                      }}
+                      placeholder="$0.00"
+                      step="0.01"
+                      value={cost.unitPrice}
+                    />
+                  </Field>
+                </div>
+              </fieldset>
             ))}
+            <div className="flex items-center justify-between border-t border-app-border pt-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">Total del registro</span>
+              <output className="text-lg font-semibold tabular-nums text-app-text">{formatCurrency(costBatchTotal)}</output>
+            </div>
           </section>
         </FormShell>
       ) : null}

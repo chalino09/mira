@@ -11,6 +11,7 @@ export const costCategoryToDb: Record<CostRecord["category"], string> = {
   Transporte: "transporte",
   Refrescos: "refrescos",
   Renta: "renta",
+  "Material de producción": "material_produccion",
   Gasolina: "gasolina"
 };
 

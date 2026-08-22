@@ -85,6 +85,7 @@ do $$ begin
     'transporte',
     'refrescos',
     'renta',
+    'material_produccion',
     'gasolina'
   );
 exception when duplicate_object then null;
