@@ -56,6 +56,7 @@ import { cropLabelForId, getCropDdtStatus, greenhouseDisplayName } from "@/lib/c
 import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
+import { formatPricePerBox } from "@/lib/harvest";
 import { requireWorkSchema } from "@/lib/work-schema";
 import {
   buildCopilotPulse,
@@ -908,6 +909,8 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
   const pestAlerts = useGreenhouseStore((state) => state.pestAlerts);
   const harvestRecords = useGreenhouseStore((state) => state.harvestRecords);
+  const currentUser = useGreenhouseStore((state) => state.currentUser);
+  const openHarvestEditor = useGreenhouseStore((state) => state.openHarvestEditor);
   const organizationRouteName = organization.slug ?? organization.name;
 
   if (route.type === "greenhouse" || route.type === "cycle") {
@@ -1015,13 +1018,20 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
     <section>
       <SectionHeader
         action={(
-          <Link
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
-            href={appRoute(organizationRouteName, { section: "harvest", greenhouseId: harvest.greenhouseId })}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Cosecha
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {currentUser.role !== "manager" ? (
+              <Button icon={<Edit3 aria-hidden="true" className="h-4 w-4" />} onClick={() => openHarvestEditor(harvest.id)} variant="secondary">
+                Corregir cosecha
+              </Button>
+            ) : null}
+            <Link
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
+              href={appRoute(organizationRouteName, { section: "harvest", greenhouseId: harvest.greenhouseId })}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Cosecha
+            </Link>
+          </div>
         )}
         title={`Lote de cosecha · ${formatDate(harvest.date)}`}
         description={`${greenhouse ? greenhouseDisplayName(greenhouse, crops) : "Área productiva"} · ${harvest.destination || "Destino sin registrar"}`}
@@ -1029,14 +1039,15 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
       <div className="grid gap-3 md:grid-cols-3">
         <EditorialObject index="01" label="Cajas" value={formatNumber(harvest.boxCount)} detail={`${formatNumber(harvest.boxWeightKg)} kg por caja`} icon={Package} />
         <EditorialObject index="02" label="Volumen" value={`${formatNumber(harvest.kilograms)} kg`} detail={`${formatNumber(harvest.merma)} kg de merma`} icon={Leaf} />
-        <EditorialObject index="03" label="Precio estimado" value={formatCurrency(harvest.estimatedPrice)} detail={harvest.destination || "Destino sin registrar"} icon={WalletCards} />
+        <EditorialObject index="03" label="Precio promedio por caja" value={formatPricePerBox(harvest.estimatedPrice)} detail={harvest.destination || "Destino sin registrar"} icon={WalletCards} />
       </div>
       <div className="mt-8 grid gap-3 md:grid-cols-4">
         <EditorialObject index="A" label="Primera" value={`${formatNumber(harvest.firstQuality)} kg`} detail={`${formatNumber(harvest.firstQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="B" label="Segunda" value={`${formatNumber(harvest.secondQuality)} kg`} detail={`${formatNumber(harvest.secondQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="C" label="Tercera" value={`${formatNumber(harvest.thirdQuality)} kg`} detail={`${formatNumber(harvest.thirdQualityBoxes)} cajas`} icon={CheckCircle2} />
-        <EditorialObject index="D" label="Notas" value={harvest.notes || "Sin notas"} detail="Registro de cosecha" icon={ActivitySquare} />
+        <EditorialObject index="D" label="Venta neta" value={formatCurrency(harvest.netRevenue ?? harvest.grossRevenue ?? 0)} detail={`${formatNumber(harvest.soldBoxes ?? 0)} cajas vendidas${(harvest.specialBoxes ?? 0) ? ` · ${formatNumber(harvest.specialBoxes ?? 0)} especiales` : ""}${(harvest.unsoldBoxes ?? 0) ? ` · ${formatNumber(harvest.unsoldBoxes ?? 0)} pendientes` : ""}`} icon={WalletCards} />
       </div>
+      {harvest.notes ? <p className="mt-6 border-l-2 border-app-green px-4 text-sm leading-6 text-app-text">{harvest.notes}</p> : null}
     </section>
   );
 }
@@ -1452,7 +1463,7 @@ function PestsSection() {
 }
 
 function HarvestSection({ embedded = false }: { embedded?: boolean }) {
-  const { currentUser, greenhouseHarvest, openModal, organization, viewAggregates, viewDataMeta } = useFilteredData();
+  const { currentUser, greenhouseHarvest, openHarvestEditor, openModal, organization, viewAggregates, viewDataMeta } = useFilteredData();
   const { list, updateList } = useListNavigation();
   const refresh = useViewDataRefresh();
   const isManager = currentUser.role === "manager";
@@ -1460,6 +1471,7 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
   const totalKg = viewAggregates?.totalHarvestKg ?? 0;
   const commercialKg = viewAggregates?.commercialKg ?? 0;
   const averagePrice = viewAggregates?.averagePrice ?? 0;
+  const netRevenue = viewAggregates?.netRevenue ?? viewAggregates?.estimatedRevenue ?? 0;
   const latestHarvest = viewAggregates?.harvestDaily.at(-1);
   const harvestChartData = (viewAggregates?.harvestDaily ?? [])
     .slice(-7)
@@ -1484,7 +1496,7 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
             : "Consulta cortes, calidad, merma, destino y rendimiento por área productiva."}
         />
       ) : null}
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      <div className={cn("mb-5 grid gap-3", isManager ? "sm:grid-cols-3" : "sm:grid-cols-2 xl:grid-cols-4")}>
         <MetricCard icon={Leaf} label="Cajas acumuladas" value={formatNumber(totalBoxes)} detail={`${formatNumber(totalKg)} kg registrados`} />
         {isManager ? (
           <>
@@ -1494,35 +1506,59 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
         ) : (
           <>
             <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da y 3ra calidad" />
-            <MetricCard icon={WalletCards} label="Precio promedio" value={formatCurrency(averagePrice)} detail="Ponderado por kg comercial" />
+            <MetricCard icon={WalletCards} label="Venta neta" value={formatCurrency(netRevenue)} detail="Después de comisión y flete" />
+            <MetricCard icon={WalletCards} label="Precio promedio por caja" value={formatPricePerBox(averagePrice)} detail="Ponderado por cajas vendidas" />
           </>
         )}
       </div>
       <h2 className="mb-4 text-xl font-light text-app-text">Últimas cosechas</h2>
-      <div className={cn("grid gap-5", !isManager && "xl:grid-cols-[0.8fr_1.5fr]")}>
+      <div className="grid gap-5">
         {!isManager ? <YieldChart data={harvestChartData} /> : null}
         <DataTable<HarvestRecord>
           columns={[
-            { key: "date", label: "Fecha", render: (item) => formatDate(item.date), sortable: true },
-            { key: "boxes", label: "Cajas", render: (item) => item.boxCount ? formatNumber(item.boxCount) : "--", sortable: true },
-            { key: "kg", label: "Kg", render: (item) => formatNumber(item.kilograms), sortable: true },
+            {
+              key: "date",
+              label: "Fecha y destino",
+              render: (item) => (
+                <span>
+                  <span className="block font-medium">{formatDate(item.date)}</span>
+                  <span className="mt-1 block text-xs text-app-muted">{item.destination || "Sin destino"}</span>
+                </span>
+              ),
+              sortable: true
+            },
+            {
+              key: "boxes",
+              label: "Volumen",
+              render: (item) => (
+                <span>
+                  <span className="block font-medium">{item.boxCount ? `${formatNumber(item.boxCount)} cj` : "--"}</span>
+                  <span className="mt-1 block text-xs text-app-muted">{formatNumber(item.kilograms)} kg</span>
+                </span>
+              ),
+              sortable: true
+            },
             { key: "first", label: "1ra", render: (item) => qualityCell(item.firstQualityBoxes, item.firstQuality) },
             { key: "second", label: "2da", render: (item) => qualityCell(item.secondQualityBoxes, item.secondQuality) },
             { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
             { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
-            ...(!isManager ? [{ key: "price", label: "Precio", render: (item: HarvestRecord) => formatCurrency(item.estimatedPrice), sortable: true }] : []),
-            { key: "destination", label: "Destino", render: (item) => item.destination },
+            ...(!isManager ? [{ key: "price", label: "Precio por caja", render: (item: HarvestRecord) => formatPricePerBox(item.estimatedPrice), sortable: true }] : []),
+            { key: "sale", label: "Venta neta", render: (item) => item.netRevenue ? formatCurrency(item.netRevenue) : item.grossRevenue ? formatCurrency(item.grossRevenue) : "--", mobileHidden: true },
             {
               key: "detail",
               label: "",
               render: (item) => (
-                <Link className="text-xs font-medium text-app-green underline-offset-4 hover:underline" href={harvestLotRoute(organization.slug ?? organization.name, item.publicId ?? publicEntityId("lot", item.id))}>
-                  Abrir lote
-                </Link>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {!isManager ? <Button className="h-9 px-2 text-xs" icon={<Edit3 aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => openHarvestEditor(item.id)} type="button" variant="ghost">Corregir</Button> : null}
+                  <Link className="inline-flex min-h-9 items-center text-xs font-medium text-app-green underline-offset-4 hover:underline" href={harvestLotRoute(organization.slug ?? organization.name, item.publicId ?? publicEntityId("lot", item.id))}>
+                    Abrir lote
+                  </Link>
+                </div>
               )
             }
           ]}
           data={greenhouseHarvest}
+          desktopLayout="fixed"
           getRowKey={(item) => item.id}
           sort={{ key: list.sort ?? "date", dir: list.dir ?? "desc" }}
           onSort={(key, dir) => updateList({ sort: key, dir, page: undefined })}

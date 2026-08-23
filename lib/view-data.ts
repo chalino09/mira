@@ -26,6 +26,8 @@ const APPLICATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, cat
 const PEST_COLUMNS = "id, public_id, greenhouse_id, problem, severity, affected_zone, detected_at, action_taken, follow_up, case_status, photo_storage_path, photo_url";
 const PEST_UPDATE_COLUMNS = "id, pest_alert_id, greenhouse_id, update_status, severity, action_type, notes, next_review_date, photo_storage_path, created_at";
 const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, estimated_price, destination, notes";
+const HARVEST_SALE_COLUMNS = "id, harvest_record_id, gross_amount, commission_amount, freight_amount, net_amount";
+const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count";
 const COST_COLUMNS = "id, greenhouse_id, occurred_at, category, amount, quantity, unit, unit_price, notes";
 
 type ViewDataRequest = {
@@ -172,18 +174,59 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
     responsible: currentUserName, safetyInterval: row.safety_interval ?? "", reentry: row.reentry_interval ?? "",
     notes: row.notes ?? ""
   }));
-  const harvestRecords: HarvestRecord[] = (rows.harvests ?? []).map((row) => ({
-    id: row.id, publicId: row.public_id ?? publicEntityId("lot", row.id), sourceTaskId: row.source_task_id ?? undefined,
-    greenhouseId: row.greenhouse_id, date: row.occurred_at, kilograms: Number(row.kilograms ?? 0),
-    boxCount: Number(row.box_count ?? 0), boxWeightKg: Number(row.box_weight_kg ?? 20),
-    firstQuality: Number(row.first_quality_kg ?? 0), secondQuality: Number(row.second_quality_kg ?? 0),
-    thirdQuality: Number(row.third_quality_kg ?? 0), merma: Number(row.merma_kg ?? row.discard_kg ?? 0),
-    firstQualityBoxes: Number(row.first_quality_boxes ?? 0), secondQualityBoxes: Number(row.second_quality_boxes ?? 0),
-    thirdQualityBoxes: Number(row.third_quality_boxes ?? 0), mermaBoxes: Number(row.merma_boxes ?? row.discard_boxes ?? 0),
-    firstQualityPrice: Number(row.first_quality_price ?? 0), secondQualityPrice: Number(row.second_quality_price ?? 0),
-    thirdQualityPrice: Number(row.third_quality_price ?? 0), estimatedPrice: Number(row.estimated_price ?? 0),
-    destination: row.destination ?? "", notes: row.notes ?? ""
-  }));
+  const linesBySale = new Map<string, any[]>();
+  (rows.harvestSaleLines ?? []).forEach((line) => {
+    linesBySale.set(line.sale_id, [...(linesBySale.get(line.sale_id) ?? []), line]);
+  });
+  const salesByHarvest = new Map<string, { grossRevenue: number; commissionAmount: number; freightAmount: number; netRevenue: number; soldBoxes: number; specialBoxes: number }>();
+  (rows.harvestSales ?? []).forEach((sale) => {
+    const lines = linesBySale.get(sale.id) ?? [];
+    const soldBoxes = lines.reduce((total, line) => total + Number(line.box_count ?? 0), 0);
+    const specialBoxes = lines
+      .filter((line) => !/^(primeras?|segundas?|terceras?)(-|$)/i.test(String(line.quality_label ?? "")))
+      .reduce((total, line) => total + Number(line.box_count ?? 0), 0);
+    const current = salesByHarvest.get(sale.harvest_record_id) ?? { grossRevenue: 0, commissionAmount: 0, freightAmount: 0, netRevenue: 0, soldBoxes: 0, specialBoxes: 0 };
+    salesByHarvest.set(sale.harvest_record_id, {
+      grossRevenue: current.grossRevenue + Number(sale.gross_amount ?? 0),
+      commissionAmount: current.commissionAmount + Number(sale.commission_amount ?? 0),
+      freightAmount: current.freightAmount + Number(sale.freight_amount ?? 0),
+      netRevenue: current.netRevenue + Number(sale.net_amount ?? 0),
+      soldBoxes: current.soldBoxes + soldBoxes,
+      specialBoxes: current.specialBoxes + specialBoxes
+    });
+  });
+  const harvestRecords: HarvestRecord[] = (rows.harvests ?? []).map((row) => {
+    const firstQualityBoxes = Number(row.first_quality_boxes ?? 0);
+    const secondQualityBoxes = Number(row.second_quality_boxes ?? 0);
+    const thirdQualityBoxes = Number(row.third_quality_boxes ?? 0);
+    const boxCount = Number(row.box_count ?? 0);
+    const estimatedRevenue =
+      firstQualityBoxes * Number(row.first_quality_price ?? 0)
+      + secondQualityBoxes * Number(row.second_quality_price ?? 0)
+      + thirdQualityBoxes * Number(row.third_quality_price ?? 0);
+    const sales = salesByHarvest.get(row.id);
+    const soldBoxes = sales?.soldBoxes ?? (firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes);
+    const netRevenue = sales?.netRevenue ?? estimatedRevenue;
+    return {
+      id: row.id, publicId: row.public_id ?? publicEntityId("lot", row.id), sourceTaskId: row.source_task_id ?? undefined,
+      greenhouseId: row.greenhouse_id, date: row.occurred_at, kilograms: Number(row.kilograms ?? 0),
+      boxCount, boxWeightKg: Number(row.box_weight_kg ?? 20),
+      firstQuality: Number(row.first_quality_kg ?? 0), secondQuality: Number(row.second_quality_kg ?? 0),
+      thirdQuality: Number(row.third_quality_kg ?? 0), merma: Number(row.merma_kg ?? row.discard_kg ?? 0),
+      firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes: Number(row.merma_boxes ?? row.discard_boxes ?? 0),
+      firstQualityPrice: Number(row.first_quality_price ?? 0), secondQualityPrice: Number(row.second_quality_price ?? 0),
+      thirdQualityPrice: Number(row.third_quality_price ?? 0),
+      estimatedPrice: soldBoxes > 0 ? netRevenue / soldBoxes : Number(row.estimated_price ?? 0),
+      soldBoxes,
+      specialBoxes: sales?.specialBoxes ?? 0,
+      unsoldBoxes: Math.max(boxCount - soldBoxes, 0),
+      grossRevenue: sales?.grossRevenue ?? estimatedRevenue,
+      commissionAmount: sales?.commissionAmount ?? 0,
+      freightAmount: sales?.freightAmount ?? 0,
+      netRevenue,
+      destination: row.destination ?? "", notes: row.notes ?? ""
+    };
+  });
   const costRecords: CostRecord[] = (rows.costs ?? []).map((row) => ({
     id: row.id, greenhouseId: row.greenhouse_id ?? "", date: row.occurred_at,
     category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
@@ -335,6 +378,23 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
   }
 
   let pestAlerts: PestAlert[] | undefined;
+  if (rows.harvests?.length) {
+    const harvestIds = rows.harvests.map((row) => row.id);
+    const salesResponse = await supabase
+      .from("harvest_sales")
+      .select(HARVEST_SALE_COLUMNS)
+      .eq("company_id", companyId)
+      .in("harvest_record_id", harvestIds);
+    if (salesResponse.error && !["42P01", "PGRST205"].includes(salesResponse.error.code ?? "")) throw salesResponse.error;
+    rows.harvestSales = salesResponse.error ? [] : salesResponse.data ?? [];
+
+    const saleIds = rows.harvestSales.map((sale) => sale.id);
+    if (saleIds.length) {
+      const linesResponse = await supabase.from("harvest_sale_lines").select(HARVEST_SALE_LINE_COLUMNS).in("sale_id", saleIds);
+      if (linesResponse.error && !["42P01", "PGRST205"].includes(linesResponse.error.code ?? "")) throw linesResponse.error;
+      rows.harvestSaleLines = linesResponse.error ? [] : linesResponse.data ?? [];
+    }
+  }
   if (rows.pests) {
     const ids = rows.pests.map((row) => row.id);
     let updateRows: any[] = [];
@@ -359,6 +419,11 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
       commercialKg: Number(rawAggregates.commercialKg ?? 0),
       estimatedRevenue: Number(rawAggregates.estimatedRevenue ?? 0),
       averagePrice: Number(rawAggregates.averagePrice ?? 0),
+      grossRevenue: Number(rawAggregates.grossRevenue ?? rawAggregates.estimatedRevenue ?? 0),
+      commissionAmount: Number(rawAggregates.commissionAmount ?? 0),
+      freightAmount: Number(rawAggregates.freightAmount ?? 0),
+      netRevenue: Number(rawAggregates.netRevenue ?? rawAggregates.estimatedRevenue ?? 0),
+      soldBoxes: Number(rawAggregates.soldBoxes ?? 0),
       harvestDaily: (rawAggregates.harvestDaily ?? []).map((item: any) => ({ date: item.date, kg: Number(item.kg ?? 0) })),
       totalIrrigationLiters: Number(rawAggregates.totalIrrigationLiters ?? 0),
       averageIrrigationDuration: Number(rawAggregates.averageIrrigationDuration ?? 0),

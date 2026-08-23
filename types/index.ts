@@ -278,6 +278,13 @@ export type HarvestRecord = {
   secondQualityPrice: number;
   thirdQualityPrice: number;
   estimatedPrice: number;
+  soldBoxes?: number;
+  specialBoxes?: number;
+  unsoldBoxes?: number;
+  grossRevenue?: number;
+  commissionAmount?: number;
+  freightAmount?: number;
+  netRevenue?: number;
   destination: string;
   notes: string;
 };
@@ -314,6 +321,11 @@ export type ViewOperationalAggregates = {
   commercialKg: number;
   estimatedRevenue: number;
   averagePrice: number;
+  grossRevenue: number;
+  commissionAmount: number;
+  freightAmount: number;
+  netRevenue: number;
+  soldBoxes: number;
   harvestDaily: Array<{ date: string; kg: number }>;
   totalIrrigationLiters: number;
   averageIrrigationDuration: number;
@@ -338,5 +350,6 @@ export type ModalType =
   | "application"
   | "pest"
   | "harvest"
+  | "editHarvest"
   | "cost"
   | null;

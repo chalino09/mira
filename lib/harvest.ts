@@ -1,5 +1,14 @@
 import { formatCurrency, formatNumber, parseNumericInput } from "./utils.ts";
 
+export function formatPricePerBox(value?: number | null) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(value ?? 0);
+}
+
 export type HarvestCaptureValues = {
   boxCount: number;
   boxWeightKg: number;
@@ -24,6 +33,12 @@ export type HarvestBoxReconciliation = {
   difference: number;
   isBalanced: boolean;
   message: string;
+};
+
+export type HarvestPriceReferences = {
+  first: number[];
+  second: number[];
+  third: number[];
 };
 
 function boxesLabel(value: number) {
@@ -103,12 +118,12 @@ export function harvestValuesFromForm(form: FormData): HarvestCaptureValues {
   const thirdQuality = thirdQualityBoxes * boxWeightKg;
   const merma = mermaBoxes * boxWeightKg;
   const kilograms = boxCount * boxWeightKg;
-  const commercialKg = firstQuality + secondQuality + thirdQuality;
+  const commercialBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes;
   const estimatedRevenue =
-    firstQuality * firstQualityPrice +
-    secondQuality * secondQualityPrice +
-    thirdQuality * thirdQualityPrice;
-  const estimatedPrice = commercialKg ? estimatedRevenue / commercialKg : 0;
+    firstQualityBoxes * firstQualityPrice +
+    secondQualityBoxes * secondQualityPrice +
+    thirdQualityBoxes * thirdQualityPrice;
+  const estimatedPrice = commercialBoxes ? estimatedRevenue / commercialBoxes : 0;
 
   return {
     boxCount,
@@ -134,7 +149,31 @@ export function harvestSummary(values: HarvestCaptureValues) {
   return {
     boxes: `${formatNumber(values.boxCount)} cajas`,
     kilograms: `${formatNumber(values.kilograms)} kg`,
-    averagePrice: formatCurrency(values.estimatedPrice),
+    averagePrice: formatPricePerBox(values.estimatedPrice),
     revenue: formatCurrency(values.estimatedRevenue)
   };
+}
+
+function median(values: number[]) {
+  const ordered = values.filter((value) => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
+  if (!ordered.length) return 0;
+  const middle = Math.floor(ordered.length / 2);
+  return ordered.length % 2 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2;
+}
+
+export function harvestPriceOutlierMessage(
+  price: number,
+  quality: "first" | "second" | "third",
+  references: HarvestPriceReferences
+) {
+  const values = references[quality].filter((value) => value > 0);
+  if (price <= 0 || values.length < 3) return "";
+
+  const reference = median(values);
+  if (!reference || (price < reference * 0.5 || price > reference * 1.75)) {
+    const label = quality === "first" ? "primera" : quality === "second" ? "segunda" : "tercera";
+    return `El precio de ${label} (${formatPricePerBox(price)}/caja) se aleja del historial (${formatPricePerBox(reference)}/caja). Verifica el dato antes de guardar.`;
+  }
+
+  return "";
 }

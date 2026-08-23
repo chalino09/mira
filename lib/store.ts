@@ -54,6 +54,7 @@ type AppState = {
   activeSection: SectionId;
   selectedGreenhouseId: string;
   selectedPeriod: ContextPeriod;
+  selectedHarvestId: string | null;
   viewContexts: Partial<Record<SectionId, ViewContext>>;
   modal: ModalType;
   organization: Organization;
@@ -93,6 +94,8 @@ type AppState = {
   updatePest: (record: PestAlert) => void;
   addPestUpdate: (alertId: string, update: WithOptionalId<PestAlertUpdate>, patch?: Partial<PestAlert>) => void;
   addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
+  openHarvestEditor: (id: string) => void;
+  updateHarvest: (record: HarvestRecord) => void;
   addCost: (record: WithOptionalId<CostRecord>) => void;
   replaceViewData: (data: WorkspaceViewData, meta?: ViewDataMeta | null) => void;
   hydrateWorkspace: (data: {
@@ -117,6 +120,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   activeSection: "overview",
   selectedGreenhouseId: allGreenhousesId,
   selectedPeriod: "month",
+  selectedHarvestId: null,
   viewContexts: {},
   modal: null,
   organization: {
@@ -174,8 +178,9 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   })),
   updateOrganization: (organization) => set({ organization }),
   replaceViewData: (data, meta = null) => set({ ...data, viewDataMeta: meta }),
-  openModal: (modal) => set({ modal }),
-  closeModal: () => set({ modal: null }),
+  openModal: (modal) => set({ modal, selectedHarvestId: null }),
+  closeModal: () => set({ modal: null, selectedHarvestId: null }),
+  openHarvestEditor: (id) => set({ modal: "editHarvest", selectedHarvestId: id }),
   hydrateWorkspace: (data) => {
     invalidateViewDataCache();
     set((state) => {
@@ -197,6 +202,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         greenhouses: data.greenhouses,
         selectedGreenhouseId,
         selectedPeriod: defaultPeriodForSection(activeSection),
+        selectedHarvestId: null,
         viewContexts: {},
         modal: null,
         tasks: [],
@@ -385,7 +391,26 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         },
         ...state.activities
       ],
-      modal: null
+      modal: null,
+      selectedHarvestId: null
+    }));
+  },
+  updateHarvest: (record) => {
+    invalidateViewDataCache();
+    set((state) => ({
+      harvestRecords: state.harvestRecords.map((item) => item.id === record.id ? record : item),
+      activities: [
+        {
+          id: makeId("act"),
+          greenhouseId: record.greenhouseId,
+          title: "Cosecha corregida",
+          detail: `${record.boxCount.toLocaleString("es-MX")} cajas · ${record.kilograms.toLocaleString("es-MX")} kg`,
+          time: "Ahora"
+        },
+        ...state.activities
+      ],
+      modal: null,
+      selectedHarvestId: null
     }));
   },
   addCost: (record) => {

@@ -19,7 +19,7 @@ import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
-import { harvestValuesFromForm } from "@/lib/harvest";
+import { harvestValuesFromForm, type HarvestPriceReferences } from "@/lib/harvest";
 import { normalizedProductName } from "@/lib/product-search";
 import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
 import type {
@@ -263,7 +263,12 @@ const modalCopy = {
   harvest: {
     title: "Nueva cosecha",
     kicker: "Producción",
-    note: "Captura cajas, calidad, merma y precios por kg sin perder el resumen en kilos."
+    note: "Captura cajas, calidad, merma y precios por caja. El monto se calcula automáticamente."
+  },
+  editHarvest: {
+    title: "Corregir cosecha",
+    kicker: "Producción",
+    note: "Corrige cajas, clasificación, precios por caja o notas. El sistema recalcula kilos y monto."
   },
   cost: {
     title: "Nuevos costos",
@@ -278,6 +283,7 @@ function FormShell({
   duplicateWarning,
   error,
   manualNote,
+  layout = "default",
   onDismissDuplicate,
   onReviewDuplicate,
   onSaveDuplicate,
@@ -288,15 +294,16 @@ function FormShell({
   duplicateWarning?: DuplicateWarning | null;
   error: string;
   manualNote?: boolean;
+  layout?: "default" | "wide";
   onDismissDuplicate?: () => void;
   onReviewDuplicate?: () => void;
   onSaveDuplicate?: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form className="relative grid gap-6 lg:grid-cols-[1fr_210px]" onSubmit={onSubmit}>
+    <form className={cn("relative grid gap-6", layout === "default" && "lg:grid-cols-[1fr_210px]")} onSubmit={onSubmit}>
       <div className="grid gap-4 pb-4 sm:grid-cols-2">{children}</div>
-      <aside className="border-t border-app-border pb-4 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+      <aside className={cn("border-t border-app-border pb-4 pt-4", layout === "default" && "lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0")}>
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
           Registro
         </p>
@@ -328,7 +335,7 @@ function FormShell({
         ) : null}
         {error ? <p className="mt-5 text-sm text-[#8A2E2E]">{error}</p> : null}
       </aside>
-      <div className="sticky bottom-0 z-20 -mx-4 -mb-5 flex flex-col gap-2 border-t border-app-border bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:flex-row sm:justify-end sm:px-5 lg:col-span-2">
+      <div className={cn("sticky bottom-0 z-20 -mx-4 -mb-5 flex flex-col gap-2 border-t border-app-border bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:flex-row sm:justify-end sm:px-5", layout === "default" && "lg:col-span-2")}>
         <CloseButton className="w-full sm:w-auto sm:min-w-28" />
         <Button className="w-full sm:w-auto sm:min-w-28" disabled={disabled} type="submit" variant="primary">
           {disabled ? "Guardando..." : "Guardar"}
@@ -360,6 +367,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const nutritionRecords = useGreenhouseStore((state) => state.nutritionRecords);
   const applicationRecords = useGreenhouseStore((state) => state.applicationRecords);
   const harvestRecords = useGreenhouseStore((state) => state.harvestRecords);
+  const selectedHarvestId = useGreenhouseStore((state) => state.selectedHarvestId);
   const setActiveSection = useGreenhouseStore((state) => state.setActiveSection);
   const addGreenhouse = useGreenhouseStore((state) => state.addGreenhouse);
   const updateGreenhouse = useGreenhouseStore((state) => state.updateGreenhouse);
@@ -369,6 +377,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const addApplication = useGreenhouseStore((state) => state.addApplication);
   const addPest = useGreenhouseStore((state) => state.addPest);
   const addHarvest = useGreenhouseStore((state) => state.addHarvest);
+  const updateHarvest = useGreenhouseStore((state) => state.updateHarvest);
   const addCost = useGreenhouseStore((state) => state.addCost);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -379,6 +388,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
   const [draftCropId, setDraftCropId] = useState(INITIAL_CROP_ID);
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
+  const [priceReferences, setPriceReferences] = useState<HarvestPriceReferences>({ first: [], second: [], third: [] });
   const pendingDuplicateSaveRef = useRef<(() => Promise<void>) | null>(null);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
   const costBatchTotal = useMemo(
@@ -390,7 +400,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     setError("");
     setDuplicateWarning(null);
     pendingDuplicateSaveRef.current = null;
-    if (modal === "harvest" && currentUser.role === "manager") {
+    if ((modal === "harvest" || modal === "editHarvest") && currentUser.role === "manager") {
       closeModal();
       return;
     }
@@ -523,9 +533,40 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     };
   }, [modal, organization.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPriceReferences = async () => {
+      if (!organization.id || (modal !== "harvest" && modal !== "editHarvest")) {
+        setPriceReferences({ first: [], second: [], third: [] });
+        return;
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) return;
+      const { data, error: priceError } = await supabase
+        .from("harvest_records")
+        .select("first_quality_price, second_quality_price, third_quality_price")
+        .eq("company_id", organization.id)
+        .order("occurred_at", { ascending: false })
+        .limit(100);
+
+      if (cancelled || priceError) return;
+      setPriceReferences({
+        first: (data ?? []).map((row: any) => Number(row.first_quality_price ?? 0)).filter((value) => value > 0),
+        second: (data ?? []).map((row: any) => Number(row.second_quality_price ?? 0)).filter((value) => value > 0),
+        third: (data ?? []).map((row: any) => Number(row.third_quality_price ?? 0)).filter((value) => value > 0)
+      });
+    };
+
+    void loadPriceReferences();
+    return () => { cancelled = true; };
+  }, [modal, organization.id]);
+
   const copy = useMemo(() => (modal ? modalCopy[modal] : null), [modal]);
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId)
     ?? (modal === "editGreenhouse" && selectedGreenhouseId === "__all__" ? greenhouses[0] : undefined);
+  const selectedHarvest = harvestRecords.find((record) => record.id === selectedHarvestId);
   const defaultGreenhouseId = selectedGreenhouseId === "__all__"
     ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
     : selectedGreenhouseId;
@@ -1114,6 +1155,17 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     });
   };
 
+  const readHarvestForm = (form: FormData) => {
+    const { estimatedRevenue: _estimatedRevenue, ...values } = harvestValuesFromForm(form);
+    return {
+      greenhouseId: String(form.get("greenhouseId")),
+      date: String(form.get("date")),
+      ...values,
+      destination: String(form.get("destination")),
+      notes: String(form.get("notes"))
+    };
+  };
+
   const handleHarvest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (currentUser.role === "manager") {
@@ -1121,13 +1173,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       return;
     }
     const form = new FormData(event.currentTarget);
-    const record = {
-      greenhouseId: String(form.get("greenhouseId")),
-      date: String(form.get("date")),
-      ...harvestValuesFromForm(form),
-      destination: String(form.get("destination")),
-      notes: String(form.get("notes"))
-    };
+    const record = readHarvestForm(form);
     saveManualRecord(potentialHarvestDuplicate(record), async () => {
       const work = await createUnplannedTechnicalWork({
         greenhouseId: record.greenhouseId,
@@ -1158,6 +1204,38 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       });
       if (rpcError) throw rpcError;
       addHarvest({ ...record, id: rpcRecordId(data as { recordId?: string }, "No se pudo confirmar la cosecha guardada."), sourceTaskId: work.workId });
+    });
+  };
+
+  const handleEditHarvest = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedHarvest) return;
+    if (currentUser.role === "manager") {
+      setError("Tu rol solo puede consultar las cosechas registradas.");
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const record = readHarvestForm(form);
+    save(async () => {
+      const { error: updateError } = await getSupabaseBrowserClient()!.rpc("update_harvest_record", {
+        target_harvest_record_id: selectedHarvest.id,
+        target_occurred_at: record.date,
+        target_box_count: record.boxCount,
+        target_box_weight_kg: record.boxWeightKg,
+        target_first_quality_boxes: record.firstQualityBoxes,
+        target_second_quality_boxes: record.secondQualityBoxes,
+        target_third_quality_boxes: record.thirdQualityBoxes,
+        target_merma_boxes: record.mermaBoxes,
+        target_first_quality_price: record.firstQualityPrice,
+        target_second_quality_price: record.secondQualityPrice,
+        target_third_quality_price: record.thirdQualityPrice,
+        target_destination: record.destination || null,
+        target_notes: record.notes || null,
+        target_change_note: String(form.get("changeNote") ?? "").trim()
+      });
+      if (updateError) throw updateError;
+      updateHarvest({ ...selectedHarvest, ...record });
     });
   };
 
@@ -1548,12 +1626,35 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       ) : null}
 
       {modal === "harvest" ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleHarvest} {...manualRecordShellProps}>
+        <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleHarvest} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <HarvestCaptureFields showPrices={currentUser.role !== "manager"} />
+          <HarvestCaptureFields priceReferences={priceReferences} showPrices={currentUser.role !== "manager"} />
           <Field label="Cliente o destino"><TextInput name="destination" /></Field>
           <Field label="Observaciones"><TextArea name="notes" /></Field>
+        </FormShell>
+      ) : null}
+
+      {modal === "editHarvest" && selectedHarvest ? (
+        <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleEditHarvest}>
+          <Field label="Área productiva">
+            <SelectInput aria-label="Área productiva" disabled value={selectedHarvest.greenhouseId}>
+              {greenhouses.map((greenhouse) => (
+                <option key={greenhouse.id} value={greenhouse.id}>{greenhouseDisplayName(greenhouse, crops)}</option>
+              ))}
+            </SelectInput>
+            <input name="greenhouseId" type="hidden" value={selectedHarvest.greenhouseId} />
+          </Field>
+          <Field label="Fecha"><DatePickerInput name="date" required defaultValue={selectedHarvest.date} /></Field>
+          <HarvestCaptureFields
+            initialValues={selectedHarvest}
+            key={selectedHarvest.id}
+            priceReferences={priceReferences}
+            showPrices
+          />
+          <Field label="Cliente o destino"><TextInput defaultValue={selectedHarvest.destination} name="destination" /></Field>
+          <Field label="Observaciones"><TextArea className="min-h-24" defaultValue={selectedHarvest.notes} name="notes" /></Field>
+          <Field className="sm:col-span-2" label="Motivo de corrección"><TextArea className="min-h-24" name="changeNote" placeholder="Ej. Se capturó precio por kilo en lugar de precio por caja" required /></Field>
         </FormShell>
       ) : null}
 

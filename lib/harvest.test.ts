@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { harvestValuesFromForm, reconcileHarvestBoxes } from "./harvest.ts";
+import { harvestPriceOutlierMessage, harvestValuesFromForm, reconcileHarvestBoxes } from "./harvest.ts";
 
 function reconciliation(boxCount: number, first: number, second: number, third: number, merma: number) {
   return reconcileHarvestBoxes({
@@ -50,4 +50,31 @@ test("interpreta correctamente valores con separadores al leer el formulario", (
   assert.equal(values.boxCount, 1000);
   assert.equal(values.kilograms, 20000);
   assert.equal(reconcileHarvestBoxes(values).isBalanced, true);
+});
+
+test("calcula el monto con precio por caja, no por kilo", () => {
+  const form = new FormData();
+  form.set("boxCount", "10");
+  form.set("boxWeightKg", "20");
+  form.set("firstQualityBoxes", "5");
+  form.set("secondQualityBoxes", "3");
+  form.set("thirdQualityBoxes", "1");
+  form.set("mermaBoxes", "1");
+  form.set("firstQualityPrice", "100");
+  form.set("secondQualityPrice", "80");
+  form.set("thirdQualityPrice", "50");
+
+  const values = harvestValuesFromForm(form);
+  assert.equal(values.estimatedRevenue, 790);
+  assert.equal(values.estimatedPrice, 790 / 9);
+});
+
+test("advierte precios por caja fuera del rango histórico", () => {
+  const message = harvestPriceOutlierMessage(250, "first", {
+    first: [90, 100, 110],
+    second: [],
+    third: []
+  });
+
+  assert.match(message, /Verifica el dato antes de guardar/);
 });

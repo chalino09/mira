@@ -2,30 +2,42 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FormattedNumberInput } from "@/components/forms/FormControls";
-import { harvestSummary, reconcileHarvestBoxes } from "@/lib/harvest";
+import { harvestPriceOutlierMessage, harvestSummary, reconcileHarvestBoxes, type HarvestPriceReferences } from "@/lib/harvest";
 import { cn, parseNumericInput } from "@/lib/utils";
 
 type HarvestCaptureFieldsProps = {
   compact?: boolean;
   showPrices?: boolean;
+  initialValues?: Partial<{
+    boxCount: number;
+    boxWeightKg: number;
+    firstQualityBoxes: number;
+    secondQualityBoxes: number;
+    thirdQualityBoxes: number;
+    mermaBoxes: number;
+    firstQualityPrice: number;
+    secondQualityPrice: number;
+    thirdQualityPrice: number;
+  }>;
+  priceReferences?: HarvestPriceReferences;
 };
 
 function numberValue(value: string) {
   return parseNumericInput(value) ?? 0;
 }
 
-export function HarvestCaptureFields({ compact = false, showPrices = true }: HarvestCaptureFieldsProps) {
+export function HarvestCaptureFields({ compact = false, showPrices = true, initialValues, priceReferences }: HarvestCaptureFieldsProps) {
   const reconciliationId = useId();
   const boxCountRef = useRef<HTMLInputElement>(null);
-  const [boxCount, setBoxCount] = useState("");
-  const [boxWeightKg, setBoxWeightKg] = useState("20");
-  const [firstQualityBoxes, setFirstQualityBoxes] = useState("");
-  const [secondQualityBoxes, setSecondQualityBoxes] = useState("");
-  const [thirdQualityBoxes, setThirdQualityBoxes] = useState("");
-  const [mermaBoxes, setMermaBoxes] = useState("");
-  const [firstQualityPrice, setFirstQualityPrice] = useState("");
-  const [secondQualityPrice, setSecondQualityPrice] = useState("");
-  const [thirdQualityPrice, setThirdQualityPrice] = useState("");
+  const [boxCount, setBoxCount] = useState(initialValues?.boxCount?.toString() ?? "");
+  const [boxWeightKg, setBoxWeightKg] = useState(initialValues?.boxWeightKg?.toString() ?? "20");
+  const [firstQualityBoxes, setFirstQualityBoxes] = useState(initialValues?.firstQualityBoxes?.toString() ?? "");
+  const [secondQualityBoxes, setSecondQualityBoxes] = useState(initialValues?.secondQualityBoxes?.toString() ?? "");
+  const [thirdQualityBoxes, setThirdQualityBoxes] = useState(initialValues?.thirdQualityBoxes?.toString() ?? "");
+  const [mermaBoxes, setMermaBoxes] = useState(initialValues?.mermaBoxes?.toString() ?? "");
+  const [firstQualityPrice, setFirstQualityPrice] = useState(initialValues?.firstQualityPrice?.toString() ?? "");
+  const [secondQualityPrice, setSecondQualityPrice] = useState(initialValues?.secondQualityPrice?.toString() ?? "");
+  const [thirdQualityPrice, setThirdQualityPrice] = useState(initialValues?.thirdQualityPrice?.toString() ?? "");
 
   const summary = useMemo(() => {
     const weight = numberValue(boxWeightKg) || 20;
@@ -38,11 +50,11 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
     const firstKg = firstBoxes * weight;
     const secondKg = secondBoxes * weight;
     const thirdKg = thirdBoxes * weight;
-    const commercialKg = firstKg + secondKg + thirdKg;
     const revenue =
-      firstKg * numberValue(firstQualityPrice) +
-      secondKg * numberValue(secondQualityPrice) +
-      thirdKg * numberValue(thirdQualityPrice);
+      firstBoxes * numberValue(firstQualityPrice) +
+      secondBoxes * numberValue(secondQualityPrice) +
+      thirdBoxes * numberValue(thirdQualityPrice);
+    const commercialBoxes = firstBoxes + secondBoxes + thirdBoxes;
 
     return harvestSummary({
       boxCount: totalBoxes,
@@ -59,7 +71,7 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
       firstQualityPrice: numberValue(firstQualityPrice),
       secondQualityPrice: numberValue(secondQualityPrice),
       thirdQualityPrice: numberValue(thirdQualityPrice),
-      estimatedPrice: commercialKg ? revenue / commercialKg : 0,
+      estimatedPrice: commercialBoxes ? revenue / commercialBoxes : 0,
       estimatedRevenue: revenue
     });
   }, [
@@ -85,6 +97,12 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
   }), [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes]);
   const reconciliationMessage = hasBoxValues ? reconciliation.message : "";
   const reconciliationInvalid = hasBoxValues && !reconciliation.isBalanced;
+  const priceReferenceHistory = priceReferences ?? { first: [], second: [], third: [] };
+  const priceWarnings = [
+    harvestPriceOutlierMessage(numberValue(firstQualityPrice), "first", priceReferenceHistory),
+    harvestPriceOutlierMessage(numberValue(secondQualityPrice), "second", priceReferenceHistory),
+    harvestPriceOutlierMessage(numberValue(thirdQualityPrice), "third", priceReferenceHistory)
+  ].filter(Boolean);
 
   useEffect(() => {
     boxCountRef.current?.setCustomValidity(
@@ -133,7 +151,7 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
           <FormattedNumberInput
             aria-describedby={reconciliationMessage ? reconciliationId : undefined}
             aria-invalid={reconciliationInvalid ? "true" : undefined}
-            className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
+            className={cn("h-12 text-base", reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
             min={0}
             name="boxCount"
             onChange={(event) => setBoxCount(event.target.value)}
@@ -146,6 +164,7 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
         <label className="grid gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Kg/caja</span>
           <FormattedNumberInput
+            className="h-12 text-base"
             min={0}
             name="boxWeightKg"
             onChange={(event) => setBoxWeightKg(event.target.value)}
@@ -155,52 +174,64 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
         </label>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {qualityFields.map((field) => (
-          <div key={field.key} className="border-t border-app-border pt-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{field.title}</p>
-            <div className="mt-3 grid gap-2">
+          <fieldset key={field.key} className="rounded-xl bg-app-sidebar/65 p-3">
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{field.title} calidad</legend>
+            <div className="mt-2 grid gap-3">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-app-muted">Cajas</span>
+                <FormattedNumberInput
+                  aria-describedby={reconciliationMessage ? reconciliationId : undefined}
+                  aria-invalid={reconciliationInvalid ? "true" : undefined}
+                  className={cn("h-12 text-base", reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
+                  min={0}
+                  name={field.boxesName}
+                  onChange={(event) => field.setBoxes(event.target.value)}
+                  placeholder="0"
+                  value={field.boxesValue}
+                />
+              </label>
+              {showPrices ? (
+                <label className="grid gap-1.5">
+                  <span className="text-xs font-medium text-app-muted">Precio por caja</span>
+                  <FormattedNumberInput
+                    className="h-12 text-base"
+                    min={0}
+                    name={field.priceName}
+                    onChange={(event) => field.setPrice(event.target.value)}
+                    placeholder="$0.00"
+                    value={field.priceValue}
+                  />
+                </label>
+              ) : null}
+            </div>
+          </fieldset>
+        ))}
+        <fieldset className="rounded-xl bg-app-sidebar/65 p-3">
+          <legend className="px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Merma</legend>
+          <div className="mt-2 grid gap-3">
+            <label className="grid gap-1.5">
+              <span className="text-xs font-medium text-app-muted">Cajas</span>
               <FormattedNumberInput
                 aria-describedby={reconciliationMessage ? reconciliationId : undefined}
                 aria-invalid={reconciliationInvalid ? "true" : undefined}
-                aria-label={`Cajas ${field.title}`}
-                className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
+                className={cn("h-12 text-base", reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
                 min={0}
-                name={field.boxesName}
-                onChange={(event) => field.setBoxes(event.target.value)}
-                placeholder="Cajas"
-                value={field.boxesValue}
+                name="mermaBoxes"
+                onChange={(event) => setMermaBoxes(event.target.value)}
+                placeholder="0"
+                value={mermaBoxes}
               />
-              {showPrices ? (
-                <FormattedNumberInput
-                  aria-label={`Precio ${field.title}`}
-                  min={0}
-                  name={field.priceName}
-                  onChange={(event) => field.setPrice(event.target.value)}
-                  placeholder="Precio/kg"
-                  value={field.priceValue}
-                />
-              ) : null}
-            </div>
+            </label>
+            {showPrices ? (
+              <div className="grid gap-1.5">
+                <span className="text-xs font-medium text-app-muted">Precio por caja</span>
+                <div className="flex h-12 items-center rounded-xl border border-app-border bg-white/55 px-3 text-sm text-app-muted">No aplica</div>
+              </div>
+            ) : null}
           </div>
-        ))}
-        <div className="border-t border-app-border pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Merma</p>
-          <div className="mt-3 grid gap-2">
-            <FormattedNumberInput
-              aria-describedby={reconciliationMessage ? reconciliationId : undefined}
-              aria-invalid={reconciliationInvalid ? "true" : undefined}
-              aria-label="Cajas merma"
-              className={cn(reconciliationInvalid && "border-[#A33A3A] focus:border-[#A33A3A] focus:ring-[#A33A3A]/10")}
-              min={0}
-              name="mermaBoxes"
-              onChange={(event) => setMermaBoxes(event.target.value)}
-              placeholder="Cajas"
-              value={mermaBoxes}
-            />
-            {showPrices ? <div className="flex h-11 items-center border border-app-border bg-app-sidebar px-3 text-sm text-app-muted">Sin precio</div> : null}
-          </div>
-        </div>
+        </fieldset>
       </div>
 
       <p
@@ -213,6 +244,11 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
       >
         {reconciliationMessage}
       </p>
+      {priceWarnings.length ? (
+        <div aria-live="polite" className="grid gap-2 border-l-2 border-[#B7791F] bg-[#FFF8E6] px-3 py-2 text-xs leading-5 text-[#725A1A]">
+          {priceWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+        </div>
+      ) : null}
 
       <div className={cn(
         "grid gap-3 border-y border-app-border py-4",
@@ -220,8 +256,8 @@ export function HarvestCaptureFields({ compact = false, showPrices = true }: Har
       )}>
         <SummaryItem label="Cajas" value={summary.boxes} />
         <SummaryItem label="Kilos" value={summary.kilograms} />
-        <SummaryItem label="Prom. kg" value={summary.averagePrice} />
-        {!compact ? <SummaryItem label="Estimado" value={summary.revenue} /> : null}
+        <SummaryItem label="Precio promedio/caja" value={summary.averagePrice} />
+        {!compact ? <SummaryItem label="Monto estimado" value={summary.revenue} /> : null}
       </div>
     </section>
   );

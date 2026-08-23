@@ -72,7 +72,12 @@ const knownMessages: Record<string, string> = {
   beds_count_invalid: "El número de camas no puede ser negativo.",
   transplant_date_invalid: "La fecha de trasplante no puede estar en el futuro.",
   harvest_box_count_required: "Captura una cantidad mayor a cero en Cajas totales.",
-  harvest_box_reconciliation_required: "Las cajas de 1ra, 2da, 3ra y merma deben sumar exactamente las Cajas totales."
+  harvest_box_reconciliation_required: "Las cajas de 1ra, 2da, 3ra y merma deben sumar exactamente las Cajas totales.",
+  harvest_record_not_found: "No encontramos la cosecha que quieres corregir.",
+  harvest_date_required: "Indica la fecha de la cosecha.",
+  harvest_box_weight_required: "Indica un peso por caja mayor a cero.",
+  harvest_change_note_required: "Escribe el motivo de la corrección.",
+  harvest_values_invalid: "Revisa que las cajas y precios no sean negativos."
 };
 
 const knownCodes: Record<string, string> = {

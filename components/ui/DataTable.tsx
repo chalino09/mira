@@ -23,9 +23,10 @@ type DataTableProps<T> = {
     total: number;
     onPageChange: (page: number) => void;
   };
+  desktopLayout?: "auto" | "fixed";
 };
 
-export function DataTable<T>({ columns, data, emptyLabel = "Sin registros", getRowKey, sort, onSort, pagination }: DataTableProps<T>) {
+export function DataTable<T>({ columns, data, desktopLayout = "auto", emptyLabel = "Sin registros", getRowKey, sort, onSort, pagination }: DataTableProps<T>) {
   const pageCount = pagination ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : 1;
   useEffect(() => {
     if (pagination && pagination.page > pageCount) pagination.onPageChange(pageCount);
@@ -46,8 +47,8 @@ export function DataTable<T>({ columns, data, emptyLabel = "Sin registros", getR
           </article>
         ))}
       </div>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[680px] border-collapse text-left text-sm">
+      <div className={cn("hidden md:block", desktopLayout === "auto" ? "overflow-x-auto" : "overflow-x-hidden")}>
+        <table className={cn("w-full border-collapse text-left text-sm", desktopLayout === "auto" ? "min-w-[680px]" : "table-fixed")}>
           <thead className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
             <tr>
               {columns.map((column) => (
