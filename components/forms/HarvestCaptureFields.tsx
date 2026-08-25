@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FormattedNumberInput } from "@/components/forms/FormControls";
 import { harvestPriceOutlierMessage, harvestSummary, reconcileHarvestBoxes, type HarvestPriceReferences } from "@/lib/harvest";
+import { calculateHarvestSale } from "@/lib/harvest-sale";
 import { cn, parseNumericInput } from "@/lib/utils";
 
 type HarvestCaptureFieldsProps = {
@@ -20,13 +21,26 @@ type HarvestCaptureFieldsProps = {
     thirdQualityPrice: number;
   }>;
   priceReferences?: HarvestPriceReferences;
+  saleDeductions?: {
+    commissionPerBox: string;
+    freightPerBox: string;
+    packagingPerBox: string;
+  };
 };
 
 function numberValue(value: string) {
   return parseNumericInput(value) ?? 0;
 }
 
-export function HarvestCaptureFields({ compact = false, showPrices = true, initialValues, priceReferences }: HarvestCaptureFieldsProps) {
+function formatSaleAmount(value: number) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+export function HarvestCaptureFields({ compact = false, showPrices = true, initialValues, priceReferences, saleDeductions }: HarvestCaptureFieldsProps) {
   const reconciliationId = useId();
   const boxCountRef = useRef<HTMLInputElement>(null);
   const [boxCount, setBoxCount] = useState(initialValues?.boxCount?.toString() ?? "");
@@ -103,6 +117,21 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     harvestPriceOutlierMessage(numberValue(secondQualityPrice), "second", priceReferenceHistory),
     harvestPriceOutlierMessage(numberValue(thirdQualityPrice), "third", priceReferenceHistory)
   ].filter(Boolean);
+  const saleCalculation = useMemo(() => calculateHarvestSale({
+    lines: [
+      { quality: "Primera", boxCount: firstQualityBoxes, grossPricePerBox: firstQualityPrice },
+      { quality: "Segunda", boxCount: secondQualityBoxes, grossPricePerBox: secondQualityPrice },
+      { quality: "Tercera", boxCount: thirdQualityBoxes, grossPricePerBox: thirdQualityPrice }
+    ],
+    commissionPerBox: saleDeductions?.commissionPerBox ?? "",
+    freightPerBox: saleDeductions?.freightPerBox ?? "",
+    packagingPerBox: saleDeductions?.packagingPerBox ?? ""
+  }), [firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, firstQualityPrice, secondQualityPrice, thirdQualityPrice, saleDeductions]);
+  const hasSaleDeductions = Boolean(
+    numberValue(saleDeductions?.commissionPerBox ?? "")
+    || numberValue(saleDeductions?.freightPerBox ?? "")
+    || numberValue(saleDeductions?.packagingPerBox ?? "")
+  );
 
   useEffect(() => {
     boxCountRef.current?.setCustomValidity(
@@ -252,12 +281,16 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
 
       <div className={cn(
         "grid gap-3 border-y border-app-border py-4",
-        compact ? "sm:grid-cols-3" : "sm:grid-cols-4"
+        compact ? "sm:grid-cols-3" : hasSaleDeductions ? "sm:grid-cols-3 xl:grid-cols-6" : "sm:grid-cols-4"
       )}>
         <SummaryItem label="Cajas" value={summary.boxes} />
         <SummaryItem label="Kilos" value={summary.kilograms} />
         <SummaryItem label="Precio promedio/caja" value={summary.averagePrice} />
-        {!compact ? <SummaryItem label="Monto estimado" value={summary.revenue} /> : null}
+        {!compact ? <SummaryItem label={hasSaleDeductions ? "Total bruto" : "Monto estimado"} value={summary.revenue} /> : null}
+        {!compact && hasSaleDeductions ? <>
+          <SummaryItem label="Descuentos" value={`-${formatSaleAmount(saleCalculation.commissionAmount + saleCalculation.freightAmount + saleCalculation.packagingAmount)}`} />
+          <SummaryItem label="Venta neta" value={formatSaleAmount(saleCalculation.netAmount)} />
+        </> : null}
       </div>
     </section>
   );

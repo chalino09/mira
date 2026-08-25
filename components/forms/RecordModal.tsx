@@ -94,6 +94,12 @@ type SaleDraft = {
   notes: string;
 };
 
+type HarvestSaleBreakdownDraft = Pick<SaleDraft, "commissionPerBox" | "freightPerBox" | "packagingPerBox">;
+
+function emptyHarvestSaleBreakdown(): HarvestSaleBreakdownDraft {
+  return { commissionPerBox: "", freightPerBox: "", packagingPerBox: "" };
+}
+
 type ManagerOption = {
   id: string;
   name: string;
@@ -323,7 +329,7 @@ function FormShell({
   const showAside = layout === "default" || manualNote || duplicateWarning || error;
   return (
     <form className={cn("relative grid gap-6", layout === "default" && "lg:grid-cols-[1fr_210px]")} onSubmit={onSubmit}>
-      <div className={cn("grid gap-4 sm:grid-cols-2", layout === "wide" ? "pb-20" : "pb-4")}>{children}</div>
+      <div className="grid gap-4 pb-4 sm:grid-cols-2">{children}</div>
       {showAside ? <aside className={cn("border-t border-app-border pb-4 pt-4", layout === "default" && "lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0")}>
         {layout === "default" ? <>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Registro</p>
@@ -375,17 +381,15 @@ function CloseButton({ className }: { className?: string }) {
 }
 
 function HarvestSaleBreakdownFields({
-  initialCommission = 0,
-  initialFreight = 0,
-  initialPackaging = 0,
   open,
-  onToggle
+  onToggle,
+  value,
+  onChange
 }: {
-  initialCommission?: number;
-  initialFreight?: number;
-  initialPackaging?: number;
   open: boolean;
   onToggle: () => void;
+  value: HarvestSaleBreakdownDraft;
+  onChange: (value: HarvestSaleBreakdownDraft) => void;
 }) {
   return (
     <section className="sm:col-span-2">
@@ -401,13 +405,13 @@ function HarvestSaleBreakdownFields({
       </button>
       <div className={cn("mt-3 gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4 sm:grid-cols-3", open ? "grid" : "hidden")} id="harvest-sale-breakdown">
         <Field label="Comisión por caja">
-          <FormattedNumberInput defaultValue={initialCommission || ""} min="0" name="commissionPerBox" placeholder="$0.00" step="0.01" />
+          <FormattedNumberInput min="0" name="commissionPerBox" onChange={(event) => onChange({ ...value, commissionPerBox: event.target.value })} placeholder="$0.00" step="0.01" value={value.commissionPerBox} />
         </Field>
         <Field label="Flete por caja">
-          <FormattedNumberInput defaultValue={initialFreight || ""} min="0" name="freightPerBox" placeholder="$0.00" step="0.01" />
+          <FormattedNumberInput min="0" name="freightPerBox" onChange={(event) => onChange({ ...value, freightPerBox: event.target.value })} placeholder="$0.00" step="0.01" value={value.freightPerBox} />
         </Field>
         <Field label="Caja de cartón por caja">
-          <FormattedNumberInput defaultValue={initialPackaging || ""} min="0" name="packagingPerBox" placeholder="$0.00" step="0.01" />
+          <FormattedNumberInput min="0" name="packagingPerBox" onChange={(event) => onChange({ ...value, packagingPerBox: event.target.value })} placeholder="$0.00" step="0.01" value={value.packagingPerBox} />
         </Field>
       </div>
     </section>
@@ -444,6 +448,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null);
   const [saleBreakdownOpen, setSaleBreakdownOpen] = useState(false);
   const [harvestBreakdownOpen, setHarvestBreakdownOpen] = useState(false);
+  const [harvestSaleBreakdown, setHarvestSaleBreakdown] = useState<HarvestSaleBreakdownDraft>(emptyHarvestSaleBreakdown);
   const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
   const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
@@ -630,13 +635,21 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     ?? (modal === "editGreenhouse" && selectedGreenhouseId === "__all__" ? greenhouses[0] : undefined);
   const selectedHarvest = harvestRecords.find((record) => record.id === selectedHarvestId);
   useEffect(() => {
-    if (modal === "harvest") setHarvestBreakdownOpen(false);
+    if (modal === "harvest") {
+      setHarvestBreakdownOpen(false);
+      setHarvestSaleBreakdown(emptyHarvestSaleBreakdown());
+    }
     if (modal === "editHarvest") {
       setHarvestBreakdownOpen(Boolean(
         selectedHarvest?.sale?.commissionPerBox
         || selectedHarvest?.sale?.freightPerBox
         || selectedHarvest?.sale?.packagingPerBox
       ));
+      setHarvestSaleBreakdown({
+        commissionPerBox: selectedHarvest?.sale?.commissionPerBox?.toString() ?? "",
+        freightPerBox: selectedHarvest?.sale?.freightPerBox?.toString() ?? "",
+        packagingPerBox: selectedHarvest?.sale?.packagingPerBox?.toString() ?? ""
+      });
     }
   }, [modal, selectedHarvest]);
   useEffect(() => {
@@ -1805,9 +1818,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleHarvest} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
+          <HarvestCaptureFields priceReferences={priceReferences} saleDeductions={harvestSaleBreakdown} showPrices={currentUser.role !== "manager"} />
           <Field className="sm:col-span-2" label="Comprador"><TextInput name="destination" placeholder="Nombre del comprador" required /></Field>
-          <HarvestSaleBreakdownFields open={harvestBreakdownOpen} onToggle={() => setHarvestBreakdownOpen((current) => !current)} />
-          <HarvestCaptureFields priceReferences={priceReferences} showPrices={currentUser.role !== "manager"} />
+          <HarvestSaleBreakdownFields onChange={setHarvestSaleBreakdown} open={harvestBreakdownOpen} onToggle={() => setHarvestBreakdownOpen((current) => !current)} value={harvestSaleBreakdown} />
           <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow name="notes" /></Field>
         </FormShell>
       ) : null}
@@ -1823,19 +1836,19 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             <input name="greenhouseId" type="hidden" value={selectedHarvest.greenhouseId} />
           </Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={selectedHarvest.date} /></Field>
-          <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
-          <HarvestSaleBreakdownFields
-            initialCommission={selectedHarvest.sale?.commissionPerBox}
-            initialFreight={selectedHarvest.sale?.freightPerBox}
-            initialPackaging={selectedHarvest.sale?.packagingPerBox}
-            open={harvestBreakdownOpen}
-            onToggle={() => setHarvestBreakdownOpen((current) => !current)}
-          />
           <HarvestCaptureFields
             initialValues={selectedHarvest}
             key={selectedHarvest.id}
             priceReferences={priceReferences}
+            saleDeductions={harvestSaleBreakdown}
             showPrices
+          />
+          <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
+          <HarvestSaleBreakdownFields
+            onChange={setHarvestSaleBreakdown}
+            open={harvestBreakdownOpen}
+            onToggle={() => setHarvestBreakdownOpen((current) => !current)}
+            value={harvestSaleBreakdown}
           />
           <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow defaultValue={selectedHarvest.notes} name="notes" /></Field>
           <Field className="sm:col-span-2" label="Motivo de corrección"><TextArea className="min-h-24" name="changeNote" placeholder="Ej. Se capturó precio por kilo en lugar de precio por caja" required /></Field>
