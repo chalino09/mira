@@ -56,6 +56,7 @@ import { cropLabelForId, getCropDdtStatus, greenhouseDisplayName } from "@/lib/c
 import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
+import { costCategories } from "@/lib/cost-categories";
 import { formatPricePerBox } from "@/lib/harvest";
 import { requireWorkSchema } from "@/lib/work-schema";
 import {
@@ -911,6 +912,7 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
   const harvestRecords = useGreenhouseStore((state) => state.harvestRecords);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const openHarvestEditor = useGreenhouseStore((state) => state.openHarvestEditor);
+  const openHarvestSaleEditor = useGreenhouseStore((state) => state.openHarvestSaleEditor);
   const organizationRouteName = organization.slug ?? organization.name;
 
   if (route.type === "greenhouse" || route.type === "cycle") {
@@ -1020,9 +1022,14 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
         action={(
           <div className="flex flex-col gap-2 sm:flex-row">
             {currentUser.role !== "manager" ? (
-              <Button icon={<Edit3 aria-hidden="true" className="h-4 w-4" />} onClick={() => openHarvestEditor(harvest.id)} variant="secondary">
-                Corregir cosecha
-              </Button>
+              <>
+                <Button icon={<WalletCards aria-hidden="true" className="h-4 w-4" />} onClick={() => openHarvestSaleEditor(harvest.id)} variant="primary">
+                  {harvest.sale ? "Editar venta" : "Registrar venta"}
+                </Button>
+                <Button icon={<Edit3 aria-hidden="true" className="h-4 w-4" />} onClick={() => openHarvestEditor(harvest.id)} variant="secondary">
+                  Corregir cosecha
+                </Button>
+              </>
             ) : null}
             <Link
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
@@ -1047,6 +1054,28 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
         <EditorialObject index="C" label="Tercera" value={`${formatNumber(harvest.thirdQuality)} kg`} detail={`${formatNumber(harvest.thirdQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="D" label="Venta neta" value={formatCurrency(harvest.netRevenue ?? harvest.grossRevenue ?? 0)} detail={`${formatNumber(harvest.soldBoxes ?? 0)} cajas vendidas${(harvest.specialBoxes ?? 0) ? ` · ${formatNumber(harvest.specialBoxes ?? 0)} especiales` : ""}${(harvest.unsoldBoxes ?? 0) ? ` · ${formatNumber(harvest.unsoldBoxes ?? 0)} pendientes` : ""}`} icon={WalletCards} />
       </div>
+      {harvest.sale ? (
+        <section aria-labelledby="sale-breakdown-title" className="mt-6 border border-app-border bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted" id="sale-breakdown-title">Desglose de venta</p>
+              <p className="mt-2 text-sm text-app-text">{harvest.sale.buyerName} · {formatDate(harvest.sale.date)}</p>
+            </div>
+            <StatusBadge tone={harvest.sale.paymentStatus === "Pagada" ? "green" : "neutral"}>{harvest.sale.paymentStatus}</StatusBadge>
+          </div>
+          <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              ["Venta bruta", harvest.grossRevenue ?? 0],
+              ["Comisión", harvest.commissionAmount ?? 0],
+              ["Flete", harvest.freightAmount ?? 0],
+              ["Caja de cartón", harvest.packagingAmount ?? 0],
+              ["Venta neta", harvest.netRevenue ?? 0]
+            ].map(([label, value]) => (
+              <div key={String(label)}><dt className="text-xs text-app-muted">{label}</dt><dd className="mt-1 font-semibold tabular-nums text-app-text">{formatCurrency(Number(value))}</dd></div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
       {harvest.notes ? <p className="mt-6 border-l-2 border-app-green px-4 text-sm leading-6 text-app-text">{harvest.notes}</p> : null}
     </section>
   );
@@ -1639,14 +1668,9 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
       <ListToolbar query={list.q} onSearch={(q) => updateList({ q: q || undefined, page: undefined })}>
         <SelectInput aria-label="Categoría de costo" className="h-10" value={list.status ?? ""} onChange={(event) => updateList({ status: event.target.value || undefined, page: undefined })}>
           <option value="">Todas las categorías</option>
-          <option value="mano_obra">Nómina</option>
-          <option value="fertilizantes">Fertilizantes</option>
-          <option value="agroinsumos">Agroinsumos</option>
-          <option value="agua">Agua</option>
-          <option value="energia">Energía</option>
-          <option value="mantenimiento">Mantenimiento</option>
-          <option value="material_produccion">Material de producción</option>
-          <option value="transporte">Transporte</option>
+          {costCategories.map((category) => (
+            <option key={category.value} value={category.value}>{category.label}</option>
+          ))}
         </SelectInput>
       </ListToolbar>
       <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

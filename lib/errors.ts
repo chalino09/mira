@@ -77,7 +77,14 @@ const knownMessages: Record<string, string> = {
   harvest_date_required: "Indica la fecha de la cosecha.",
   harvest_box_weight_required: "Indica un peso por caja mayor a cero.",
   harvest_change_note_required: "Escribe el motivo de la corrección.",
-  harvest_values_invalid: "Revisa que las cajas y precios no sean negativos."
+  harvest_values_invalid: "Revisa que las cajas y precios no sean negativos.",
+  sale_buyer_required: "Escribe el nombre del comprador.",
+  sale_date_required: "Indica la fecha de la venta.",
+  sale_lines_required: "Agrega las cajas vendidas por calidad.",
+  sale_boxes_required: "Registra al menos una caja vendida.",
+  sale_boxes_exceed_harvest: "Las cajas vendidas no pueden superar las cajas cosechadas de esa calidad.",
+  sale_deductions_exceed_price: "Los gastos por caja no pueden superar el precio de venta.",
+  harvest_sale_special_lines_require_review: "Esta venta tiene conceptos especiales y necesita revisión antes de editarse."
 };
 
 const knownCodes: Record<string, string> = {

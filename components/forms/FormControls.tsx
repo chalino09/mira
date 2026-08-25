@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn, formatNumericInput, formatQuantityInput } from "@/lib/utils";
 
@@ -13,7 +13,7 @@ export function Field({
   className,
   preserveCase = false
 }: {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
   className?: string;
   preserveCase?: boolean;
@@ -122,13 +122,35 @@ export function UnitSelectInput({ value, defaultValue, ...props }: Omit<SelectHT
   );
 }
 
-export function TextArea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function TextArea({
+  autoGrow = false,
+  className,
+  onInput,
+  rows,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { autoGrow?: boolean }) {
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const resize = () => {
+    if (!autoGrow || !textAreaRef.current) return;
+    textAreaRef.current.style.height = "auto";
+    textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+  };
+
+  useEffect(resize, [autoGrow, props.defaultValue, props.value]);
+
   return (
     <textarea
+      ref={textAreaRef}
       className={cn(
         "min-h-28 w-full rounded-xl border border-app-border bg-white px-3 py-2.5 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10",
+        autoGrow && "min-h-11 resize-none overflow-hidden",
         className
       )}
+      onInput={(event) => {
+        resize();
+        onInput?.(event);
+      }}
+      rows={autoGrow ? rows ?? 1 : rows}
       {...props}
     />
   );

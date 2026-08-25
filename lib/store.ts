@@ -95,6 +95,7 @@ type AppState = {
   addPestUpdate: (alertId: string, update: WithOptionalId<PestAlertUpdate>, patch?: Partial<PestAlert>) => void;
   addHarvest: (record: WithOptionalId<HarvestRecord>) => void;
   openHarvestEditor: (id: string) => void;
+  openHarvestSaleEditor: (id: string) => void;
   updateHarvest: (record: HarvestRecord) => void;
   addCost: (record: WithOptionalId<CostRecord>) => void;
   replaceViewData: (data: WorkspaceViewData, meta?: ViewDataMeta | null) => void;
@@ -181,6 +182,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   openModal: (modal) => set({ modal, selectedHarvestId: null }),
   closeModal: () => set({ modal: null, selectedHarvestId: null }),
   openHarvestEditor: (id) => set({ modal: "editHarvest", selectedHarvestId: id }),
+  openHarvestSaleEditor: (id) => set({ modal: "sale", selectedHarvestId: id }),
   hydrateWorkspace: (data) => {
     invalidateViewDataCache();
     set((state) => {

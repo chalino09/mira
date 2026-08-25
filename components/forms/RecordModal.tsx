@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, Plus } from "lucide-react";
+import { ChevronDown, Minus, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -13,19 +13,22 @@ import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/
 import { applicationCategories, applicationCategoryFromDb, applicationCategoryToDb } from "@/lib/application-categories";
 import { appErrorMessage } from "@/lib/errors";
 import { calculatedCostAmount } from "@/lib/cost-entry";
-import { costCategoryToDb } from "@/lib/cost-categories";
+import { costCategories, costCategoryToDb } from "@/lib/cost-categories";
+import { suggestedCostCategory } from "@/lib/cost-category-suggestions";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
 import { harvestValuesFromForm, type HarvestPriceReferences } from "@/lib/harvest";
+import { calculateHarvestSale } from "@/lib/harvest-sale";
 import { normalizedProductName } from "@/lib/product-search";
 import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
 import type {
   ApplicationRecord,
   CostRecord,
   Greenhouse,
+  HarvestRecord,
   NutritionRecord,
   RiskLevel,
   TaskType
@@ -76,6 +79,18 @@ type CostDraft = {
   quantity: string;
   unit: string;
   unitPrice: string;
+  notes: string;
+};
+
+type SaleDraft = {
+  buyerName: string;
+  date: string;
+  lines: Array<{ quality: "Primera" | "Segunda" | "Tercera"; boxCount: string; grossPricePerBox: string }>;
+  commissionPerBox: string;
+  freightPerBox: string;
+  packagingPerBox: string;
+  paymentStatus: "Pendiente" | "Pagada";
+  paidAt: string;
   notes: string;
 };
 
@@ -154,9 +169,9 @@ const riskLevelToDb: Record<RiskLevel, string> = {
   Alta: "alta"
 };
 
-const costCategoryOptions = Object.keys(costCategoryToDb).map((category) => ({
-  label: category,
-  value: category
+const costCategoryOptions = costCategories.map(({ label }) => ({
+  label,
+  value: label
 }));
 
 const costUnitOptions = [
@@ -262,13 +277,18 @@ const modalCopy = {
   },
   harvest: {
     title: "Nueva cosecha",
-    kicker: "Producción",
-    note: "Captura cajas, calidad, merma y precios por caja. El monto se calcula automáticamente."
+    kicker: "",
+    note: ""
   },
   editHarvest: {
     title: "Corregir cosecha",
-    kicker: "Producción",
-    note: "Corrige cajas, clasificación, precios por caja o notas. El sistema recalcula kilos y monto."
+    kicker: "",
+    note: ""
+  },
+  sale: {
+    title: "Venta de cosecha",
+    kicker: "Comercialización",
+    note: "Registra al comprador y el precio acordado. Los descuentos y gastos de la venta son opcionales."
   },
   cost: {
     title: "Nuevos costos",
@@ -300,16 +320,15 @@ function FormShell({
   onSaveDuplicate?: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const showAside = layout === "default" || manualNote || duplicateWarning || error;
   return (
     <form className={cn("relative grid gap-6", layout === "default" && "lg:grid-cols-[1fr_210px]")} onSubmit={onSubmit}>
       <div className="grid gap-4 pb-4 sm:grid-cols-2">{children}</div>
-      <aside className={cn("border-t border-app-border pb-4 pt-4", layout === "default" && "lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0")}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">
-          Registro
-        </p>
-        <p className="mt-4 text-sm leading-6 text-app-muted">
-          Al guardar, el registro queda disponible para todo el equipo autorizado.
-        </p>
+      {showAside ? <aside className={cn("border-t border-app-border pb-4 pt-4", layout === "default" && "lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0")}>
+        {layout === "default" ? <>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Registro</p>
+          <p className="mt-4 text-sm leading-6 text-app-muted">Al guardar, el registro queda disponible para todo el equipo autorizado.</p>
+        </> : null}
         {manualNote ? (
           <p className="mt-4 border-l-2 border-app-green bg-app-soft px-3 py-2 text-xs leading-5 text-app-muted">
             Registro manual o no programado. Si ya existe una actividad, confírmala desde Operaciones para mantener el historial limpio.
@@ -334,7 +353,7 @@ function FormShell({
           </div>
         ) : null}
         {error ? <p className="mt-5 text-sm text-[#8A2E2E]">{error}</p> : null}
-      </aside>
+      </aside> : null}
       <div className={cn("sticky bottom-0 z-20 -mx-4 -mb-5 flex flex-col gap-2 border-t border-app-border bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:flex-row sm:justify-end sm:px-5", layout === "default" && "lg:col-span-2")}>
         <CloseButton className="w-full sm:w-auto sm:min-w-28" />
         <Button className="w-full sm:w-auto sm:min-w-28" disabled={disabled} type="submit" variant="primary">
@@ -352,6 +371,46 @@ function CloseButton({ className }: { className?: string }) {
     <Button className={className} onClick={closeModal} type="button" variant="secondary">
       Cancelar
     </Button>
+  );
+}
+
+function HarvestSaleBreakdownFields({
+  initialCommission = 0,
+  initialFreight = 0,
+  initialPackaging = 0,
+  open,
+  onToggle
+}: {
+  initialCommission?: number;
+  initialFreight?: number;
+  initialPackaging?: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <section className="sm:col-span-2">
+      <button
+        aria-controls="harvest-sale-breakdown"
+        aria-expanded={open}
+        className="flex min-h-11 w-full items-center justify-between rounded-xl border border-app-border bg-white px-4 text-left text-sm font-semibold text-app-text focus-visible:outline-2 focus-visible:outline-offset-2"
+        onClick={onToggle}
+        type="button"
+      >
+        Desglosar venta
+        <ChevronDown aria-hidden="true" className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+      </button>
+      <div className="mt-3 grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4 sm:grid-cols-3" hidden={!open} id="harvest-sale-breakdown">
+        <Field label="Comisión por caja">
+          <FormattedNumberInput defaultValue={initialCommission || ""} min="0" name="commissionPerBox" placeholder="$0.00" step="0.01" />
+        </Field>
+        <Field label="Flete por caja">
+          <FormattedNumberInput defaultValue={initialFreight || ""} min="0" name="freightPerBox" placeholder="$0.00" step="0.01" />
+        </Field>
+        <Field label="Caja de cartón por caja">
+          <FormattedNumberInput defaultValue={initialPackaging || ""} min="0" name="packagingPerBox" placeholder="$0.00" step="0.01" />
+        </Field>
+      </div>
+    </section>
   );
 }
 
@@ -382,6 +441,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
+  const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null);
+  const [saleBreakdownOpen, setSaleBreakdownOpen] = useState(false);
+  const [harvestBreakdownOpen, setHarvestBreakdownOpen] = useState(false);
   const [nutritionProducts, setNutritionProducts] = useState<NutritionProductDraft[]>([emptyNutritionProduct()]);
   const [applicationProducts, setApplicationProducts] = useState<ApplicationProductDraft[]>([emptyApplicationProduct()]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
@@ -400,7 +462,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     setError("");
     setDuplicateWarning(null);
     pendingDuplicateSaveRef.current = null;
-    if ((modal === "harvest" || modal === "editHarvest") && currentUser.role === "manager") {
+    if ((modal === "harvest" || modal === "editHarvest" || modal === "sale") && currentUser.role === "manager") {
       closeModal();
       return;
     }
@@ -567,6 +629,47 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const selectedGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId)
     ?? (modal === "editGreenhouse" && selectedGreenhouseId === "__all__" ? greenhouses[0] : undefined);
   const selectedHarvest = harvestRecords.find((record) => record.id === selectedHarvestId);
+  useEffect(() => {
+    if (modal === "harvest") setHarvestBreakdownOpen(false);
+    if (modal === "editHarvest") {
+      setHarvestBreakdownOpen(Boolean(
+        selectedHarvest?.sale?.commissionPerBox
+        || selectedHarvest?.sale?.freightPerBox
+        || selectedHarvest?.sale?.packagingPerBox
+      ));
+    }
+  }, [modal, selectedHarvest]);
+  useEffect(() => {
+    if (modal !== "sale" || !selectedHarvest) return;
+    const lineFor = (quality: "Primera" | "Segunda" | "Tercera") => selectedHarvest.sale?.lines.find((line) => line.quality === quality);
+    const first = lineFor("Primera");
+    const second = lineFor("Segunda");
+    const third = lineFor("Tercera");
+    setSaleDraft({
+      buyerName: selectedHarvest.sale?.buyerName || selectedHarvest.destination || "",
+      date: selectedHarvest.sale?.date || selectedHarvest.date,
+      lines: [
+        { quality: "Primera", boxCount: String(first?.boxCount ?? selectedHarvest.firstQualityBoxes), grossPricePerBox: String(first?.grossPricePerBox ?? selectedHarvest.firstQualityPrice) },
+        { quality: "Segunda", boxCount: String(second?.boxCount ?? selectedHarvest.secondQualityBoxes), grossPricePerBox: String(second?.grossPricePerBox ?? selectedHarvest.secondQualityPrice) },
+        { quality: "Tercera", boxCount: String(third?.boxCount ?? selectedHarvest.thirdQualityBoxes), grossPricePerBox: String(third?.grossPricePerBox ?? selectedHarvest.thirdQualityPrice) }
+      ],
+      commissionPerBox: selectedHarvest.sale?.commissionPerBox ? String(selectedHarvest.sale.commissionPerBox) : "",
+      freightPerBox: selectedHarvest.sale?.freightPerBox ? String(selectedHarvest.sale.freightPerBox) : "",
+      packagingPerBox: selectedHarvest.sale?.packagingPerBox ? String(selectedHarvest.sale.packagingPerBox) : "",
+      paymentStatus: selectedHarvest.sale?.paymentStatus ?? "Pendiente",
+      paidAt: selectedHarvest.sale?.paidAt ?? "",
+      notes: selectedHarvest.sale?.notes ?? ""
+    });
+    setSaleBreakdownOpen(Boolean(
+      selectedHarvest.sale?.commissionPerBox || selectedHarvest.sale?.freightPerBox || selectedHarvest.sale?.packagingPerBox
+    ));
+  }, [modal, selectedHarvest]);
+  const saleCalculation = useMemo(() => saleDraft ? calculateHarvestSale({
+    lines: saleDraft.lines,
+    commissionPerBox: saleDraft.commissionPerBox,
+    freightPerBox: saleDraft.freightPerBox,
+    packagingPerBox: saleDraft.packagingPerBox
+  }) : null, [saleDraft]);
   const defaultGreenhouseId = selectedGreenhouseId === "__all__"
     ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
     : selectedGreenhouseId;
@@ -1166,6 +1269,42 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     };
   };
 
+  const saveHarvestBreakdown = async ({
+    existingSale,
+    form,
+    harvestId,
+    record
+  }: {
+    existingSale?: NonNullable<HarvestRecord["sale"]>;
+    form: FormData;
+    harvestId: string;
+    record: ReturnType<typeof readHarvestForm>;
+  }) => {
+    const commissionPerBox = requiredNumber(form.get("commissionPerBox"));
+    const freightPerBox = requiredNumber(form.get("freightPerBox"));
+    const packagingPerBox = requiredNumber(form.get("packagingPerBox"));
+    if (!existingSale && commissionPerBox === 0 && freightPerBox === 0 && packagingPerBox === 0) return;
+
+    const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale", {
+      target_harvest_record_id: harvestId,
+      target_sale_id: existingSale?.id ?? null,
+      target_buyer_name: record.destination.trim(),
+      target_occurred_at: record.date,
+      target_commission_per_box: commissionPerBox,
+      target_freight_per_box: freightPerBox,
+      target_packaging_per_box: packagingPerBox,
+      target_payment_status: existingSale?.paymentStatus === "Pagada" ? "paid" : "pending",
+      target_paid_at: existingSale?.paidAt ?? null,
+      target_notes: existingSale?.notes || null,
+      target_lines: [
+        { quality: "Primera", boxCount: record.firstQualityBoxes, grossPricePerBox: record.firstQualityPrice },
+        { quality: "Segunda", boxCount: record.secondQualityBoxes, grossPricePerBox: record.secondQualityPrice },
+        { quality: "Tercera", boxCount: record.thirdQualityBoxes, grossPricePerBox: record.thirdQualityPrice }
+      ]
+    });
+    if (saleError) throw saleError;
+  };
+
   const handleHarvest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (currentUser.role === "manager") {
@@ -1203,7 +1342,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_third_quality_price: record.thirdQualityPrice
       });
       if (rpcError) throw rpcError;
-      addHarvest({ ...record, id: rpcRecordId(data as { recordId?: string }, "No se pudo confirmar la cosecha guardada."), sourceTaskId: work.workId });
+      const harvestId = rpcRecordId(data as { recordId?: string }, "No se pudo confirmar la cosecha guardada.");
+      await saveHarvestBreakdown({ form, harvestId, record });
+      addHarvest({ ...record, id: harvestId, sourceTaskId: work.workId });
     });
   };
 
@@ -1235,6 +1376,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_change_note: String(form.get("changeNote") ?? "").trim()
       });
       if (updateError) throw updateError;
+      await saveHarvestBreakdown({ existingSale: selectedHarvest.sale, form, harvestId: selectedHarvest.id, record });
       updateHarvest({ ...selectedHarvest, ...record });
     });
   };
@@ -1278,6 +1420,40 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     });
   };
 
+  const handleSale = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedHarvest || !saleDraft || !saleCalculation) return;
+    if (saleCalculation.soldBoxes <= 0) {
+      setError("Registra al menos una caja vendida.");
+      return;
+    }
+    if (!saleCalculation.isValid) {
+      setError("Los gastos por caja no pueden superar el precio de venta.");
+      return;
+    }
+    save(async () => {
+      const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale", {
+        target_harvest_record_id: selectedHarvest.id,
+        target_sale_id: selectedHarvest.sale?.id ?? null,
+        target_buyer_name: saleDraft.buyerName.trim(),
+        target_occurred_at: saleDraft.date,
+        target_commission_per_box: parseNumericInput(saleDraft.commissionPerBox) ?? 0,
+        target_freight_per_box: parseNumericInput(saleDraft.freightPerBox) ?? 0,
+        target_packaging_per_box: parseNumericInput(saleDraft.packagingPerBox) ?? 0,
+        target_payment_status: saleDraft.paymentStatus === "Pagada" ? "paid" : "pending",
+        target_paid_at: saleDraft.paymentStatus === "Pagada" ? saleDraft.paidAt || saleDraft.date : null,
+        target_notes: saleDraft.notes.trim() || null,
+        target_lines: saleCalculation.lines.map((line) => ({
+          quality: line.quality,
+          boxCount: line.boxCount,
+          grossPricePerBox: line.grossPricePerBox
+        }))
+      });
+      if (saleError) throw saleError;
+      closeModal();
+    });
+  };
+
   const isGreenhouseFormModal = modal === "greenhouse" || modal === "editGreenhouse";
 
   return (
@@ -1294,7 +1470,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       title={copy?.title ?? ""}
       onClose={closeModal}
     >
-      {copy ? (
+      {copy?.kicker || copy?.note ? (
         <div className="mb-6 border-b border-app-border pb-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-app-muted">{copy.kicker}</p>
           <p className="mt-3 max-w-xl text-sm leading-6 text-app-muted">{copy.note}</p>
@@ -1630,8 +1806,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <HarvestCaptureFields priceReferences={priceReferences} showPrices={currentUser.role !== "manager"} />
-          <Field label="Cliente o destino"><TextInput name="destination" /></Field>
-          <Field label="Observaciones"><TextArea name="notes" /></Field>
+          <Field className="sm:col-span-2" label="Comprador"><TextInput name="destination" placeholder="Nombre del comprador" required /></Field>
+          <HarvestSaleBreakdownFields open={harvestBreakdownOpen} onToggle={() => setHarvestBreakdownOpen((current) => !current)} />
+          <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow name="notes" /></Field>
         </FormShell>
       ) : null}
 
@@ -1652,9 +1829,98 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             priceReferences={priceReferences}
             showPrices
           />
-          <Field label="Cliente o destino"><TextInput defaultValue={selectedHarvest.destination} name="destination" /></Field>
-          <Field label="Observaciones"><TextArea className="min-h-24" defaultValue={selectedHarvest.notes} name="notes" /></Field>
+          <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
+          <HarvestSaleBreakdownFields
+            initialCommission={selectedHarvest.sale?.commissionPerBox}
+            initialFreight={selectedHarvest.sale?.freightPerBox}
+            initialPackaging={selectedHarvest.sale?.packagingPerBox}
+            open={harvestBreakdownOpen}
+            onToggle={() => setHarvestBreakdownOpen((current) => !current)}
+          />
+          <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow defaultValue={selectedHarvest.notes} name="notes" /></Field>
           <Field className="sm:col-span-2" label="Motivo de corrección"><TextArea className="min-h-24" name="changeNote" placeholder="Ej. Se capturó precio por kilo en lugar de precio por caja" required /></Field>
+        </FormShell>
+      ) : null}
+
+      {modal === "sale" && selectedHarvest && saleDraft && saleCalculation ? (
+        <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleSale}>
+          <Field label="Comprador">
+            <TextInput
+              onChange={(event) => setSaleDraft((current) => current ? { ...current, buyerName: event.target.value } : current)}
+              placeholder="Nombre del comprador"
+              required
+              value={saleDraft.buyerName}
+            />
+          </Field>
+          <Field label="Fecha de venta">
+            <DatePickerInput
+              onChange={(event) => setSaleDraft((current) => current ? { ...current, date: event.target.value } : current)}
+              required
+              value={saleDraft.date}
+            />
+          </Field>
+          <section aria-labelledby="sale-lines-title" className="grid gap-3 sm:col-span-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted" id="sale-lines-title">Cajas y precio acordado</p>
+              <p className="mt-1 text-xs leading-5 text-app-muted">La venta se registra por calidad sin modificar la cosecha capturada.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {saleDraft.lines.map((line, index) => (
+                <fieldset className="grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4" key={line.quality}>
+                  <legend className="px-2 text-xs font-semibold text-app-text">{line.quality}</legend>
+                  <Field label="Cajas vendidas">
+                    <FormattedNumberInput min="0" onChange={(event) => setSaleDraft((current) => current ? {
+                      ...current,
+                      lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, boxCount: event.target.value } : item)
+                    } : current)} step="1" value={line.boxCount} />
+                  </Field>
+                  <Field label="Precio por caja">
+                    <FormattedNumberInput min="0" onChange={(event) => setSaleDraft((current) => current ? {
+                      ...current,
+                      lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, grossPricePerBox: event.target.value } : item)
+                    } : current)} step="0.01" value={line.grossPricePerBox} />
+                  </Field>
+                </fieldset>
+              ))}
+            </div>
+          </section>
+          <section className="sm:col-span-2">
+            <button
+              aria-expanded={saleBreakdownOpen}
+              className="flex min-h-11 w-full items-center justify-between rounded-xl border border-app-border bg-white px-4 text-left text-sm font-semibold text-app-text"
+              onClick={() => setSaleBreakdownOpen((current) => !current)}
+              type="button"
+            >
+              Desglosar venta
+              <ChevronDown aria-hidden="true" className={cn("h-4 w-4 transition-transform", saleBreakdownOpen && "rotate-180")} />
+            </button>
+            {saleBreakdownOpen ? (
+              <div className="mt-3 grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4 sm:grid-cols-3">
+                {([
+                  ["Comisión por caja", "commissionPerBox"],
+                  ["Flete por caja", "freightPerBox"],
+                  ["Caja de cartón por caja", "packagingPerBox"]
+                ] as const).map(([label, key]) => (
+                  <Field key={key} label={label}>
+                    <FormattedNumberInput min="0" onChange={(event) => setSaleDraft((current) => current ? { ...current, [key]: event.target.value } : current)} placeholder="$0.00" step="0.01" value={saleDraft[key]} />
+                  </Field>
+                ))}
+              </div>
+            ) : null}
+          </section>
+          <Field label="Estado de pago">
+            <SelectInput onChange={(event) => setSaleDraft((current) => current ? { ...current, paymentStatus: event.target.value as SaleDraft["paymentStatus"] } : current)} value={saleDraft.paymentStatus}>
+              <option>Pendiente</option><option>Pagada</option>
+            </SelectInput>
+          </Field>
+          {saleDraft.paymentStatus === "Pagada" ? <Field label="Fecha de pago"><DatePickerInput onChange={(event) => setSaleDraft((current) => current ? { ...current, paidAt: event.target.value } : current)} value={saleDraft.paidAt} /></Field> : <div />}
+          <Field className="sm:col-span-2" label="Notas"><TextArea onChange={(event) => setSaleDraft((current) => current ? { ...current, notes: event.target.value } : current)} value={saleDraft.notes} /></Field>
+          <div className="grid gap-3 rounded-2xl border border-app-border bg-white p-4 sm:col-span-2 sm:grid-cols-4">
+            <div><p className="text-xs text-app-muted">Venta bruta</p><output className="mt-1 block font-semibold tabular-nums">{formatCurrency(saleCalculation.grossAmount)}</output></div>
+            <div><p className="text-xs text-app-muted">Gastos</p><output className="mt-1 block font-semibold tabular-nums">{formatCurrency(saleCalculation.commissionAmount + saleCalculation.freightAmount + saleCalculation.packagingAmount)}</output></div>
+            <div><p className="text-xs text-app-muted">Cajas vendidas</p><output className="mt-1 block font-semibold tabular-nums">{saleCalculation.soldBoxes}</output></div>
+            <div><p className="text-xs text-app-muted">Venta neta</p><output className="mt-1 block text-lg font-semibold tabular-nums text-app-green">{formatCurrency(saleCalculation.netAmount)}</output></div>
+          </div>
         </FormShell>
       ) : null}
 
@@ -1682,7 +1948,26 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
               <fieldset key={index} className="grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4">
                 <legend className="px-2 text-xs font-semibold text-app-text">Partida {index + 1}</legend>
                 <div className="grid gap-3 lg:grid-cols-[1fr_1.6fr_0.75fr_auto]">
-                  <Field label="Categoría">
+                  <Field
+                    label={(
+                      <span className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="shrink-0">Categoría</span>
+                        {suggestedCostCategory(cost.notes) && suggestedCostCategory(cost.notes) !== cost.category ? (
+                          <span aria-live="polite" className="flex min-w-0 items-center gap-1.5 normal-case tracking-normal text-[10px] font-medium text-app-muted">
+                            <span className="truncate">Sugerida: {suggestedCostCategory(cost.notes)}</span>
+                            <button
+                              aria-label={`Usar categoría sugerida: ${suggestedCostCategory(cost.notes)}`}
+                              className="min-h-6 shrink-0 rounded-md px-1 font-semibold text-app-green underline decoration-transparent underline-offset-2 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2"
+                              onClick={() => setCostRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, category: suggestedCostCategory(item.notes) ?? item.category } : item))}
+                              type="button"
+                            >
+                              Usar
+                            </button>
+                          </span>
+                        ) : null}
+                      </span>
+                    )}
+                  >
                     <SelectionMenu
                       ariaLabel={`Categoría de la partida ${index + 1}`}
                       buttonClassName="h-11 rounded-xl px-3 text-sm font-normal"

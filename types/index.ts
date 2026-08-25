@@ -285,8 +285,29 @@ export type HarvestRecord = {
   commissionAmount?: number;
   freightAmount?: number;
   netRevenue?: number;
+  packagingAmount?: number;
+  sale?: HarvestSaleDetails;
   destination: string;
   notes: string;
+};
+
+export type HarvestSaleLine = {
+  quality: "Primera" | "Segunda" | "Tercera";
+  boxCount: number;
+  grossPricePerBox: number;
+};
+
+export type HarvestSaleDetails = {
+  id: string;
+  buyerName: string;
+  date: string;
+  commissionPerBox: number;
+  freightPerBox: number;
+  packagingPerBox: number;
+  paymentStatus: "Pendiente" | "Pagada";
+  paidAt?: string;
+  notes: string;
+  lines: HarvestSaleLine[];
 };
 
 export type CostRecord = {
@@ -297,6 +318,10 @@ export type CostRecord = {
     | "Nómina"
     | "Fertilizantes"
     | "Agroinsumos"
+    | "Preparación de terreno y maquinaria"
+    | "Análisis y laboratorio"
+    | "Material vegetal"
+    | "Polinización"
     | "Agua"
     | "Energía"
     | "Plásticos"
@@ -351,5 +376,6 @@ export type ModalType =
   | "pest"
   | "harvest"
   | "editHarvest"
+  | "sale"
   | "cost"
   | null;

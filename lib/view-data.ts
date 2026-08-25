@@ -26,8 +26,10 @@ const APPLICATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, cat
 const PEST_COLUMNS = "id, public_id, greenhouse_id, problem, severity, affected_zone, detected_at, action_taken, follow_up, case_status, photo_storage_path, photo_url";
 const PEST_UPDATE_COLUMNS = "id, pest_alert_id, greenhouse_id, update_status, severity, action_type, notes, next_review_date, photo_storage_path, created_at";
 const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, estimated_price, destination, notes";
-const HARVEST_SALE_COLUMNS = "id, harvest_record_id, gross_amount, commission_amount, freight_amount, net_amount";
-const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count";
+const HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, packaging_amount, net_amount, payment_status, paid_at, notes";
+const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box, packaging_per_box";
+const LEGACY_HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, net_amount, payment_status, paid_at, notes";
+const LEGACY_HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box";
 const COST_COLUMNS = "id, greenhouse_id, occurred_at, category, amount, quantity, unit, unit_price, notes";
 
 type ViewDataRequest = {
@@ -178,21 +180,49 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
   (rows.harvestSaleLines ?? []).forEach((line) => {
     linesBySale.set(line.sale_id, [...(linesBySale.get(line.sale_id) ?? []), line]);
   });
-  const salesByHarvest = new Map<string, { grossRevenue: number; commissionAmount: number; freightAmount: number; netRevenue: number; soldBoxes: number; specialBoxes: number }>();
+  const salesByHarvest = new Map<string, {
+    grossRevenue: number;
+    commissionAmount: number;
+    freightAmount: number;
+    packagingAmount: number;
+    netRevenue: number;
+    soldBoxes: number;
+    specialBoxes: number;
+    sale?: HarvestRecord["sale"];
+  }>();
   (rows.harvestSales ?? []).forEach((sale) => {
     const lines = linesBySale.get(sale.id) ?? [];
     const soldBoxes = lines.reduce((total, line) => total + Number(line.box_count ?? 0), 0);
     const specialBoxes = lines
       .filter((line) => !/^(primeras?|segundas?|terceras?)(-|$)/i.test(String(line.quality_label ?? "")))
       .reduce((total, line) => total + Number(line.box_count ?? 0), 0);
-    const current = salesByHarvest.get(sale.harvest_record_id) ?? { grossRevenue: 0, commissionAmount: 0, freightAmount: 0, netRevenue: 0, soldBoxes: 0, specialBoxes: 0 };
+    const firstStandardLine = lines.find((line) => /^(primera|primeras|segunda|segundas|tercera|terceras)(-|$)/i.test(String(line.quality_label ?? "")));
+    const saleDetails: HarvestRecord["sale"] = {
+      id: sale.id,
+      buyerName: sale.buyer_name ?? "",
+      date: sale.occurred_at,
+      commissionPerBox: Number(firstStandardLine?.commission_per_box ?? 0),
+      freightPerBox: Number(firstStandardLine?.freight_per_box ?? 0),
+      packagingPerBox: Number(firstStandardLine?.packaging_per_box ?? 0),
+      paymentStatus: sale.payment_status === "paid" ? "Pagada" : "Pendiente",
+      paidAt: sale.paid_at ?? undefined,
+      notes: sale.notes ?? "",
+      lines: lines.flatMap((line) => {
+        const label = String(line.quality_label ?? "").toLocaleLowerCase("es-MX");
+        const quality = /^primer/.test(label) ? "Primera" : /^segund/.test(label) ? "Segunda" : /^tercer/.test(label) ? "Tercera" : null;
+        return quality ? [{ quality, boxCount: Number(line.box_count ?? 0), grossPricePerBox: Number(line.gross_unit_price ?? 0) }] : [];
+      })
+    };
+    const current = salesByHarvest.get(sale.harvest_record_id) ?? { grossRevenue: 0, commissionAmount: 0, freightAmount: 0, packagingAmount: 0, netRevenue: 0, soldBoxes: 0, specialBoxes: 0 };
     salesByHarvest.set(sale.harvest_record_id, {
       grossRevenue: current.grossRevenue + Number(sale.gross_amount ?? 0),
       commissionAmount: current.commissionAmount + Number(sale.commission_amount ?? 0),
       freightAmount: current.freightAmount + Number(sale.freight_amount ?? 0),
+      packagingAmount: current.packagingAmount + Number(sale.packaging_amount ?? 0),
       netRevenue: current.netRevenue + Number(sale.net_amount ?? 0),
       soldBoxes: current.soldBoxes + soldBoxes,
-      specialBoxes: current.specialBoxes + specialBoxes
+      specialBoxes: current.specialBoxes + specialBoxes,
+      sale: current.sale ?? saleDetails
     });
   });
   const harvestRecords: HarvestRecord[] = (rows.harvests ?? []).map((row) => {
@@ -223,7 +253,9 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
       grossRevenue: sales?.grossRevenue ?? estimatedRevenue,
       commissionAmount: sales?.commissionAmount ?? 0,
       freightAmount: sales?.freightAmount ?? 0,
+      packagingAmount: sales?.packagingAmount ?? 0,
       netRevenue,
+      sale: sales?.sale,
       destination: row.destination ?? "", notes: row.notes ?? ""
     };
   });
@@ -380,17 +412,27 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
   let pestAlerts: PestAlert[] | undefined;
   if (rows.harvests?.length) {
     const harvestIds = rows.harvests.map((row) => row.id);
-    const salesResponse = await supabase
+    let salesResponse: any = await supabase
       .from("harvest_sales")
       .select(HARVEST_SALE_COLUMNS)
       .eq("company_id", companyId)
       .in("harvest_record_id", harvestIds);
+    if (salesResponse.error && !["42P01", "PGRST205"].includes(salesResponse.error.code ?? "")) {
+      salesResponse = await supabase
+        .from("harvest_sales")
+        .select(LEGACY_HARVEST_SALE_COLUMNS)
+        .eq("company_id", companyId)
+        .in("harvest_record_id", harvestIds);
+    }
     if (salesResponse.error && !["42P01", "PGRST205"].includes(salesResponse.error.code ?? "")) throw salesResponse.error;
     rows.harvestSales = salesResponse.error ? [] : salesResponse.data ?? [];
 
     const saleIds = rows.harvestSales.map((sale) => sale.id);
     if (saleIds.length) {
-      const linesResponse = await supabase.from("harvest_sale_lines").select(HARVEST_SALE_LINE_COLUMNS).in("sale_id", saleIds);
+      let linesResponse: any = await supabase.from("harvest_sale_lines").select(HARVEST_SALE_LINE_COLUMNS).in("sale_id", saleIds);
+      if (linesResponse.error && !["42P01", "PGRST205"].includes(linesResponse.error.code ?? "")) {
+        linesResponse = await supabase.from("harvest_sale_lines").select(LEGACY_HARVEST_SALE_LINE_COLUMNS).in("sale_id", saleIds);
+      }
       if (linesResponse.error && !["42P01", "PGRST205"].includes(linesResponse.error.code ?? "")) throw linesResponse.error;
       rows.harvestSaleLines = linesResponse.error ? [] : linesResponse.data ?? [];
     }

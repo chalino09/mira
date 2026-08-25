@@ -85,7 +85,11 @@ do $$ begin
     'transporte',
     'refrescos',
     'renta',
-    'gasolina'
+    'gasolina',
+    'preparacion_terreno_maquinaria',
+    'analisis_laboratorio',
+    'material_vegetal',
+    'polinizacion'
   );
 exception when duplicate_object then null;
 end $$;
