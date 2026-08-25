@@ -399,7 +399,7 @@ function HarvestSaleBreakdownFields({
         Desglosar venta
         <ChevronDown aria-hidden="true" className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
       </button>
-      <div className="mt-3 grid gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4 sm:grid-cols-3" hidden={!open} id="harvest-sale-breakdown">
+      <div className={cn("mt-3 gap-3 rounded-2xl border border-app-border bg-app-sidebar/35 p-4 sm:grid-cols-3", open ? "grid" : "hidden")} id="harvest-sale-breakdown">
         <Field label="Comisión por caja">
           <FormattedNumberInput defaultValue={initialCommission || ""} min="0" name="commissionPerBox" placeholder="$0.00" step="0.01" />
         </Field>
