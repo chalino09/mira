@@ -323,7 +323,7 @@ function FormShell({
   const showAside = layout === "default" || manualNote || duplicateWarning || error;
   return (
     <form className={cn("relative grid gap-6", layout === "default" && "lg:grid-cols-[1fr_210px]")} onSubmit={onSubmit}>
-      <div className="grid gap-4 pb-4 sm:grid-cols-2">{children}</div>
+      <div className={cn("grid gap-4 sm:grid-cols-2", layout === "wide" ? "pb-20" : "pb-4")}>{children}</div>
       {showAside ? <aside className={cn("border-t border-app-border pb-4 pt-4", layout === "default" && "lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0")}>
         {layout === "default" ? <>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Registro</p>
@@ -1805,9 +1805,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleHarvest} {...manualRecordShellProps}>
           <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
-          <HarvestCaptureFields priceReferences={priceReferences} showPrices={currentUser.role !== "manager"} />
           <Field className="sm:col-span-2" label="Comprador"><TextInput name="destination" placeholder="Nombre del comprador" required /></Field>
           <HarvestSaleBreakdownFields open={harvestBreakdownOpen} onToggle={() => setHarvestBreakdownOpen((current) => !current)} />
+          <HarvestCaptureFields priceReferences={priceReferences} showPrices={currentUser.role !== "manager"} />
           <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow name="notes" /></Field>
         </FormShell>
       ) : null}
@@ -1823,12 +1823,6 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             <input name="greenhouseId" type="hidden" value={selectedHarvest.greenhouseId} />
           </Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={selectedHarvest.date} /></Field>
-          <HarvestCaptureFields
-            initialValues={selectedHarvest}
-            key={selectedHarvest.id}
-            priceReferences={priceReferences}
-            showPrices
-          />
           <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
           <HarvestSaleBreakdownFields
             initialCommission={selectedHarvest.sale?.commissionPerBox}
@@ -1836,6 +1830,12 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             initialPackaging={selectedHarvest.sale?.packagingPerBox}
             open={harvestBreakdownOpen}
             onToggle={() => setHarvestBreakdownOpen((current) => !current)}
+          />
+          <HarvestCaptureFields
+            initialValues={selectedHarvest}
+            key={selectedHarvest.id}
+            priceReferences={priceReferences}
+            showPrices
           />
           <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow defaultValue={selectedHarvest.notes} name="notes" /></Field>
           <Field className="sm:col-span-2" label="Motivo de corrección"><TextArea className="min-h-24" name="changeNote" placeholder="Ej. Se capturó precio por kilo en lugar de precio por caja" required /></Field>
