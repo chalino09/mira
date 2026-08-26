@@ -713,13 +713,30 @@ on conflict (company_id, source_reference) where source_reference is not null do
   payment_method = excluded.payment_method, occurred_at = excluded.occurred_at, amount = excluded.amount,
   notes = excluded.notes, updated_at = now();
 
+-- Update first because the allocation validation trigger runs before PostgreSQL
+-- resolves ON CONFLICT. A direct upsert would temporarily count an existing
+-- allocation twice when this import is re-executed after a partial run.
+update public.nursery_receipt_allocations allocation
+set amount = round(source.amount, 2), updated_at = now()
+from _nursery_import_target target
+join _nursery_import_receipts source on source.sale_source_reference is not null
+join public.nursery_receipts receipt on receipt.company_id = target.company_id and receipt.source_reference = source.source_reference
+join public.nursery_sales sale on sale.company_id = target.company_id and sale.source_reference = source.sale_source_reference
+where allocation.company_id = target.company_id
+  and allocation.receipt_id = receipt.id
+  and allocation.sale_id = sale.id;
+
 insert into public.nursery_receipt_allocations (company_id, receipt_id, sale_id, amount)
 select target.company_id, receipt.id, sale.id, round(source.amount, 2)
 from _nursery_import_target target
 join _nursery_import_receipts source on source.sale_source_reference is not null
 join public.nursery_receipts receipt on receipt.company_id = target.company_id and receipt.source_reference = source.source_reference
 join public.nursery_sales sale on sale.company_id = target.company_id and sale.source_reference = source.sale_source_reference
-on conflict (receipt_id, sale_id) do update set amount = excluded.amount, updated_at = now();
+where not exists (
+  select 1
+  from public.nursery_receipt_allocations allocation
+  where allocation.receipt_id = receipt.id and allocation.sale_id = sale.id
+);
 
 insert into public.nursery_expenses (
   company_id, nursery_id, occurred_at, category, amount, quantity, unit, unit_price,
