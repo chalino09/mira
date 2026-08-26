@@ -5,7 +5,11 @@
 -- dos filas no tienen precio y las otras dos duplican cobros ya asentados en el libro.
 -- Los source_reference permiten re-ejecutar sin duplicar.
 
-begin;
+-- Toda la importación vive dentro de una sola sentencia DO para que el editor
+-- SQL de Supabase no ejecute únicamente el último bloque bajo el cursor.
+-- La sentencia es atómica: ante cualquier error no deja una carga parcial.
+do $nursery_import$
+begin
 
 drop table if exists public._nursery_import_target;
 drop table if exists public._nursery_import_sales;
@@ -33,12 +37,9 @@ from public.companies company
 join public.nurseries nursery on nursery.company_id = company.id and nursery.code = 'vivero'
 where company.slug = 'mercadia-ag' and nursery.is_active;
 
-do $$
-begin
-  if not exists (select 1 from _nursery_import_target) then
-    raise exception 'mercadia_ag_or_nursery_not_found';
-  end if;
-end $$;
+if not exists (select 1 from _nursery_import_target) then
+  raise exception 'mercadia_ag_or_nursery_not_found';
+end if;
 
 create unlogged table public._nursery_import_sales (
   source_reference text primary key,
@@ -760,7 +761,8 @@ drop table if exists public._nursery_import_receipts;
 drop table if exists public._nursery_import_sales;
 drop table if exists public._nursery_import_target;
 
-commit;
+end
+$nursery_import$;
 
 -- Preview counts generated from this workbook: 208 sales, 217 receipts,
 -- 36 expenses and 90 customers (92 seedling catalog rows).
