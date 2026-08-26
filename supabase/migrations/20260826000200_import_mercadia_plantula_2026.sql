@@ -7,10 +7,16 @@
 
 begin;
 
+drop table if exists _nursery_import_target;
+drop table if exists _nursery_import_sales;
+drop table if exists _nursery_import_receipts;
+drop table if exists _nursery_import_expenses;
+drop table if exists _nursery_import_catalog;
+
 create temporary table _nursery_import_target (
   company_id uuid not null,
   nursery_id uuid not null
-) on commit drop;
+);
 
 insert into public.nurseries (company_id, name, code, is_active)
 select company.id, 'Vivero', 'vivero', true
@@ -44,7 +50,7 @@ create temporary table _nursery_import_sales (
   unit_price numeric,
   total_amount numeric not null,
   notes text
-) on commit drop;
+);
 
 insert into _nursery_import_sales (source_reference, occurred_at, customer_name, sale_kind, payment_terms, due_date, description, quantity, unit, unit_price, total_amount, notes)
 values
@@ -266,7 +272,7 @@ create temporary table _nursery_import_receipts (
   receipt_kind text not null,
   amount numeric not null,
   notes text
-) on commit drop;
+);
 
 insert into _nursery_import_receipts (source_reference, sale_source_reference, occurred_at, customer_name, payment_method, receipt_kind, amount, notes)
 values
@@ -497,7 +503,7 @@ create temporary table _nursery_import_expenses (
   unit text,
   unit_price numeric,
   notes text
-) on commit drop;
+);
 
 insert into _nursery_import_expenses (source_reference, occurred_at, category, amount, quantity, unit, unit_price, notes)
 values
@@ -542,7 +548,7 @@ create temporary table _nursery_import_catalog (
   name text not null,
   unit text not null,
   default_unit_price numeric
-) on commit drop;
+);
 
 insert into _nursery_import_catalog (name, unit, default_unit_price)
 values
@@ -727,6 +733,12 @@ on conflict (company_id, source_reference) where source_reference is not null do
   nursery_id = excluded.nursery_id, occurred_at = excluded.occurred_at, category = excluded.category,
   amount = excluded.amount, quantity = excluded.quantity, unit = excluded.unit, unit_price = excluded.unit_price,
   payment_method = excluded.payment_method, notes = excluded.notes, updated_at = now();
+
+drop table _nursery_import_catalog;
+drop table _nursery_import_expenses;
+drop table _nursery_import_receipts;
+drop table _nursery_import_sales;
+drop table _nursery_import_target;
 
 commit;
 
