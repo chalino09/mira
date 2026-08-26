@@ -10,7 +10,7 @@ import { appRoute } from "@/lib/routes";
 import type { SectionId } from "@/types";
 import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 
-const primaryIds: SectionId[] = ["overview", "calendar", "monitoring"];
+const primaryIds: SectionId[] = ["overview", "calendar", "greenhouses"];
 const iconFallback = {
   overview: Home,
   greenhouses: Sprout,

@@ -4,6 +4,7 @@ import {
   Home,
   Leaf,
   Package,
+  Flower2,
   Settings,
   ShieldAlert,
   Sprout
@@ -14,10 +15,11 @@ export const navigationItems: NavigationItem[] = [
   { id: "overview", label: "Inicio", icon: Home },
   { id: "calendar", label: "Operación", icon: CalendarDays },
   { id: "greenhouses", label: "Invernaderos", icon: Sprout },
+  { id: "harvest", label: "Cosecha", icon: Leaf },
+  { id: "nursery", label: "Vivero", icon: Flower2 },
+  { id: "inventory", label: "Inventario y costos", icon: Package },
   { id: "monitoring", label: "Monitoreo", icon: FlaskConical },
   { id: "pests", label: "Plagas", icon: ShieldAlert },
-  { id: "harvest", label: "Cosecha", icon: Leaf },
-  { id: "inventory", label: "Inventario y costos", icon: Package },
   { id: "settings", label: "Ajustes", icon: Settings }
 ];
 

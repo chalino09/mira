@@ -45,6 +45,7 @@ const sectionSegments: Record<SectionId, string[]> = {
   applications: ["operations", "applications"],
   pests: ["health"],
   harvest: ["harvest"],
+  nursery: ["nursery"],
   inventory: ["inventory"],
   costs: ["costs"],
   reports: ["reports"],
@@ -76,7 +77,7 @@ export function supportsPeriod(section: SectionId, inventoryView?: InventoryCost
 
 export function supportsGreenhouse(section: SectionId, inventoryView?: InventoryCostsView) {
   if (section === "inventory") return inventoryView === "summary" || inventoryView === "costs";
-  return !["greenhouses", "settings"].includes(section);
+  return !["greenhouses", "nursery", "settings"].includes(section);
 }
 
 export function allowsAllGreenhouses(section: SectionId) {

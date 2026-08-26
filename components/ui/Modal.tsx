@@ -29,6 +29,12 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
 
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      const currentPaddingRight = Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+      document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+    }
     document.body.style.overflow = "hidden";
 
     const panel = panelRef.current;
@@ -78,6 +84,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
       triggerRef.current?.focus();
     };
   }, [open]);

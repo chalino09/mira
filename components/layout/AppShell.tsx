@@ -42,6 +42,7 @@ import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
 import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
 import { InventorySection } from "@/components/inventory/InventorySection";
+import { NurserySection } from "@/components/nursery/NurserySection";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -97,6 +98,9 @@ const ViewDataRefreshContext = createContext<ViewDataRefreshState>({
   isUpdating: false,
   refresh: () => {}
 });
+
+// Keep the implementation available while the product experience is refined.
+const miraCopilotEnabled = false;
 
 function useViewDataRefresh() {
   return useContext(ViewDataRefreshContext).refresh;
@@ -2944,6 +2948,7 @@ function ActiveSection(props: CopilotSurfaceProps) {
   if (activeSection === "applications") return <OperationsSection {...operationProps} specialtyLabel="Aplicaciones" workTypeFilter={["aplicacion_foliar"]} />;
   if (activeSection === "pests") return <PestsSection />;
   if (activeSection === "harvest") return <HarvestSection />;
+  if (activeSection === "nursery") return <NurserySection />;
   if (activeSection === "inventory") return <InventoryCostsSection view={props.inventoryView} />;
   return <SettingsSection />;
 }
@@ -3405,7 +3410,10 @@ export function AppShell() {
       <div className="flex min-h-screen">
         <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
         <div className="min-w-0 flex-1">
-          <Topbar copilotInsightCount={copilotInsights.length} onOpenCopilot={() => setCopilotOpen(true)} />
+          <Topbar
+            copilotInsightCount={copilotInsights.length}
+            onOpenCopilot={miraCopilotEnabled ? () => setCopilotOpen(true) : undefined}
+          />
           <main className="mx-auto w-full max-w-[1500px] scroll-mt-20 px-4 pb-24 pt-5 lg:px-6 lg:pb-5" id="main-content">
             <div className="mb-4 lg:hidden">
               <p className="text-xs font-medium uppercase text-app-muted">{activeLabel}</p>
@@ -3420,7 +3428,7 @@ export function AppShell() {
                   <EntityRouteView route={activeRoute.entity} />
                 ) : (
                   <ActiveSection
-                    copilotInsights={copilotInsights}
+                    copilotInsights={miraCopilotEnabled ? copilotInsights : []}
                     operationRefreshKey={operationRefreshKey}
                     operationWeekStart={activeRoute.weekStart}
                     operationView={activeRoute.operationView}
@@ -3465,7 +3473,7 @@ export function AppShell() {
       {currentUser.role === "manager" ? (
         <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
       ) : null}
-      <MiraCopilotPanel
+      {miraCopilotEnabled ? <MiraCopilotPanel
         chatMessages={copilotChatMessages}
         insights={copilotInsights}
         isRunning={copilotRunning}
@@ -3480,7 +3488,7 @@ export function AppShell() {
         onRun={runCopilot}
         onSendMessage={sendCopilotMessage}
         open={copilotOpen}
-      />
+      /> : null}
     </div>
   );
 }

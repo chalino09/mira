@@ -36,6 +36,7 @@ export function Topbar({
   const acceptsPeriod = ["records", "pests", "harvest", "costs"].includes(activeSection);
   const hasContextPeriod = acceptsPeriod || activeSection === "calendar";
   const isCompanyView = ["inventory", "greenhouses", "settings"].includes(activeSection);
+  const isNurseryView = activeSection === "nursery";
   const periodLabel = activeSection === "calendar"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
@@ -59,8 +60,8 @@ export function Topbar({
           <div className="flex h-11 min-w-0 w-full items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted sm:h-9 sm:w-auto">
             <Building2 className="h-3.5 w-3.5 shrink-0 text-app-green" />
             <OrganizationSwitcher className="h-full max-w-40" compact showIcon={false} />
-            <span aria-hidden="true">→</span>
-            {isCompanyView ? (
+            {!isNurseryView ? <span aria-hidden="true">→</span> : null}
+            {isNurseryView ? null : isCompanyView ? (
               <span className="font-medium text-app-text">Toda la empresa</span>
             ) : (
               <SelectionMenu

@@ -114,7 +114,7 @@ type AppState = {
 const allGreenhousesId = "__all__";
 
 export function defaultPeriodForSection(section: SectionId): ContextPeriod {
-  return section === "harvest" || section === "inventory" || section === "costs" ? "all" : "month";
+  return section === "harvest" || section === "nursery" || section === "inventory" || section === "costs" ? "all" : "month";
 }
 
 export const useGreenhouseStore = create<AppState>()(persist((set) => ({
