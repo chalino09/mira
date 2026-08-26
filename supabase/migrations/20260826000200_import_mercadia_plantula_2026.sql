@@ -503,7 +503,6 @@ insert into _nursery_import_expenses (source_reference, occurred_at, category, a
 values
   ('plantula-2026:dinero-recibido:gasto:r4', '2026-04-27', 'seed', 15290.80, 5.000000, 'millar', 3058.160000, 'SEMILLA AGUA MIEL'),
   ('plantula-2026:dinero-recibido:gasto:r5', '2026-04-04', 'seed', 3068.00, 1.000000, 'millar', 3068.000000, 'SEMILLA AGUA MIEL'),
-  ('plantula-2026:dinero-recibido:gasto:r8', '2026-04-24', 'other', 18358.80, NULL, NULL, NULL, 'Salida de vivero sin concepto en Excel.'),
   ('plantula-2026:dinero-recibido:gasto:r11', '2026-04-27', 'other', 14000.00, 1000.000000, 'pieza', 14.000000, 'Salida de vivero sin concepto en Excel'),
   ('plantula-2026:dinero-recibido:gasto:r12', '2026-04-28', 'other', 45000.00, 500.000000, 'pieza', 90.000000, 'Salida de vivero sin concepto en Excel'),
   ('plantula-2026:dinero-recibido:gasto:r13', '2026-04-28', 'other', 10800.00, 200.000000, 'pieza', 54.000000, 'Salida de vivero sin concepto en Excel'),
@@ -567,7 +566,6 @@ values
   ('CHILACAYOTE', 'charola', NULL),
   ('CHILACAYOTE', 'pieza', NULL),
   ('CID DOBLE TALLO', 'pieza', 4.600000),
-  ('DINERO DISPONIBLE 2024', 'pieza', NULL),
   ('DOBLE TALLO RESERVA', 'pieza', NULL),
   ('FARAON + TEPEX', 'charola', 230.000000),
   ('HERCULES-LACIO', 'charolas', NULL),
@@ -733,4 +731,4 @@ on conflict (company_id, source_reference) where source_reference is not null do
 commit;
 
 -- Preview counts generated from this workbook: 208 sales, 217 receipts,
--- 37 expenses and 90 customers (93 seedling catalog rows).
+-- 36 expenses and 90 customers (92 seedling catalog rows).
