@@ -7,13 +7,16 @@
 
 begin;
 
-drop table if exists _nursery_import_target;
-drop table if exists _nursery_import_sales;
-drop table if exists _nursery_import_receipts;
-drop table if exists _nursery_import_expenses;
-drop table if exists _nursery_import_catalog;
+drop table if exists public._nursery_import_target;
+drop table if exists public._nursery_import_sales;
+drop table if exists public._nursery_import_receipts;
+drop table if exists public._nursery_import_expenses;
+drop table if exists public._nursery_import_catalog;
 
-create temporary table _nursery_import_target (
+-- Supabase SQL Editor can dispatch statements through different database
+-- sessions. These staging tables must therefore be regular unlogged tables,
+-- not session-scoped temporary tables. They are removed at the end.
+create unlogged table public._nursery_import_target (
   company_id uuid not null,
   nursery_id uuid not null
 );
@@ -37,7 +40,7 @@ begin
   end if;
 end $$;
 
-create temporary table _nursery_import_sales (
+create unlogged table public._nursery_import_sales (
   source_reference text primary key,
   occurred_at date not null,
   customer_name text,
@@ -263,7 +266,7 @@ values
   ('plantula-2026:dinero-recibido:r87', '2026-08-25', 'NAZARIO HERNANDEZ', 'seedling', 'cash', NULL, 'PLANTULA AGUA MIEL DOBLE TALLO', 2863.636364, 'pieza', 5.500000, 15750.00, 'Importación desde PLANTULA 2026.xlsx Responsable: GUSTAVO'),
   ('plantula-2026:dinero-recibido:r88', '2026-08-25', 'NAZARIO HERNANDEZ', 'seedling', 'cash', NULL, 'PUNTAS DOBLE AGUA MIEL', 256.000000, 'pieza', 4.000000, 1024.00, 'Importación desde PLANTULA 2026.xlsx');
 
-create temporary table _nursery_import_receipts (
+create unlogged table public._nursery_import_receipts (
   source_reference text primary key,
   sale_source_reference text,
   occurred_at date not null,
@@ -494,7 +497,7 @@ values
   ('plantula-2026:dinero-recibido:r87:receipt:cash', 'plantula-2026:dinero-recibido:r87', '2026-08-25', 'NAZARIO HERNANDEZ', 'cash', 'sale_payment', 15750.00, 'Cobro importado desde PLANTULA 2026.xlsx (cash).'),
   ('plantula-2026:dinero-recibido:r88:receipt:cash', 'plantula-2026:dinero-recibido:r88', '2026-08-25', 'NAZARIO HERNANDEZ', 'cash', 'sale_payment', 1024.00, 'Cobro importado desde PLANTULA 2026.xlsx (cash).');
 
-create temporary table _nursery_import_expenses (
+create unlogged table public._nursery_import_expenses (
   source_reference text primary key,
   occurred_at date not null,
   category text not null,
@@ -544,7 +547,7 @@ values
   ('plantula-2026:nomina:r27', '2026-05-02', 'payroll', 5517.00, 1, 'semana', 5517.00, 'Nómina semanal · 27-02 mayo 26'),
   ('plantula-2026:nomina:r28', '2026-05-09', 'payroll', 3959.00, 1, 'semana', 3959.00, 'Nómina semanal · 04-09 mayo 26');
 
-create temporary table _nursery_import_catalog (
+create unlogged table public._nursery_import_catalog (
   name text not null,
   unit text not null,
   default_unit_price numeric
@@ -751,11 +754,11 @@ on conflict (company_id, source_reference) where source_reference is not null do
   amount = excluded.amount, quantity = excluded.quantity, unit = excluded.unit, unit_price = excluded.unit_price,
   payment_method = excluded.payment_method, notes = excluded.notes, updated_at = now();
 
-drop table _nursery_import_catalog;
-drop table _nursery_import_expenses;
-drop table _nursery_import_receipts;
-drop table _nursery_import_sales;
-drop table _nursery_import_target;
+drop table if exists public._nursery_import_catalog;
+drop table if exists public._nursery_import_expenses;
+drop table if exists public._nursery_import_receipts;
+drop table if exists public._nursery_import_sales;
+drop table if exists public._nursery_import_target;
 
 commit;
 
