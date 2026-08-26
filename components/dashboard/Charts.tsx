@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
+import { formatCurrency } from "@/lib/utils";
 
 const chartProps = {
   stroke: "#E6E6E2",
@@ -18,6 +19,32 @@ const chartProps = {
   tickLine: false,
   axisLine: false
 };
+
+type CostTooltipProps = {
+  active?: boolean;
+  payload?: Array<{
+    value?: number;
+    payload?: { category?: string };
+  }>;
+};
+
+function CostTooltip({ active, payload }: CostTooltipProps) {
+  const item = payload?.[0];
+
+  if (!active || !item) return null;
+
+  return (
+    <div className="min-w-40 rounded-xl bg-app-green px-4 py-3 text-white shadow-[0_12px_30px_-12px_rgba(28,58,42,0.55)]">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/65">
+        {item.payload?.category ?? "Categoría"}
+      </p>
+      <p className="mt-1 tabular-nums text-lg font-semibold leading-none">
+        {formatCurrency(Number(item.value ?? 0))}
+      </p>
+      <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-white/55">Monto</p>
+    </div>
+  );
+}
 
 export function YieldChart({ data }: { data: { label: string; kg: number }[] }) {
   return (
@@ -66,8 +93,18 @@ export function CostChart({ data }: { data: { category: string; amount: number }
           <BarChart data={data} layout="vertical">
             <CartesianGrid stroke="#E6E6E2" horizontal={false} />
             <XAxis type="number" hide />
-            <YAxis dataKey="category" type="category" width={96} {...chartProps} />
-            <Tooltip />
+            <YAxis
+              dataKey="category"
+              type="category"
+              width={112}
+              {...chartProps}
+              tick={{ fill: "#5F625E", stroke: "none", fontSize: 13, fontWeight: 500 }}
+            />
+            <Tooltip
+              content={<CostTooltip />}
+              cursor={{ fill: "rgba(28, 58, 42, 0.06)" }}
+              wrapperStyle={{ outline: "none" }}
+            />
             <Bar dataKey="amount" fill="#1C3A2A" radius={[0, 8, 8, 0]} />
           </BarChart>
         </ResponsiveContainer>
