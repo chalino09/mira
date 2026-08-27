@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowDownLeft, ArrowUpRight, Banknote, CircleDollarSign, FilterX, Minus, Package, Pencil, Plus, ReceiptText, RefreshCw, Search, Sprout, UserRound, WalletCards } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, CircleDollarSign, FilterX, Minus, Package, Pencil, Plus, ReceiptText, RefreshCw, Search, Sprout, UserRound, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PageTitle } from "@/components/ui/PageTitle";
 import { SelectionMenu } from "@/components/ui/SelectionMenu";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -41,6 +42,7 @@ type Dialog = "sale" | "expense" | "payment" | "customer" | "catalog" | null;
 type NurseryView = "overview" | "customers" | "catalog";
 type ExpenseCategory = "payroll" | "seed" | "tray" | "cover" | "substrate" | "supplies" | "transport" | "services" | "maintenance" | "freight" | "other";
 type ExpenseDraft = { category: ExpenseCategory; concept: string; amount: string; quantity: string; unit: string; unitPrice: string };
+type QuickPeriod = "all" | "today" | "week" | "month" | "30days";
 
 const emptyExpense = (): ExpenseDraft => ({ category: "payroll", concept: "", amount: "", quantity: "", unit: "pieza", unitPrice: "" });
 const expenseCategories: Array<{ value: ExpenseCategory; label: string }> = [
@@ -57,10 +59,32 @@ const expenseCategories: Array<{ value: ExpenseCategory; label: string }> = [
   { value: "other", label: "Otro" }
 ];
 
-const today = () => {
-  const date = new Date();
+const dateKey = (date: Date) => {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
 };
+
+const today = () => dateKey(new Date());
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const startOfWeek = (date: Date) => {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const day = start.getDay() || 7;
+  start.setDate(start.getDate() - day + 1);
+  return start;
+};
+
+const quickPeriods: Array<{ value: QuickPeriod; label: string }> = [
+  { value: "all", label: "Todo" },
+  { value: "today", label: "Hoy" },
+  { value: "week", label: "Esta semana" },
+  { value: "month", label: "Este mes" },
+  { value: "30days", label: "Últimos 30 días" }
+];
 
 const statusCopy: Record<Sale["payment_status"], { label: string; className: string }> = {
   paid: { label: "Pagada", className: "bg-app-soft text-app-green" },
@@ -114,6 +138,7 @@ export function NurserySection() {
   const [dateTo, setDateTo] = useState("");
   const [customerFilter, setCustomerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [expenseRows, setExpenseRows] = useState<ExpenseDraft[]>([emptyExpense()]);
   const [activeView, setActiveView] = useState<NurseryView>("overview");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -167,6 +192,48 @@ export function NurserySection() {
   const receivable = activeSales.reduce((sum, sale) => sum + Number(sale.balance_amount), 0);
   const cashBalance = filteredLedger.filter((entry) => entry.payment_method === "cash").reduce((sum, entry) => sum + Number(entry.signed_amount), 0);
   const hasFilters = Boolean(dateFrom || dateTo || customerFilter !== "all" || statusFilter !== "all");
+  const currentDate = new Date();
+  const currentDateKey = dateKey(currentDate);
+  const quickPeriod: QuickPeriod | "custom" = !dateFrom && !dateTo
+    ? "all"
+    : dateFrom === currentDateKey && dateTo === currentDateKey
+      ? "today"
+      : dateFrom === dateKey(startOfWeek(currentDate)) && dateTo === currentDateKey
+        ? "week"
+        : dateFrom === dateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 12)) && dateTo === currentDateKey
+          ? "month"
+          : dateFrom === dateKey(addDays(currentDate, -29)) && dateTo === currentDateKey
+            ? "30days"
+            : "custom";
+  const advancedFilterCount = Number(quickPeriod === "custom") + Number(customerFilter !== "all") + Number(statusFilter !== "all");
+
+  const applyQuickPeriod = (period: QuickPeriod) => {
+    const now = new Date();
+    const end = dateKey(now);
+    if (period === "all") {
+      setDateFrom("");
+      setDateTo("");
+    } else if (period === "today") {
+      setDateFrom(end);
+      setDateTo(end);
+    } else if (period === "week") {
+      setDateFrom(dateKey(startOfWeek(now)));
+      setDateTo(end);
+    } else if (period === "month") {
+      setDateFrom(dateKey(new Date(now.getFullYear(), now.getMonth(), 1, 12)));
+      setDateTo(end);
+    } else {
+      setDateFrom(dateKey(addDays(now, -29)));
+      setDateTo(end);
+    }
+  };
+
+  const clearFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setCustomerFilter("all");
+    setStatusFilter("all");
+  };
   const expenseBatchTotal = useMemo(
     () => expenseRows.reduce((total, row) => total + (parseNumericInput(row.amount) ?? 0), 0),
     [expenseRows]
@@ -337,17 +404,58 @@ export function NurserySection() {
       </nav>
 
       {activeView === "overview" ? <>
-      <section aria-labelledby="nursery-filters-title" className="mb-6 rounded-2xl bg-app-sidebar px-4 py-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
+      <section aria-labelledby="nursery-filters-title" className="mb-6 rounded-2xl bg-app-sidebar p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted" id="nursery-filters-title">Filtrar información</h2>
-          {hasFilters ? <Button className="h-9 min-h-9 px-2.5 text-xs" icon={<FilterX aria-hidden="true" className="h-3.5 w-3.5" />} onClick={() => { setDateFrom(""); setDateTo(""); setCustomerFilter("all"); setStatusFilter("all"); }} variant="ghost">Limpiar filtros</Button> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {hasFilters ? <Button className="h-10 min-h-10 px-3 text-xs" icon={<FilterX aria-hidden="true" className="h-3.5 w-3.5" />} onClick={clearFilters} variant="ghost">Limpiar</Button> : null}
+            <button
+              aria-controls="nursery-advanced-filters"
+              aria-expanded={advancedFiltersOpen}
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-app-border bg-white px-3 text-xs font-medium text-app-text transition-[background-color,border-color,color] hover:border-app-green/40 hover:bg-app-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
+              onClick={() => setAdvancedFiltersOpen((current) => !current)}
+              type="button"
+            >
+              Filtros avanzados{advancedFilterCount ? ` (${advancedFilterCount})` : ""}
+              <ChevronDown aria-hidden="true" className={cn("h-4 w-4 text-app-muted transition-transform duration-150", advancedFiltersOpen && "rotate-180")} />
+            </button>
+          </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Field label="Desde"><TextInput max={dateTo || undefined} name="nurseryDateFrom" onChange={(event) => setDateFrom(event.target.value)} type="date" value={dateFrom} /></Field>
-          <Field label="Hasta"><TextInput min={dateFrom || undefined} name="nurseryDateTo" onChange={(event) => setDateTo(event.target.value)} type="date" value={dateTo} /></Field>
-          <Field label="Cliente"><SelectInput name="nurseryCustomer" onChange={(event) => setCustomerFilter(event.target.value)} value={customerFilter}><option value="all">Todos los clientes</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.display_name}</option>)}</SelectInput></Field>
-          <Field label="Estado de venta"><SelectInput name="nurseryStatus" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}><option value="all">Todos los estados</option><option value="paid">Pagada</option><option value="pending">Pendiente</option><option value="partial">Pago parcial</option><option value="overdue">Vencida</option><option value="cancelled">Cancelada</option></SelectInput></Field>
+
+        <div className="mt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Periodo</p>
+          <div aria-label="Periodo rápido" className="flex flex-wrap gap-2" role="group">
+            {quickPeriods.map((period) => {
+              const active = quickPeriod === period.value;
+              return (
+                <button
+                  aria-pressed={active}
+                  className={cn(
+                    "min-h-10 rounded-xl border px-3 text-sm font-medium transition-[background-color,border-color,color,box-shadow] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green",
+                    active
+                      ? "border-app-green bg-app-green text-white shadow-sm"
+                      : "border-app-border bg-white text-app-muted hover:border-app-green/40 hover:text-app-text"
+                  )}
+                  key={period.value}
+                  onClick={() => applyQuickPeriod(period.value)}
+                  type="button"
+                >
+                  {period.label}
+                </button>
+              );
+            })}
+            {quickPeriod === "custom" ? <span className="inline-flex min-h-10 items-center rounded-xl bg-white px-3 text-sm font-medium text-app-green">Rango personalizado</span> : null}
+          </div>
         </div>
+
+        {advancedFiltersOpen ? (
+          <div className="mt-5 grid gap-4 border-t border-app-border pt-5 sm:grid-cols-2 xl:grid-cols-4" id="nursery-advanced-filters">
+            <Field label="Desde"><DatePickerInput aria-label="Fecha inicial" max={dateTo || undefined} name="nurseryDateFrom" onChange={(event) => setDateFrom(event.target.value)} showQuickActions={false} value={dateFrom} /></Field>
+            <Field label="Hasta"><DatePickerInput aria-label="Fecha final" min={dateFrom || undefined} name="nurseryDateTo" onChange={(event) => setDateTo(event.target.value)} showQuickActions={false} value={dateTo} /></Field>
+            <Field label="Cliente"><SelectInput name="nurseryCustomer" onChange={(event) => setCustomerFilter(event.target.value)} value={customerFilter}><option value="all">Todos los clientes</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.display_name}</option>)}</SelectInput></Field>
+            <Field label="Estado de venta"><SelectInput name="nurseryStatus" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}><option value="all">Todos los estados</option><option value="paid">Pagada</option><option value="pending">Pendiente</option><option value="partial">Pago parcial</option><option value="overdue">Vencida</option><option value="cancelled">Cancelada</option></SelectInput></Field>
+          </div>
+        ) : null}
       </section>
 
       <div className="grid gap-x-6 sm:grid-cols-2 xl:grid-cols-4">
@@ -358,11 +466,11 @@ export function NurserySection() {
       </div>
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-        <section aria-labelledby="sales-title"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Saldos vigentes y ventas recientes.</p></div></div>
+        <section aria-labelledby="sales-title" className="min-w-0"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Saldos vigentes y ventas recientes.</p></div></div>
           {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex items-center justify-between gap-4 sm:justify-end"><div className="text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <Button className="h-10 min-h-10" onClick={() => { setSelectedSale(sale); setDialog("payment"); }} variant="secondary">Registrar abono</Button> : null}</div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
         </section>
 
-        <aside aria-labelledby="ledger-title"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Entradas y salidas recientes.</p></div>
+        <aside aria-labelledby="ledger-title" className="min-w-0"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Entradas y salidas recientes.</p></div>
           {filteredLedger.length ? <div>{filteredLedger.slice(0, 12).map((entry) => <div className="flex items-start gap-3 border-b border-app-border py-4" key={`${entry.movement_type}-${entry.source_id}`}><span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", Number(entry.signed_amount) >= 0 ? "bg-app-soft text-app-green" : "bg-red-50 text-red-700")}>{Number(entry.signed_amount) >= 0 ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm text-app-text">{entry.description}</p><p className="mt-1 text-xs text-app-muted">{dateLabel(entry.occurred_at)} · {entry.payment_method === "cash" ? "Efectivo" : entry.payment_method === "transfer" ? "Transferencia" : "Otro"}</p></div><p className={cn("shrink-0 text-sm font-medium tabular-nums", Number(entry.signed_amount) >= 0 ? "text-app-green" : "text-app-text")}>{Number(entry.signed_amount) >= 0 ? "+" : "−"}{formatCurrency(Math.abs(Number(entry.signed_amount)))}</p></div>)}</div> : <EmptyState icon={WalletCards} title={hasFilters ? "No hay movimientos en el rango seleccionado." : "Sin movimientos. Los cobros y gastos aparecerán aquí."} />}
         </aside>
       </div>
@@ -389,13 +497,13 @@ export function NurserySection() {
       ) : null}
 
       <Modal onClose={() => setDialog(null)} open={dialog === "sale"} panelClassName="sm:max-w-2xl" title="Registrar venta">
-        <form className="grid gap-4" onSubmit={saveSale}><div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha"><TextInput defaultValue={today()} name="date" required type="date" /></Field><Field label="Forma de venta"><SelectionMenu ariaLabel="Forma de venta" buttonClassName="h-11 rounded-xl px-3 text-sm font-normal" menuClassName="w-full" onChange={(value) => setSaleTerms(value as "cash" | "credit")} options={[{ value: "cash", label: "Pagada", description: "El dinero ya fue recibido" }, { value: "credit", label: "A crédito", description: "Quedará saldo por cobrar" }]} value={saleTerms} /></Field></div><Field label={saleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><TextInput autoComplete="off" list="nursery-customers" name="customer" placeholder="Nombre del cliente" /><datalist id="nursery-customers">{customers.map((customer) => <option key={customer.id} value={customer.display_name} />)}</datalist></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Concepto"><TextInput name="description" placeholder="Ej. Plántula de tomate" required /></Field><Field label="Tipo"><SelectInput name="kind"><option value="seedling">Plántula</option><option value="maquila">Maquila</option><option value="seed">Semilla</option><option value="freight">Flete</option><option value="other">Otro</option></SelectInput></Field></div><div className="grid gap-4 sm:grid-cols-3"><Field label="Cantidad real (opcional)"><TextInput inputMode="decimal" min="0.0001" name="quantity" placeholder="Ej. 512" step="0.0001" type="number" /></Field><Field label="Unidad"><SelectInput defaultValue="pieza" name="unit"><option value="pieza">Pieza</option><option value="charola">Charola</option><option value="servicio">Servicio</option><option value="kg">kg</option></SelectInput></Field><Field label="Precio unitario (opcional)"><TextInput inputMode="decimal" min="0" name="unitPrice" placeholder="0.00" step="0.000001" type="number" /></Field></div><Field label="Total recibido o por cobrar"><TextInput inputMode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field>{saleTerms === "credit" ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha límite de pago"><TextInput defaultValue={today()} min={today()} name="dueDate" required type="date" /></Field><Field label="Abono inicial"><TextInput defaultValue="0" inputMode="decimal" min="0" name="initialPayment" step="0.01" type="number" /></Field></div> : null}<Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Detalles de la venta" /></Field><div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar venta"}</Button></div></form>
+        <form className="grid gap-4" onSubmit={saveSale}><div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha"><DatePickerInput aria-label="Fecha de venta" defaultValue={today()} name="date" required /></Field><Field label="Forma de venta"><SelectionMenu ariaLabel="Forma de venta" buttonClassName="h-11 rounded-xl px-3 text-sm font-normal" menuClassName="w-full" onChange={(value) => setSaleTerms(value as "cash" | "credit")} options={[{ value: "cash", label: "Pagada", description: "El dinero ya fue recibido" }, { value: "credit", label: "A crédito", description: "Quedará saldo por cobrar" }]} value={saleTerms} /></Field></div><Field label={saleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><TextInput autoComplete="off" list="nursery-customers" name="customer" placeholder="Nombre del cliente" /><datalist id="nursery-customers">{customers.map((customer) => <option key={customer.id} value={customer.display_name} />)}</datalist></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Concepto"><TextInput name="description" placeholder="Ej. Plántula de tomate" required /></Field><Field label="Tipo"><SelectInput name="kind"><option value="seedling">Plántula</option><option value="maquila">Maquila</option><option value="seed">Semilla</option><option value="freight">Flete</option><option value="other">Otro</option></SelectInput></Field></div><div className="grid gap-4 sm:grid-cols-3"><Field label="Cantidad real (opcional)"><TextInput inputMode="decimal" min="0.0001" name="quantity" placeholder="Ej. 512" step="0.0001" type="number" /></Field><Field label="Unidad"><SelectInput defaultValue="pieza" name="unit"><option value="pieza">Pieza</option><option value="charola">Charola</option><option value="servicio">Servicio</option><option value="kg">kg</option></SelectInput></Field><Field label="Precio unitario (opcional)"><TextInput inputMode="decimal" min="0" name="unitPrice" placeholder="0.00" step="0.000001" type="number" /></Field></div><Field label="Total recibido o por cobrar"><TextInput inputMode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field>{saleTerms === "credit" ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={today()} min={today()} name="dueDate" required /></Field><Field label="Abono inicial"><TextInput defaultValue="0" inputMode="decimal" min="0" name="initialPayment" step="0.01" type="number" /></Field></div> : null}<Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Detalles de la venta" /></Field><div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar venta"}</Button></div></form>
       </Modal>
 
       <Modal onClose={() => setDialog(null)} open={dialog === "expense"} panelClassName="sm:max-w-5xl" title="Registrar gastos">
         <form className="grid gap-5" onSubmit={saveExpense}>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Fecha"><TextInput defaultValue={today()} name="date" required type="date" /></Field>
+            <Field label="Fecha"><DatePickerInput aria-label="Fecha de los gastos" defaultValue={today()} name="date" required /></Field>
             <Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field>
             <Field label="Proveedor (opcional)"><TextInput name="supplier" placeholder="Nombre del proveedor" /></Field>
           </div>
@@ -446,7 +554,7 @@ export function NurserySection() {
         </form>
       </Modal>
 
-      <Modal onClose={() => setDialog(null)} open={dialog === "payment"} panelClassName="sm:max-w-lg" title="Registrar abono">{selectedSale ? <form className="grid gap-4" onSubmit={savePayment}><div className="rounded-xl bg-app-sidebar p-4"><p className="text-xs text-app-muted">Venta #{selectedSale.folio} · saldo pendiente</p><p className="mt-2 text-2xl font-light tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div><Field label="Fecha"><TextInput defaultValue={today()} name="date" required type="date" /></Field><Field label="Monto del abono"><TextInput autoFocus inputMode="decimal" max={selectedSale.balance_amount} min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field><Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Referencia o detalle del pago" /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar abono"}</Button></div></form> : null}</Modal>
+      <Modal onClose={() => setDialog(null)} open={dialog === "payment"} panelClassName="sm:max-w-lg" title="Registrar abono">{selectedSale ? <form className="grid gap-4" onSubmit={savePayment}><div className="rounded-xl bg-app-sidebar p-4"><p className="text-xs text-app-muted">Venta #{selectedSale.folio} · saldo pendiente</p><p className="mt-2 text-2xl font-light tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div><Field label="Fecha"><DatePickerInput aria-label="Fecha del abono" defaultValue={today()} name="date" required /></Field><Field label="Monto del abono"><TextInput autoFocus inputMode="decimal" max={selectedSale.balance_amount} min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field><Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Referencia o detalle del pago" /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar abono"}</Button></div></form> : null}</Modal>
     </section>
   );
 }

@@ -46,6 +46,7 @@ export function RouteSync() {
       }
       const needsCanonicalPath = route.organizationSlug !== canonicalOrganization
         || !route.isKnown
+        || route.isLegacy
         || (route.section === "calendar" && !route.weekStart);
 
       if (needsCanonicalPath) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent, InputHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
@@ -61,10 +61,11 @@ function formatDateLabel(value?: string) {
 }
 
 function monthLabel(date: Date) {
-  return new Intl.DateTimeFormat("es-MX", {
+  const label = new Intl.DateTimeFormat("es-MX", {
     month: "long",
     year: "numeric"
   }).format(date);
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function isDateAllowed(value: string, min?: string, max?: string) {
@@ -103,6 +104,7 @@ type DatePickerInputProps = Omit<
 };
 
 export function DatePickerInput({
+  "aria-label": ariaLabel,
   className,
   defaultValue = "",
   disabled,
@@ -115,6 +117,9 @@ export function DatePickerInput({
   value,
   ...props
 }: DatePickerInputProps) {
+  const calendarId = useId();
+  const monthLabelId = `${calendarId}-month`;
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [internalValue, setInternalValue] = useState(defaultValue);
   const selectedValue = value ?? internalValue;
   const selectedDate = parseDateKey(selectedValue);
@@ -130,12 +135,24 @@ export function DatePickerInput({
     if (nextDate) setViewMonth(startOfMonth(nextDate));
   }, [selectedValue]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
   const setSelectedValue = (nextValue: string) => {
     if (!isDateAllowed(nextValue, minValue, maxValue)) return;
     if (value === undefined) setInternalValue(nextValue);
     emitInputChange(name, nextValue, onChange);
     setViewMonth(startOfMonth(parseDateKey(nextValue) ?? new Date()));
     setOpen(false);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
   const firstOfMonth = startOfMonth(viewMonth);
@@ -153,35 +170,44 @@ export function DatePickerInput({
     <div ref={containerRef} className="relative">
       <input disabled={disabled} name={name} readOnly required={required} type="hidden" value={selectedValue} {...props} />
       <button
+        ref={triggerRef}
+        aria-controls={calendarId}
         aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={ariaLabel ?? `${selectedValue ? "Cambiar" : "Seleccionar"} fecha: ${formatDateLabel(selectedValue)}`}
         className={cn(inputShellClass, className)}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <span className={cn(!selectedValue && "text-app-muted")}>{formatDateLabel(selectedValue)}</span>
-        <CalendarDays className="h-4 w-4 text-app-muted" />
+        <CalendarDays aria-hidden="true" className="h-4 w-4 text-app-muted" />
       </button>
 
       {open ? (
-        <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-app-border bg-white p-3 shadow-[0_18px_44px_rgba(13,13,13,0.16)]">
+        <div
+          aria-labelledby={monthLabelId}
+          className="absolute left-1/2 top-[calc(100%+8px)] z-50 w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-app-border bg-white p-3 shadow-[0_18px_44px_rgba(13,13,13,0.16)] sm:left-0 sm:translate-x-0"
+          id={calendarId}
+          role="dialog"
+        >
           <div className="mb-3 flex items-center justify-between gap-2">
             <button
               aria-label="Mes anterior"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-muted hover:bg-app-sidebar hover:text-app-text"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-app-border text-app-muted transition-[background-color,border-color,color] hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
               onClick={() => setViewMonth((current) => addMonths(current, -1))}
               type="button"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft aria-hidden="true" className="h-4 w-4" />
             </button>
-            <p className="text-sm font-semibold capitalize text-app-text">{monthLabel(viewMonth)}</p>
+            <p className="text-sm font-semibold text-app-text" id={monthLabelId}>{monthLabel(viewMonth)}</p>
             <button
               aria-label="Mes siguiente"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-muted hover:bg-app-sidebar hover:text-app-text"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-app-border text-app-muted transition-[background-color,border-color,color] hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
               onClick={() => setViewMonth((current) => addMonths(current, 1))}
               type="button"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
 
@@ -189,7 +215,7 @@ export function DatePickerInput({
             <div className="mb-3 grid grid-cols-4 gap-1.5">
               {quickActions.map((action) => (
                 <button
-                  className="h-8 rounded-lg border border-app-border px-2 text-xs font-medium text-app-muted hover:bg-app-sidebar hover:text-app-text"
+                  className="min-h-9 rounded-xl border border-app-border px-2 text-xs font-medium text-app-muted transition-[background-color,border-color,color] hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
                   key={action.label}
                   onClick={() => setSelectedValue(action.value)}
                   type="button"
@@ -217,8 +243,9 @@ export function DatePickerInput({
               return (
                 <button
                   aria-label={formatDateLabel(key)}
+                  aria-pressed={isSelected}
                   className={cn(
-                    "flex h-9 items-center justify-center rounded-lg text-sm font-medium transition",
+                    "flex h-9 items-center justify-center rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-app-green",
                     isCurrentMonth ? "text-app-text" : "text-app-muted/45",
                     isToday && !isSelected && "ring-1 ring-app-green/30",
                     isSelected && "bg-app-green text-white",

@@ -1,8 +1,8 @@
-import { startOfIsoWeek } from "@/lib/date";
-import { organizationRouteSlug } from "@/lib/organization-routing";
-import type { ContextPeriod, SectionId } from "@/types";
+import { startOfIsoWeek } from "./date.ts";
+import { organizationRouteSlug } from "./organization-routing.ts";
+import type { ContextPeriod, SectionId } from "../types/index.ts";
 
-export { organizationRouteSlug } from "@/lib/organization-routing";
+export { organizationRouteSlug } from "./organization-routing.ts";
 
 export const allGreenhousesId = "__all__";
 
@@ -45,7 +45,7 @@ const sectionSegments: Record<SectionId, string[]> = {
   applications: ["operations", "applications"],
   pests: ["health"],
   harvest: ["harvest"],
-  nursery: ["nursery"],
+  nursery: ["vivero"],
   inventory: ["inventory"],
   costs: ["costs"],
   reports: ["reports"],
@@ -84,7 +84,7 @@ export function allowsAllGreenhouses(section: SectionId) {
   return !["overview", "monitoring"].includes(section);
 }
 
-export function parseAppRoute(pathname: string, searchParams: URLSearchParams): RouteState & { organizationSlug?: string; isKnown: boolean; entity?: EntityRoute } {
+export function parseAppRoute(pathname: string, searchParams: URLSearchParams): RouteState & { organizationSlug?: string; isKnown: boolean; isLegacy: boolean; entity?: EntityRoute } {
   const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
   const [organizationSlug, ...routeSegments] = segments;
   const calendarWeek = routeSegments[0] === "operations" && routeSegments[1] === "week" ? routeSegments[2] : undefined;
@@ -92,6 +92,7 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   const isLegacyRecordsRoute = sectionKey === "records";
   const isLegacyCostsRoute = sectionKey === "costs";
   const isLegacyReportsRoute = sectionKey === "reports";
+  const isLegacyNurseryRoute = sectionKey === "nursery";
   const entity = routeSegments[0] === "greenhouses" && routeSegments.length === 2
     ? { type: "greenhouse" as const, greenhousePublicId: routeSegments[1] }
     : routeSegments[0] === "greenhouses" && routeSegments[2] === "cycles" && routeSegments[3] === "current" && routeSegments.length === 4
@@ -113,6 +114,8 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
             ? "inventory"
             : isLegacyReportsRoute
               ? "overview"
+              : isLegacyNurseryRoute
+                ? "nursery"
               : routeSections.get(sectionKey) ?? "overview";
   const greenhouseId = searchParams.get("greenhouse") ?? undefined;
   const periodValue = searchParams.get("period");
@@ -134,7 +137,8 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   return {
     organizationSlug,
     section,
-    isKnown: !isLegacyCostsRoute && !isLegacyReportsRoute && (Boolean(entity) || routeSegments.length === 0 || routeSections.has(sectionKey)),
+    isKnown: !isLegacyCostsRoute && !isLegacyReportsRoute && (Boolean(entity) || routeSegments.length === 0 || routeSections.has(sectionKey) || isLegacyNurseryRoute),
+    isLegacy: isLegacyNurseryRoute,
     entity,
     greenhouseId,
     period: periodValue && periods.has(periodValue as ContextPeriod) ? periodValue as ContextPeriod : undefined,
