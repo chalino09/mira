@@ -101,6 +101,7 @@ type DatePickerInputProps = Omit<
   defaultValue?: string;
   onChange?: (event: PickerChange) => void;
   showQuickActions?: boolean;
+  dropUp?: boolean;
 };
 
 export function DatePickerInput({
@@ -114,6 +115,7 @@ export function DatePickerInput({
   onChange,
   required,
   showQuickActions = true,
+  dropUp = false,
   value,
   ...props
 }: DatePickerInputProps) {
@@ -152,7 +154,7 @@ export function DatePickerInput({
     emitInputChange(name, nextValue, onChange);
     setViewMonth(startOfMonth(parseDateKey(nextValue) ?? new Date()));
     setOpen(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
+    window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
   };
 
   const firstOfMonth = startOfMonth(viewMonth);
@@ -187,7 +189,7 @@ export function DatePickerInput({
       {open ? (
         <div
           aria-labelledby={monthLabelId}
-          className="absolute left-1/2 top-[calc(100%+8px)] z-50 w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-app-border bg-white p-3 shadow-[0_18px_44px_rgba(13,13,13,0.16)] sm:left-0 sm:translate-x-0"
+          className={cn("absolute left-1/2 z-50 w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-app-border bg-white p-3 shadow-[0_18px_44px_rgba(13,13,13,0.16)] sm:left-0 sm:translate-x-0", dropUp ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]")}
           id={calendarId}
           role="dialog"
         >

@@ -55,6 +55,17 @@ export function formatNumericInput(value: string | number | null | undefined) {
   return hasDecimal ? `${formattedInteger}.${decimal}` : formattedInteger;
 }
 
+export function formatCurrencyInput(value: string | number | null | undefined) {
+  const cleaned = cleanNumericInput(value);
+  if (!cleaned) return "";
+
+  const sign = cleaned.startsWith("-") ? "-" : "";
+  const unsigned = cleaned.replace(/^[-+]/, "");
+  const [integer = "", decimal = ""] = unsigned.split(".");
+  const formattedInteger = Number(integer || 0).toLocaleString("es-MX");
+  return `$${sign}${formattedInteger}${unsigned.includes(".") ? `.${decimal}` : ""}`;
+}
+
 export function formatQuantityInput(value: string | number | null | undefined) {
   if (typeof value === "number") {
     return formatNumericInput(value);

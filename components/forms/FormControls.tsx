@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useRef, useState } from "react";
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { cn, formatNumericInput, formatQuantityInput } from "@/lib/utils";
+import { cn, formatCurrencyInput, formatNumericInput, formatQuantityInput } from "@/lib/utils";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10";
@@ -91,6 +91,10 @@ const FormattedInput = forwardRef<HTMLInputElement, FormattedInputProps & {
 
 export const FormattedNumberInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedNumberInput(props, ref) {
   return <FormattedInput {...props} formatter={formatNumericInput} ref={ref} />;
+});
+
+export const FormattedCurrencyInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedCurrencyInput(props, ref) {
+  return <FormattedInput {...props} formatter={formatCurrencyInput} ref={ref} />;
 });
 
 export const FormattedQuantityInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedQuantityInput(props, ref) {

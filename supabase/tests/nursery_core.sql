@@ -198,11 +198,32 @@ begin
     raise exception 'Credit did not settle correctly: paid %, balance %, status %', paid, balance, status;
   end if;
 
+  perform public.update_nursery_sale(
+    credit_sale_id, customer_a, current_date, 'credit', current_date + 30,
+    1500, 'Total corregido después de identificar abonos'
+  );
+  select paid_amount, balance_amount, payment_status
+  into paid, balance, status
+  from public.nursery_sale_balances where id = credit_sale_id;
+  if paid <> 1000 or balance <> 500 or status <> 'partial' then
+    raise exception 'Corrected sale did not preserve receipts: paid %, balance %, status %', paid, balance, status;
+  end if;
+
+  begin
+    perform public.update_nursery_sale(
+      credit_sale_id, customer_a, current_date, 'credit', current_date + 30,
+      999, null
+    );
+    raise exception 'Nursery accepted a corrected total below active receipts';
+  exception when others then
+    if sqlerrm <> 'nursery_sale_total_below_paid' then raise; end if;
+  end;
+
   perform public.void_nursery_receipt(final_receipt_id, 'Captura duplicada de prueba');
   select paid_amount, balance_amount, payment_status
   into paid, balance, status
   from public.nursery_sale_balances where id = credit_sale_id;
-  if paid <> 900 or balance <> 100 or status <> 'overdue' then
+  if paid <> 900 or balance <> 600 or status <> 'partial' then
     raise exception 'Voiding a receipt did not restore the balance';
   end if;
 

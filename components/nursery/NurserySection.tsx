@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, CircleDollarSign, FilterX, Minus, Package, Pencil, Plus, ReceiptText, RefreshCw, Search, Sprout, UserRound, WalletCards } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, CircleDollarSign, Eye, FilterX, Minus, Package, Pencil, Plus, ReceiptText, RefreshCw, Search, Sprout, Trash2, UserRound, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PageTitle } from "@/components/ui/PageTitle";
 import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
-import { Field, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { Field, FormattedCurrencyInput, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { MiraWordmark } from "@/components/brand/MiraBrand";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
@@ -25,11 +25,14 @@ type Sale = {
   customer_id: string | null;
   occurred_at: string;
   due_date: string | null;
+  payment_terms: "cash" | "credit";
   total_amount: number;
   paid_amount: number;
   balance_amount: number;
   payment_status: "paid" | "pending" | "partial" | "overdue" | "cancelled";
+  notes: string | null;
 };
+type SaleReceipt = { id: string; occurred_at: string; payment_method: string; amount: number; notes: string | null; voided_at: string | null; void_reason: string | null };
 type LedgerEntry = {
   source_id: string;
   occurred_at: string;
@@ -38,7 +41,7 @@ type LedgerEntry = {
   signed_amount: number;
   description: string;
 };
-type Dialog = "sale" | "expense" | "payment" | "customer" | "catalog" | null;
+type Dialog = "sale" | "expense" | "payment" | "saleDetails" | "editSale" | "voidReceipt" | "customer" | "catalog" | null;
 type NurseryView = "overview" | "customers" | "catalog";
 type ExpenseCategory = "payroll" | "seed" | "tray" | "cover" | "substrate" | "supplies" | "transport" | "services" | "maintenance" | "freight" | "other";
 type ExpenseDraft = { category: ExpenseCategory; concept: string; amount: string; quantity: string; unit: string; unitPrice: string };
@@ -132,6 +135,10 @@ export function NurserySection() {
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [saleReceipts, setSaleReceipts] = useState<SaleReceipt[]>([]);
+  const [selectedReceipt, setSelectedReceipt] = useState<SaleReceipt | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [editSaleTerms, setEditSaleTerms] = useState<"cash" | "credit">("cash");
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [saleTerms, setSaleTerms] = useState<"cash" | "credit">("cash");
   const [dateFrom, setDateFrom] = useState("");
@@ -164,7 +171,7 @@ export function NurserySection() {
     const [customerResponse, catalogResponse, salesResponse, ledgerResponse] = await Promise.all([
       supabase.from("nursery_customers").select("id,display_name,phone,notes").eq("company_id", organization.id).eq("is_active", true).order("display_name"),
       supabase.from("nursery_catalog_items").select("id,item_kind,name,variety,unit,default_unit_price").eq("nursery_id", currentNursery.id).eq("item_kind", "seedling").eq("is_active", true).order("name"),
-      supabase.from("nursery_sale_balances").select("id,folio,customer_id,occurred_at,due_date,total_amount,paid_amount,balance_amount,payment_status").eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).order("folio", { ascending: false }).limit(100),
+      supabase.from("nursery_sale_balances").select("id,folio,customer_id,occurred_at,due_date,payment_terms,total_amount,paid_amount,balance_amount,payment_status,notes").eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).order("folio", { ascending: false }).limit(100),
       supabase.from("nursery_cash_ledger").select("source_id,occurred_at,movement_type,payment_method,signed_amount,description").eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).limit(100)
     ]);
     const error = customerResponse.error || catalogResponse.error || salesResponse.error || ledgerResponse.error;
@@ -340,6 +347,77 @@ export function NurserySection() {
     setDialog(null); setSelectedSale(null); setNotice({ tone: "green", message: "Abono registrado." }); await load();
   };
 
+  const loadSaleReceipts = async (saleId: string) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setDetailLoading(true);
+    const allocationResponse = await supabase.from("nursery_receipt_allocations").select("receipt_id,amount").eq("sale_id", saleId);
+    if (allocationResponse.error) {
+      setDetailLoading(false);
+      setNotice({ tone: "red", message: appErrorMessage(allocationResponse.error, "No se pudo cargar el historial de abonos.") });
+      return;
+    }
+    const allocations = allocationResponse.data ?? [];
+    if (!allocations.length) {
+      setSaleReceipts([]);
+      setDetailLoading(false);
+      return;
+    }
+    const allocatedAmounts = new Map(allocations.map((allocation) => [allocation.receipt_id as string, Number(allocation.amount)]));
+    const receiptResponse = await supabase.from("nursery_receipts").select("id,occurred_at,payment_method,amount,notes,voided_at,void_reason").in("id", Array.from(allocatedAmounts.keys())).order("occurred_at", { ascending: false });
+    setDetailLoading(false);
+    if (receiptResponse.error) return setNotice({ tone: "red", message: appErrorMessage(receiptResponse.error, "No se pudo cargar el historial de abonos.") });
+    setSaleReceipts((receiptResponse.data ?? []).map((receipt) => ({ ...receipt, amount: allocatedAmounts.get(receipt.id) ?? Number(receipt.amount) })) as SaleReceipt[]);
+  };
+
+  const openSaleDetails = async (sale: Sale) => {
+    setSelectedSale(sale);
+    setSaleReceipts([]);
+    setDialog("saleDetails");
+    await loadSaleReceipts(sale.id);
+  };
+
+  const saveSaleCorrection = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedSale) return;
+    const form = new FormData(event.currentTarget);
+    const totalAmount = parseNumericInput(String(form.get("totalAmount") ?? "")) ?? 0;
+    if (totalAmount < Number(selectedSale.paid_amount)) {
+      return setNotice({ tone: "red", message: `El total no puede ser menor que lo ya abonado (${formatCurrency(selectedSale.paid_amount)}).` });
+    }
+    setSaving(true);
+    const { error } = await getSupabaseBrowserClient()!.rpc("update_nursery_sale", {
+      target_sale_id: selectedSale.id,
+      target_customer_id: String(form.get("customerId") || "") || null,
+      target_occurred_at: form.get("date"),
+      target_payment_terms: editSaleTerms,
+      target_due_date: editSaleTerms === "credit" ? form.get("dueDate") : null,
+      target_total_amount: totalAmount,
+      target_notes: String(form.get("notes") ?? "") || null
+    });
+    setSaving(false);
+    if (error) return setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo corregir la venta. Revisa el total y los datos de crédito.") });
+    setDialog(null); setSelectedSale(null); setNotice({ tone: "green", message: "Venta corregida. Los abonos anteriores se conservaron." }); await load();
+  };
+
+  const voidReceipt = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedReceipt || !selectedSale) return;
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    const { error } = await getSupabaseBrowserClient()!.rpc("void_nursery_receipt", { target_receipt_id: selectedReceipt.id, target_reason: form.get("reason") });
+    setSaving(false);
+    if (error) return setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo anular el abono.") });
+    const saleId = selectedSale.id;
+    setSelectedReceipt(null);
+    setNotice({ tone: "green", message: "Abono anulado. El saldo de la venta fue actualizado." });
+    await load();
+    const { data: refreshedSale } = await getSupabaseBrowserClient()!.from("nursery_sale_balances").select("id,folio,customer_id,occurred_at,due_date,payment_terms,total_amount,paid_amount,balance_amount,payment_status,notes").eq("id", saleId).single();
+    if (refreshedSale) setSelectedSale(refreshedSale as Sale);
+    setDialog("saleDetails");
+    await loadSaleReceipts(saleId);
+  };
+
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -467,7 +545,7 @@ export function NurserySection() {
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <section aria-labelledby="sales-title" className="min-w-0"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Saldos vigentes y ventas recientes.</p></div></div>
-          {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex items-center justify-between gap-4 sm:justify-end"><div className="text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <Button className="h-10 min-h-10" onClick={() => { setSelectedSale(sale); setDialog("payment"); }} variant="secondary">Registrar abono</Button> : null}</div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
+          {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end"><div className="me-1 text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div><Button icon={<Eye aria-hidden="true" className="h-4 w-4" />} onClick={() => void openSaleDetails(sale)} variant="ghost">Ver detalle</Button>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <Button className="h-10 min-h-10" onClick={() => { setSelectedSale(sale); setDialog("payment"); }} variant="secondary">Registrar abono</Button> : null}</div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
         </section>
 
         <aside aria-labelledby="ledger-title" className="min-w-0"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Entradas y salidas recientes.</p></div>
@@ -552,6 +630,38 @@ export function NurserySection() {
           <p className="text-xs leading-5 text-app-muted">Este precio sirve como referencia y podrá cambiarse en cada venta.</p>
           <div className="flex justify-end gap-2 pt-2"><Button onClick={() => { setDialog(null); setSelectedCatalogItem(null); }} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : selectedCatalogItem ? "Guardar cambios" : "Agregar plántula"}</Button></div>
         </form>
+      </Modal>
+
+      <Modal onClose={() => { setDialog(null); setSelectedSale(null); setSaleReceipts([]); }} open={dialog === "saleDetails"} panelClassName="sm:max-w-2xl" title={selectedSale ? `Venta #${selectedSale.folio}` : "Detalle de venta"}>
+        {selectedSale ? <div className="grid gap-6">
+          <div className="grid gap-3 rounded-2xl bg-app-sidebar p-4 sm:grid-cols-3">
+            <div><p className="text-xs text-app-muted">Total</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.total_amount)}</p></div>
+            <div><p className="text-xs text-app-muted">Abonado</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.paid_amount)}</p></div>
+            <div><p className="text-xs text-app-muted">Saldo pendiente</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div>
+          </div>
+          <div className="grid gap-1 text-sm"><p className="font-medium text-app-text">{customerNames.get(selectedSale.customer_id ?? "") ?? "Venta de mostrador"}</p><p className="text-app-muted">{dateLabel(selectedSale.occurred_at)}{selectedSale.due_date ? ` · vence ${dateLabel(selectedSale.due_date)}` : ""}</p>{selectedSale.notes ? <p className="mt-2 leading-6 text-app-muted">{selectedSale.notes}</p> : null}</div>
+          <section aria-labelledby="sale-payment-history">
+            <div className="flex items-end justify-between gap-3 border-b border-app-border pb-3"><div><h3 className="font-medium text-app-text" id="sale-payment-history">Historial de abonos</h3><p className="mt-1 text-xs text-app-muted">Los abonos anulados permanecen como evidencia.</p></div></div>
+            {detailLoading ? <p aria-live="polite" className="py-6 text-sm text-app-muted">Cargando abonos…</p> : saleReceipts.length ? <div>{saleReceipts.map((receipt) => <div className={cn("grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center", receipt.voided_at && "opacity-60")} key={receipt.id}><div><div className="flex flex-wrap items-center gap-2"><p className={cn("text-sm font-medium text-app-text", receipt.voided_at && "line-through")}>{formatCurrency(receipt.amount)}</p>{receipt.voided_at ? <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-700">Anulado</span> : null}</div><p className="mt-1 text-xs text-app-muted">{dateLabel(receipt.occurred_at)} · {receipt.payment_method === "cash" ? "Efectivo" : receipt.payment_method === "transfer" ? "Transferencia" : "Otro"}</p>{receipt.notes ? <p className="mt-1 text-xs text-app-muted">{receipt.notes}</p> : null}{receipt.void_reason ? <p className="mt-1 text-xs text-red-700">Motivo: {receipt.void_reason}</p> : null}</div>{!receipt.voided_at ? <Button className="text-red-700 hover:text-red-800" icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} onClick={() => { setSelectedReceipt(receipt); setDialog("voidReceipt"); }} variant="ghost">Anular abono</Button> : <span />}</div>)}</div> : <p className="py-6 text-sm text-app-muted">Esta venta no tiene abonos registrados.</p>}
+          </section>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button onClick={() => { setEditSaleTerms(selectedSale.payment_status === "paid" ? "credit" : selectedSale.payment_terms); setDialog("editSale"); }} variant="secondary">Modificar registro</Button>{Number(selectedSale.balance_amount) > 0 && selectedSale.payment_status !== "cancelled" ? <Button onClick={() => setDialog("payment")} variant="primary">Registrar abono</Button> : null}</div>
+        </div> : null}
+      </Modal>
+
+      <Modal onClose={() => setDialog("saleDetails")} open={dialog === "editSale"} panelClassName="sm:max-w-xl" title={selectedSale?.payment_status === "paid" ? "Modificar pago registrado" : "Editar venta"}>
+        {selectedSale ? <form className="grid gap-4" onSubmit={saveSaleCorrection}>
+          <p className="rounded-xl bg-sky-50 p-4 text-sm leading-6 text-sky-900">Captura el <strong className="font-semibold">total completo de la venta</strong>. Los {formatCurrency(selectedSale.paid_amount)} ya recibidos quedarán como abono y calcularemos lo que falta por cobrar.</p>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha de venta"><DatePickerInput aria-label="Fecha de la venta" defaultValue={selectedSale.occurred_at} name="date" required /></Field>{selectedSale.payment_status === "paid" ? <div className="rounded-xl bg-app-sidebar px-4 py-3"><p className="text-xs text-app-muted">Nuevo estado</p><p className="mt-1 text-sm font-medium text-app-text">Venta a crédito · pago parcial</p></div> : <Field label="Forma de venta"><SelectInput onChange={(event) => setEditSaleTerms(event.target.value as "cash" | "credit")} value={editSaleTerms}><option value="cash">Pagada</option><option value="credit">A crédito</option></SelectInput></Field>}</div>
+          <Field label={editSaleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><SelectInput defaultValue={selectedSale.customer_id ?? ""} name="customerId" required={editSaleTerms === "credit"}><option value="">Venta de mostrador</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.display_name}</option>)}</SelectInput></Field>
+          <Field label="Total completo de la venta"><FormattedCurrencyInput autoFocus defaultValue={selectedSale.total_amount} min={selectedSale.paid_amount} name="totalAmount" required step="0.01" /></Field>
+          {editSaleTerms === "credit" ? <Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={selectedSale.due_date ?? today()} min={selectedSale.occurred_at} name="dueDate" required showQuickActions={false} dropUp /></Field> : null}
+          <Field label="Notas (opcional)"><TextArea autoGrow defaultValue={selectedSale.notes ?? ""} name="notes" placeholder="Motivo o detalle de la corrección" /></Field>
+          <div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog("saleDetails")} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : selectedSale.payment_status === "paid" ? "Guardar como abono" : "Guardar cambios"}</Button></div>
+        </form> : null}
+      </Modal>
+
+      <Modal onClose={() => { setSelectedReceipt(null); setDialog("saleDetails"); }} open={dialog === "voidReceipt"} panelClassName="sm:max-w-lg" title="Anular abono">
+        {selectedReceipt ? <form className="grid gap-4" onSubmit={voidReceipt}><p className="text-sm leading-6 text-app-muted">Se anulará el abono de <strong className="font-semibold text-app-text">{formatCurrency(selectedReceipt.amount)}</strong>. El movimiento seguirá visible en el historial y el saldo pendiente aumentará.</p><Field label="Motivo de la anulación"><TextArea autoFocus autoGrow name="reason" placeholder="Ej. Importe capturado por error" required /></Field><div className="flex justify-end gap-2"><Button onClick={() => { setSelectedReceipt(null); setDialog("saleDetails"); }} type="button" variant="ghost">Cancelar</Button><Button className="border-red-700 bg-red-700 text-white hover:bg-red-800" disabled={saving} icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} type="submit">{saving ? "Anulando…" : "Anular abono"}</Button></div></form> : null}
       </Modal>
 
       <Modal onClose={() => setDialog(null)} open={dialog === "payment"} panelClassName="sm:max-w-lg" title="Registrar abono">{selectedSale ? <form className="grid gap-4" onSubmit={savePayment}><div className="rounded-xl bg-app-sidebar p-4"><p className="text-xs text-app-muted">Venta #{selectedSale.folio} · saldo pendiente</p><p className="mt-2 text-2xl font-light tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div><Field label="Fecha"><DatePickerInput aria-label="Fecha del abono" defaultValue={today()} name="date" required /></Field><Field label="Monto del abono"><TextInput autoFocus inputMode="decimal" max={selectedSale.balance_amount} min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field><Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Referencia o detalle del pago" /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar abono"}</Button></div></form> : null}</Modal>
