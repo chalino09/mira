@@ -41,8 +41,8 @@ type LedgerEntry = {
   signed_amount: number;
   description: string;
 };
-type Dialog = "sale" | "expense" | "payment" | "saleDetails" | "editSale" | "voidReceipt" | "customer" | "catalog" | null;
-type NurseryView = "overview" | "customers" | "catalog";
+type Dialog = "sale" | "expense" | "payment" | "saleDetails" | "editSale" | "voidReceipt" | "cancelSale" | "customer" | "catalog" | null;
+type NurseryView = "overview" | "payments" | "customers" | "catalog";
 type ExpenseCategory = "payroll" | "seed" | "tray" | "cover" | "substrate" | "supplies" | "transport" | "services" | "maintenance" | "freight" | "other";
 type ExpenseDraft = { category: ExpenseCategory; concept: string; amount: string; quantity: string; unit: string; unitPrice: string };
 type QuickPeriod = "all" | "today" | "week" | "month" | "30days";
@@ -152,6 +152,9 @@ export function NurserySection() {
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<CatalogItem | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [paymentCustomerQuery, setPaymentCustomerQuery] = useState("");
+  const [selectedPaymentCustomerId, setSelectedPaymentCustomerId] = useState<string | null>(null);
+  const [paymentScope, setPaymentScope] = useState<"pending" | "paid">("pending");
 
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -190,7 +193,7 @@ export function NurserySection() {
   const filteredSales = sales.filter((sale) =>
     isInsideDateRange(sale.occurred_at)
     && (customerFilter === "all" || sale.customer_id === customerFilter)
-    && (statusFilter === "all" || sale.payment_status === statusFilter)
+    && (statusFilter === "all" ? sale.payment_status !== "cancelled" : sale.payment_status === statusFilter)
   );
   const filteredLedger = ledger.filter((entry) => isInsideDateRange(entry.occurred_at));
   const activeSales = filteredSales.filter((sale) => sale.payment_status !== "cancelled");
@@ -247,6 +250,29 @@ export function NurserySection() {
   );
   const filteredCustomers = customers.filter((customer) => [customer.display_name, customer.phone ?? ""].some((value) => value.toLocaleLowerCase("es-MX").includes(customerQuery.trim().toLocaleLowerCase("es-MX"))));
   const filteredCatalogItems = catalogItems.filter((item) => [item.name, item.variety ?? "", item.unit].some((value) => value.toLocaleLowerCase("es-MX").includes(catalogQuery.trim().toLocaleLowerCase("es-MX"))));
+  const paymentCustomers = customers
+    .map((customer) => {
+      const customerSales = sales.filter((sale) => sale.customer_id === customer.id
+        && sale.payment_status !== "cancelled"
+        && (paymentScope === "pending" ? Number(sale.balance_amount) > 0 : Number(sale.balance_amount) === 0));
+      return {
+        ...customer,
+        sales: customerSales,
+        balance: customerSales.reduce((sum, sale) => sum + Number(sale.balance_amount), 0)
+      };
+    })
+    .filter((customer) => customer.sales.length > 0)
+    .filter((customer) => [customer.display_name, customer.phone ?? ""].some((value) => value.toLocaleLowerCase("es-MX").includes(paymentCustomerQuery.trim().toLocaleLowerCase("es-MX"))))
+    .sort((left, right) => right.balance - left.balance || left.display_name.localeCompare(right.display_name, "es-MX"));
+  const effectivePaymentCustomerId = selectedPaymentCustomerId && paymentCustomers.some((customer) => customer.id === selectedPaymentCustomerId)
+    ? selectedPaymentCustomerId
+    : paymentCustomers[0]?.id ?? null;
+  const paymentCustomer = paymentCustomers.find((customer) => customer.id === effectivePaymentCustomerId) ?? null;
+  const paymentCustomerSales = [...(paymentCustomer?.sales ?? [])].sort((left, right) => {
+    const leftOpen = Number(left.balance_amount) > 0 ? 0 : 1;
+    const rightOpen = Number(right.balance_amount) > 0 ? 0 : 1;
+    return leftOpen - rightOpen || right.occurred_at.localeCompare(left.occurred_at) || right.folio - left.folio;
+  });
 
   const initializeNursery = async () => {
     const supabase = getSupabaseBrowserClient();
@@ -336,9 +362,13 @@ export function NurserySection() {
     event.preventDefault();
     if (!selectedSale) return;
     const form = new FormData(event.currentTarget);
+    const amount = parseNumericInput(String(form.get("amount") ?? "")) ?? 0;
+    if (amount <= 0 || amount > Number(selectedSale.balance_amount)) {
+      return setNotice({ tone: "red", message: `El abono debe ser mayor a $0 y no exceder ${formatCurrency(selectedSale.balance_amount)}.` });
+    }
     setSaving(true);
     const { error } = await getSupabaseBrowserClient()!.rpc("record_nursery_payment", {
-      target_sale_id: selectedSale.id, target_occurred_at: form.get("date"), target_amount: Number(form.get("amount")),
+      target_sale_id: selectedSale.id, target_occurred_at: form.get("date"), target_amount: amount,
       target_payment_method: form.get("paymentMethod"), target_receipt_kind: "sale_payment", target_notes: String(form.get("notes") ?? "") || null,
       target_source_reference: null
     });
@@ -382,6 +412,10 @@ export function NurserySection() {
     if (!selectedSale) return;
     const form = new FormData(event.currentTarget);
     const totalAmount = parseNumericInput(String(form.get("totalAmount") ?? "")) ?? 0;
+    const dueDate = String(form.get("dueDate") || "").trim() || null;
+    if (editSaleTerms === "credit" && !dueDate) {
+      return setNotice({ tone: "red", message: "Selecciona la fecha límite de pago." });
+    }
     if (totalAmount < Number(selectedSale.paid_amount)) {
       return setNotice({ tone: "red", message: `El total no puede ser menor que lo ya abonado (${formatCurrency(selectedSale.paid_amount)}).` });
     }
@@ -391,7 +425,7 @@ export function NurserySection() {
       target_customer_id: String(form.get("customerId") || "") || null,
       target_occurred_at: form.get("date"),
       target_payment_terms: editSaleTerms,
-      target_due_date: editSaleTerms === "credit" ? form.get("dueDate") : null,
+      target_due_date: editSaleTerms === "credit" ? dueDate : null,
       target_total_amount: totalAmount,
       target_notes: String(form.get("notes") ?? "") || null
     });
@@ -416,6 +450,29 @@ export function NurserySection() {
     if (refreshedSale) setSelectedSale(refreshedSale as Sale);
     setDialog("saleDetails");
     await loadSaleReceipts(saleId);
+  };
+
+  const cancelSale = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedSale) return;
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    const { error } = await getSupabaseBrowserClient()!.rpc("cancel_nursery_sale", {
+      target_sale_id: selectedSale.id,
+      target_reason: form.get("reason")
+    });
+    setSaving(false);
+    if (error) {
+      const message = String(error.message ?? "").includes("nursery_sale_has_active_receipts")
+        ? "Anula primero los abonos activos de esta venta."
+        : appErrorMessage(error, "No se pudo anular la venta.");
+      return setNotice({ tone: "red", message });
+    }
+    setDialog(null);
+    setSelectedSale(null);
+    setSaleReceipts([]);
+    setNotice({ tone: "green", message: "Venta anulada." });
+    await load();
   };
 
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
@@ -475,7 +532,7 @@ export function NurserySection() {
 
       <nav aria-label="Secciones de Vivero" className="mb-6 overflow-x-auto border-b border-app-border">
         <div className="flex min-w-max gap-1">
-          {([{ id: "overview", label: "Resumen" }, { id: "customers", label: "Clientes" }, { id: "catalog", label: "Catálogo" }] as const).map((view) => (
+          {([{ id: "overview", label: "Resumen" }, { id: "payments", label: "Abonos" }, { id: "customers", label: "Clientes" }, { id: "catalog", label: "Catálogo" }] as const).map((view) => (
             <button aria-current={activeView === view.id ? "page" : undefined} className={cn("min-h-11 border-b-2 px-4 text-sm font-medium transition-[border-color,color]", activeView === view.id ? "border-app-green text-app-text" : "border-transparent text-app-muted hover:text-app-text")} key={view.id} onClick={() => setActiveView(view.id)} type="button">{view.label}</button>
           ))}
         </div>
@@ -545,7 +602,7 @@ export function NurserySection() {
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <section aria-labelledby="sales-title" className="min-w-0"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Saldos vigentes y ventas recientes.</p></div></div>
-          {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end"><div className="me-1 text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div><Button icon={<Eye aria-hidden="true" className="h-4 w-4" />} onClick={() => void openSaleDetails(sale)} variant="ghost">Ver detalle</Button>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <Button className="h-10 min-h-10" onClick={() => { setSelectedSale(sale); setDialog("payment"); }} variant="secondary">Registrar abono</Button> : null}</div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
+          {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end"><div className="me-1 text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div><Button icon={<Eye aria-hidden="true" className="h-4 w-4" />} onClick={() => void openSaleDetails(sale)} variant="ghost">Ver detalle</Button></div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
         </section>
 
         <aside aria-labelledby="ledger-title" className="min-w-0"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Entradas y salidas recientes.</p></div>
@@ -553,6 +610,43 @@ export function NurserySection() {
         </aside>
       </div>
       </> : null}
+
+      {activeView === "payments" ? (
+        <section aria-labelledby="payments-title">
+          <div className="mb-6 grid gap-4 border-b border-app-border pb-5 sm:grid-cols-[minmax(0,1fr)_minmax(240px,360px)] sm:items-end">
+            <div><h2 className="text-xl font-medium text-app-text" id="payments-title">Abonos</h2><div aria-label="Estado de las cuentas" className="mt-4 inline-flex rounded-xl bg-app-sidebar p-1" role="group"><button aria-pressed={paymentScope === "pending"} className={cn("min-h-9 rounded-lg px-4 text-sm font-medium transition-[background-color,color,box-shadow]", paymentScope === "pending" ? "bg-white text-app-text shadow-sm" : "text-app-muted hover:text-app-text")} onClick={() => { setPaymentScope("pending"); setSelectedPaymentCustomerId(null); }} type="button">Pendientes</button><button aria-pressed={paymentScope === "paid"} className={cn("min-h-9 rounded-lg px-4 text-sm font-medium transition-[background-color,color,box-shadow]", paymentScope === "paid" ? "bg-white text-app-text shadow-sm" : "text-app-muted hover:text-app-text")} onClick={() => { setPaymentScope("paid"); setSelectedPaymentCustomerId(null); }} type="button">Pagadas</button></div></div>
+            <Field label="Buscar cliente"><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-muted" /><TextInput className="pl-9" onChange={(event) => setPaymentCustomerQuery(event.target.value)} placeholder="Nombre o teléfono" type="search" value={paymentCustomerQuery} /></div></Field>
+          </div>
+
+          {paymentCustomers.length ? <div className="grid h-[46rem] grid-rows-[12rem_minmax(0,1fr)] gap-6 lg:h-[34rem] lg:grid-cols-[minmax(260px,.7fr)_minmax(0,1.3fr)] lg:grid-rows-1">
+            <section aria-labelledby="payment-customers-title" className="min-h-0 min-w-0 rounded-2xl bg-app-sidebar p-2">
+              <h3 className="sr-only" id="payment-customers-title">Clientes con movimientos</h3>
+              <div className="h-full overflow-y-auto overscroll-contain">
+                {paymentCustomers.map((customer) => {
+                  const selected = customer.id === effectivePaymentCustomerId;
+                  return <button aria-pressed={selected} className={cn("flex min-h-16 w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-[background-color,color,box-shadow] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green", selected ? "bg-white text-app-text shadow-sm" : "text-app-muted hover:bg-white/70 hover:text-app-text")} key={customer.id} onClick={() => setSelectedPaymentCustomerId(customer.id)} type="button"><span className="min-w-0"><span className="block truncate text-sm font-medium">{customer.display_name}</span><span className="mt-1 block text-xs">{customer.sales.length} {customer.sales.length === 1 ? "cuenta" : "cuentas"}</span></span><span className={cn("shrink-0 text-sm font-semibold tabular-nums", customer.balance > 0 ? "text-app-text" : "text-app-muted")}>{formatCurrency(customer.balance)}</span></button>;
+                })}
+              </div>
+            </section>
+
+            {paymentCustomer ? <section aria-labelledby="payment-account-title" className="flex h-full min-h-0 min-w-0 flex-col">
+              <div className="grid shrink-0 gap-4 rounded-2xl bg-app-sidebar p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:p-5">
+                <div className="min-w-0"><h3 className="truncate text-lg font-medium text-app-text" id="payment-account-title">{paymentCustomer.display_name}</h3>{paymentCustomer.phone ? <p className="mt-1 text-xs text-app-muted">{paymentCustomer.phone}</p> : null}</div>
+                <div className="sm:text-right"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-app-muted">Abonado</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(paymentCustomer.sales.reduce((sum, sale) => sum + Number(sale.paid_amount), 0))}</p></div>
+                <div className="sm:text-right"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-app-muted">Saldo</p><p className="mt-1 text-xl font-semibold tabular-nums text-app-text">{formatCurrency(paymentCustomer.balance)}</p></div>
+              </div>
+
+              <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto overscroll-contain pe-2">
+                {paymentCustomerSales.map((sale) => { const status = statusCopy[sale.payment_status]; const open = Number(sale.balance_amount) > 0; return <article className="rounded-2xl border border-app-border bg-white p-4 sm:p-5" key={sale.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-medium text-app-text">Venta #{sale.folio}</h4><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 text-xs text-app-muted">{dateLabel(sale.occurred_at)}{sale.due_date ? ` · vence ${dateLabel(sale.due_date)}` : ""}</p></div><p className="text-sm font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p></div>
+                  <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-app-sidebar p-3 sm:grid-cols-3"><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Total</dt><dd className="mt-1 text-sm font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</dd></div><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Abonado</dt><dd className="mt-1 text-sm font-medium tabular-nums text-app-text">{formatCurrency(sale.paid_amount)}</dd></div><div className="col-span-2 sm:col-span-1"><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Saldo</dt><dd className="mt-1 text-sm font-semibold tabular-nums text-app-text">{formatCurrency(sale.balance_amount)}</dd></div></dl>
+                  <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button onClick={() => void openSaleDetails(sale)} variant="ghost">Historial</Button>{open ? <Button onClick={() => { setSelectedSale(sale); setDialog("payment"); }} variant="primary">Registrar abono</Button> : <Button onClick={() => { setSelectedSale(sale); setEditSaleTerms("credit"); setDialog("editSale"); }} variant="secondary">Agregar saldo pendiente</Button>}</div>
+                </article>; })}
+              </div>
+            </section> : null}
+          </div> : <EmptyState icon={CircleDollarSign} title={paymentCustomerQuery ? "No hay clientes que coincidan con la búsqueda." : paymentScope === "pending" ? "No hay cuentas pendientes." : "No hay cuentas pagadas."} />}
+        </section>
+      ) : null}
 
       {activeView === "customers" ? (
         <section aria-labelledby="customers-title">
@@ -637,26 +731,31 @@ export function NurserySection() {
           <div className="grid gap-3 rounded-2xl bg-app-sidebar p-4 sm:grid-cols-3">
             <div><p className="text-xs text-app-muted">Total</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.total_amount)}</p></div>
             <div><p className="text-xs text-app-muted">Abonado</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.paid_amount)}</p></div>
-            <div><p className="text-xs text-app-muted">Saldo pendiente</p><p className="mt-1 font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div>
+            <div><p className="text-xs text-app-muted">Saldo pendiente</p><p className="mt-1 font-medium tabular-nums text-app-text">{selectedSale.payment_status === "cancelled" ? "—" : formatCurrency(selectedSale.balance_amount)}</p></div>
           </div>
           <div className="grid gap-1 text-sm"><p className="font-medium text-app-text">{customerNames.get(selectedSale.customer_id ?? "") ?? "Venta de mostrador"}</p><p className="text-app-muted">{dateLabel(selectedSale.occurred_at)}{selectedSale.due_date ? ` · vence ${dateLabel(selectedSale.due_date)}` : ""}</p>{selectedSale.notes ? <p className="mt-2 leading-6 text-app-muted">{selectedSale.notes}</p> : null}</div>
           <section aria-labelledby="sale-payment-history">
-            <div className="flex items-end justify-between gap-3 border-b border-app-border pb-3"><div><h3 className="font-medium text-app-text" id="sale-payment-history">Historial de abonos</h3><p className="mt-1 text-xs text-app-muted">Los abonos anulados permanecen como evidencia.</p></div></div>
+            <div className="border-b border-app-border pb-3"><h3 className="font-medium text-app-text" id="sale-payment-history">Historial de abonos</h3></div>
             {detailLoading ? <p aria-live="polite" className="py-6 text-sm text-app-muted">Cargando abonos…</p> : saleReceipts.length ? <div>{saleReceipts.map((receipt) => <div className={cn("grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center", receipt.voided_at && "opacity-60")} key={receipt.id}><div><div className="flex flex-wrap items-center gap-2"><p className={cn("text-sm font-medium text-app-text", receipt.voided_at && "line-through")}>{formatCurrency(receipt.amount)}</p>{receipt.voided_at ? <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-700">Anulado</span> : null}</div><p className="mt-1 text-xs text-app-muted">{dateLabel(receipt.occurred_at)} · {receipt.payment_method === "cash" ? "Efectivo" : receipt.payment_method === "transfer" ? "Transferencia" : "Otro"}</p>{receipt.notes ? <p className="mt-1 text-xs text-app-muted">{receipt.notes}</p> : null}{receipt.void_reason ? <p className="mt-1 text-xs text-red-700">Motivo: {receipt.void_reason}</p> : null}</div>{!receipt.voided_at ? <Button className="text-red-700 hover:text-red-800" icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} onClick={() => { setSelectedReceipt(receipt); setDialog("voidReceipt"); }} variant="ghost">Anular abono</Button> : <span />}</div>)}</div> : <p className="py-6 text-sm text-app-muted">Esta venta no tiene abonos registrados.</p>}
           </section>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button onClick={() => { setEditSaleTerms(selectedSale.payment_status === "paid" ? "credit" : selectedSale.payment_terms); setDialog("editSale"); }} variant="secondary">Modificar registro</Button>{Number(selectedSale.balance_amount) > 0 && selectedSale.payment_status !== "cancelled" ? <Button onClick={() => setDialog("payment")} variant="primary">Registrar abono</Button> : null}</div>
+          {selectedSale.payment_status !== "cancelled" ? <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button className="text-red-700 hover:text-red-800" icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} onClick={() => setDialog("cancelSale")} variant="ghost">Anular venta</Button><Button onClick={() => { setEditSaleTerms(selectedSale.payment_status === "paid" ? "credit" : selectedSale.payment_terms); setDialog("editSale"); }} variant="secondary">{selectedSale.payment_status === "paid" ? "Agregar saldo pendiente" : "Editar cuenta"}</Button></div> : null}
         </div> : null}
       </Modal>
 
-      <Modal onClose={() => setDialog("saleDetails")} open={dialog === "editSale"} panelClassName="sm:max-w-xl" title={selectedSale?.payment_status === "paid" ? "Modificar pago registrado" : "Editar venta"}>
+      <Modal onClose={() => setDialog("saleDetails")} open={dialog === "editSale"} panelClassName="sm:max-w-xl" title={selectedSale?.payment_status === "paid" ? "Agregar saldo pendiente" : "Editar cuenta"}>
         {selectedSale ? <form className="grid gap-4" onSubmit={saveSaleCorrection}>
-          <p className="rounded-xl bg-sky-50 p-4 text-sm leading-6 text-sky-900">Captura el <strong className="font-semibold">total completo de la venta</strong>. Los {formatCurrency(selectedSale.paid_amount)} ya recibidos quedarán como abono y calcularemos lo que falta por cobrar.</p>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha de venta"><DatePickerInput aria-label="Fecha de la venta" defaultValue={selectedSale.occurred_at} name="date" required /></Field>{selectedSale.payment_status === "paid" ? <div className="rounded-xl bg-app-sidebar px-4 py-3"><p className="text-xs text-app-muted">Nuevo estado</p><p className="mt-1 text-sm font-medium text-app-text">Venta a crédito · pago parcial</p></div> : <Field label="Forma de venta"><SelectInput onChange={(event) => setEditSaleTerms(event.target.value as "cash" | "credit")} value={editSaleTerms}><option value="cash">Pagada</option><option value="credit">A crédito</option></SelectInput></Field>}</div>
-          <Field label={editSaleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><SelectInput defaultValue={selectedSale.customer_id ?? ""} name="customerId" required={editSaleTerms === "credit"}><option value="">Venta de mostrador</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.display_name}</option>)}</SelectInput></Field>
-          <Field label="Total completo de la venta"><FormattedCurrencyInput autoFocus defaultValue={selectedSale.total_amount} min={selectedSale.paid_amount} name="totalAmount" required step="0.01" /></Field>
-          {editSaleTerms === "credit" ? <Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={selectedSale.due_date ?? today()} min={selectedSale.occurred_at} name="dueDate" required showQuickActions={false} dropUp /></Field> : null}
-          <Field label="Notas (opcional)"><TextArea autoGrow defaultValue={selectedSale.notes ?? ""} name="notes" placeholder="Motivo o detalle de la corrección" /></Field>
-          <div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog("saleDetails")} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : selectedSale.payment_status === "paid" ? "Guardar como abono" : "Guardar cambios"}</Button></div>
+          {selectedSale.payment_status === "paid" ? <>
+            <input name="date" type="hidden" value={selectedSale.occurred_at} />
+            <input name="customerId" type="hidden" value={selectedSale.customer_id ?? ""} />
+            <dl className="grid grid-cols-2 gap-3 rounded-xl bg-app-sidebar p-4"><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Venta</dt><dd className="mt-1 text-sm font-medium text-app-text">#{selectedSale.folio}</dd></div><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Pagado</dt><dd className="mt-1 text-sm font-medium tabular-nums text-app-text">{formatCurrency(selectedSale.paid_amount)}</dd></div></dl>
+          </> : <>
+            <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha de venta"><DatePickerInput aria-label="Fecha de la venta" defaultValue={selectedSale.occurred_at} name="date" required /></Field><Field label="Forma de venta"><SelectInput onChange={(event) => setEditSaleTerms(event.target.value as "cash" | "credit")} value={editSaleTerms}><option value="cash">Pagada</option><option value="credit">A crédito</option></SelectInput></Field></div>
+            <Field label={editSaleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><SelectInput defaultValue={selectedSale.customer_id ?? ""} name="customerId" required={editSaleTerms === "credit"}><option value="">Venta de mostrador</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.display_name}</option>)}</SelectInput></Field>
+          </>}
+          <Field label="Total de la venta"><FormattedCurrencyInput autoFocus defaultValue={selectedSale.total_amount} min={selectedSale.paid_amount} name="totalAmount" required step="0.01" /></Field>
+          {editSaleTerms === "credit" ? <Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={selectedSale.due_date ?? ""} min={selectedSale.occurred_at} name="dueDate" required showQuickActions={false} dropUp /></Field> : null}
+          <Field label="Notas (opcional)"><TextArea autoGrow defaultValue={selectedSale.notes ?? ""} name="notes" placeholder="Referencia" /></Field>
+          <div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog("saleDetails")} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : selectedSale.payment_status === "paid" ? "Guardar cuenta" : "Guardar cambios"}</Button></div>
         </form> : null}
       </Modal>
 
@@ -664,7 +763,11 @@ export function NurserySection() {
         {selectedReceipt ? <form className="grid gap-4" onSubmit={voidReceipt}><p className="text-sm leading-6 text-app-muted">Se anulará el abono de <strong className="font-semibold text-app-text">{formatCurrency(selectedReceipt.amount)}</strong>. El movimiento seguirá visible en el historial y el saldo pendiente aumentará.</p><Field label="Motivo de la anulación"><TextArea autoFocus autoGrow name="reason" placeholder="Ej. Importe capturado por error" required /></Field><div className="flex justify-end gap-2"><Button onClick={() => { setSelectedReceipt(null); setDialog("saleDetails"); }} type="button" variant="ghost">Cancelar</Button><Button className="border-red-700 bg-red-700 text-white hover:bg-red-800" disabled={saving} icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} type="submit">{saving ? "Anulando…" : "Anular abono"}</Button></div></form> : null}
       </Modal>
 
-      <Modal onClose={() => setDialog(null)} open={dialog === "payment"} panelClassName="sm:max-w-lg" title="Registrar abono">{selectedSale ? <form className="grid gap-4" onSubmit={savePayment}><div className="rounded-xl bg-app-sidebar p-4"><p className="text-xs text-app-muted">Venta #{selectedSale.folio} · saldo pendiente</p><p className="mt-2 text-2xl font-light tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</p></div><Field label="Fecha"><DatePickerInput aria-label="Fecha del abono" defaultValue={today()} name="date" required /></Field><Field label="Monto del abono"><TextInput autoFocus inputMode="decimal" max={selectedSale.balance_amount} min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field><Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Referencia o detalle del pago" /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar abono"}</Button></div></form> : null}</Modal>
+      <Modal onClose={() => setDialog("saleDetails")} open={dialog === "cancelSale"} panelClassName="sm:max-w-lg" title={selectedSale ? `Anular venta #${selectedSale.folio}` : "Anular venta"}>
+        {selectedSale ? <form className="grid gap-4" onSubmit={cancelSale}><div className="rounded-xl bg-app-sidebar p-4"><p className="text-xs text-app-muted">{customerNames.get(selectedSale.customer_id ?? "") ?? "Venta de mostrador"}</p><p className="mt-1 text-lg font-semibold tabular-nums text-app-text">{formatCurrency(selectedSale.total_amount)}</p></div><Field label="Motivo de la anulación"><TextArea autoFocus autoGrow name="reason" placeholder="Ej. Registro duplicado" required /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog("saleDetails")} type="button" variant="ghost">Cancelar</Button><Button className="border-red-700 bg-red-700 text-white hover:bg-red-800" disabled={saving} icon={<Trash2 aria-hidden="true" className="h-4 w-4" />} type="submit">{saving ? "Anulando…" : "Anular venta"}</Button></div></form> : null}
+      </Modal>
+
+      <Modal onClose={() => setDialog(null)} open={dialog === "payment"} panelClassName="sm:max-w-lg" title="Registrar abono">{selectedSale ? <form className="grid gap-4" onSubmit={savePayment}><dl className="grid grid-cols-2 gap-3 rounded-xl bg-app-sidebar p-4"><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Venta</dt><dd className="mt-1 text-sm font-medium text-app-text">#{selectedSale.folio}</dd></div><div><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-muted">Saldo</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-app-text">{formatCurrency(selectedSale.balance_amount)}</dd></div></dl><Field label="Monto"><FormattedCurrencyInput autoFocus name="amount" placeholder="$0.00" required /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha"><DatePickerInput aria-label="Fecha del abono" defaultValue={today()} dropUp name="date" required showQuickActions={false} /></Field><Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field></div><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Referencia" /></Field><div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar abono"}</Button></div></form> : null}</Modal>
     </section>
   );
 }
