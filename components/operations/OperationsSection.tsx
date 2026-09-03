@@ -97,16 +97,20 @@ type WorkEventRow = {
   id: string;
   work_id: string;
   actor_user_id: string | null;
+  actor_staff_id: string | null;
   update_type: string;
   note: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
-type TaskNotificationRow = {
-  task_id: string | null;
-  status: "pending" | "processing" | "sent" | "failed" | "cancelled";
+type AgentDispatchRow = {
+  work_id: string;
+  recipient_user_id: string | null;
+  recipient_staff_id: string | null;
+  status: "pending" | "processing" | "accepted" | "sent" | "responded" | "completed" | "blocked" | "failed" | "cancelled";
   last_error: string | null;
+  created_at: string;
 };
 
 type OperationView = "calendar" | "plan" | "execution" | "verification" | "history";
@@ -137,6 +141,7 @@ const workEventLabels: Record<string, string> = {
 
 function workEventSource(metadata: Record<string, unknown> | null) {
   const source = typeof metadata?.source === "string" ? metadata.source : "";
+  if (source === "grok_whatsapp") return "WhatsApp · Grok";
   if (source === "telegram") return "Telegram";
   if (source === "technical_adapter") return "App web";
   if (source === "work") return "App web";
@@ -164,7 +169,7 @@ function WorkTimeline({
 }: {
   events: WorkEventRow[];
   evidence: WorkEvidenceRow[];
-  actorName: (userId: string | null) => string;
+  actorName: (userId: string | null, staffId?: string | null) => string;
   onOpenEvidence: (evidence: WorkEvidenceRow) => void;
 }) {
   const entries = [
@@ -199,7 +204,7 @@ function WorkTimeline({
               <li className="relative pb-4 last:pb-0" key={event.id}>
                 <span aria-hidden="true" className="absolute -left-[19px] top-1.5 h-2 w-2 rounded-full bg-app-green ring-4 ring-white" />
                 <p className="text-xs font-medium text-app-text">{workEventLabels[event.update_type] ?? "Actividad actualizada"}</p>
-                <p className="mt-1 text-[11px] leading-5 text-app-muted">{actorName(event.actor_user_id)} · {formatWorkEventDate(event.created_at)} · {workEventSource(event.metadata)}</p>
+                <p className="mt-1 text-[11px] leading-5 text-app-muted">{actorName(event.actor_user_id, event.actor_staff_id)} · {formatWorkEventDate(event.created_at)} · {workEventSource(event.metadata)}</p>
                 {event.note ? <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-app-text">{event.note}</p> : null}
               </li>
             );
@@ -632,23 +637,25 @@ function requiredFormNumber(value: FormDataEntryValue | null) {
   return optionalFormNumber(value) ?? 0;
 }
 
-function telegramDispatchMessage(data: any) {
-  const sent = Number(data?.sent ?? 0);
+function grokDispatchMessage(data: any) {
+  const accepted = Number(data?.accepted ?? 0);
   const failed = Number(data?.failed ?? 0);
-  const pendingWithoutConnection = Number(data?.pendingWithoutConnection ?? 0);
+  const missingPhone = Number(data?.missingPhone ?? 0);
+  const skipped = Number(data?.skipped ?? 0);
 
-  if (!sent && !failed && !pendingWithoutConnection) {
-    return "No hay notificaciones pendientes para esta semana.";
+  if (!accepted && !failed && !missingPhone && !skipped) {
+    return "No hay actividades nuevas para enviar.";
   }
 
   return [
-    sent ? `${sent} encargado${sent === 1 ? "" : "s"} notificado${sent === 1 ? "" : "s"}` : "",
-    pendingWithoutConnection ? `${pendingWithoutConnection} encargado${pendingWithoutConnection === 1 ? "" : "s"} sin conexión` : "",
-    failed ? `${failed} fallo${failed === 1 ? "" : "s"}` : ""
+    accepted ? `${accepted} aviso${accepted === 1 ? "" : "s"} recibido${accepted === 1 ? "" : "s"}` : "",
+    missingPhone ? `${missingPhone} encargado${missingPhone === 1 ? "" : "s"} sin teléfono` : "",
+    failed ? `${failed} envío${failed === 1 ? "" : "s"} fallido${failed === 1 ? "" : "s"}` : "",
+    skipped ? `${skipped} sin cambios` : ""
   ].filter(Boolean).join(" · ");
 }
 
-async function telegramInvokeErrorMessage(error: unknown, fallback: string) {
+async function grokInvokeErrorMessage(error: unknown, fallback: string) {
   const response = (error as { context?: Response } | null)?.context;
   if (response && typeof response.clone === "function") {
     const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
@@ -1872,7 +1879,7 @@ export function OperationsSection({
   const [evidence, setEvidence] = useState<WorkEvidenceRow[]>([]);
   const [historyEvidence, setHistoryEvidence] = useState<WorkEvidenceRow[]>([]);
   const [workEvents, setWorkEvents] = useState<WorkEventRow[]>([]);
-  const [taskNotifications, setTaskNotifications] = useState<TaskNotificationRow[]>([]);
+  const [agentDispatches, setAgentDispatches] = useState<AgentDispatchRow[]>([]);
   const [historyWorkEvents, setHistoryWorkEvents] = useState<WorkEventRow[]>([]);
   const [auditActorNames, setAuditActorNames] = useState<Record<string, string>>({});
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
@@ -1887,8 +1894,7 @@ export function OperationsSection({
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [dispatchingTelegram, setDispatchingTelegram] = useState(false);
-  const [pendingPublicationCount, setPendingPublicationCount] = useState(0);
+  const [dispatchingGrok, setDispatchingGrok] = useState(false);
   const [notice, setNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -1966,13 +1972,12 @@ export function OperationsSection({
     }
   }, [pendingCompletionTask?.date, weekStartKey]);
 
-  const loadOperations = useCallback(async () => {
+  const loadOperations = useCallback(async (silent = false) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !organization.id) return;
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setSetupRequired(false);
-    setPendingPublicationCount(0);
     let tasksQuery = supabase
       .from("tasks")
       .select("id, weekly_plan_id, greenhouse_id, type, title, scheduled_date, scheduled_time, status, priority, instructions, execution_mode, crew_size, blocked_reason, origin, occurred_at, completed_at, verified_at, verification_required, technical_plan")
@@ -2016,7 +2021,7 @@ export function OperationsSection({
     if (baseError) {
       setSetupRequired(isOperationsSetupError(baseError));
       setNotice({ tone: "red", message: appErrorMessage(baseError, "No se pudo cargar la operación semanal.") });
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
 
@@ -2032,7 +2037,7 @@ export function OperationsSection({
       .map((member) => member.user_id)
       .filter((id): id is string => Boolean(id));
 
-    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, eventsResponse, taskNotificationsResponse, pendingNotificationsResponse] = await Promise.all([
+    const [assignmentsResponse, staffAssignmentsResponse, materialsResponse, profilesResponse, greenhousesResponse, evidenceResponse, eventsResponse, agentDispatchesResponse] = await Promise.all([
       taskIds.length
         ? supabase.from("task_assignments").select("id, task_id, user_id").in("task_id", taskIds)
         : Promise.resolve({ data: [], error: null }),
@@ -2052,22 +2057,18 @@ export function OperationsSection({
         ? supabase.from("work_evidence").select("id, work_id, storage_path, file_name, mime_type, file_size_bytes, note, created_by, created_at").in("work_id", taskIds).order("created_at", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
-        ? supabase.from("work_events").select("id, work_id, actor_user_id, update_type, note, metadata, created_at").in("work_id", taskIds).order("created_at", { ascending: true })
+        ? supabase.from("work_events").select("id, work_id, actor_user_id, actor_staff_id, update_type, note, metadata, created_at").in("work_id", taskIds).order("created_at", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       taskIds.length
-        ? supabase.from("notification_outbox").select("task_id, status, last_error").eq("channel", "telegram").in("task_id", taskIds)
-        : Promise.resolve({ data: [], error: null }),
-      planResponse.data?.status === "published"
         ? supabase
-            .from("notification_outbox")
-            .select("task_id")
-            .eq("weekly_plan_id", planResponse.data.id)
-            .eq("channel", "telegram")
-            .eq("status", "pending")
+            .from("agent_dispatches")
+            .select("work_id, recipient_user_id, recipient_staff_id, status, last_error, created_at")
+            .in("work_id", taskIds)
+            .order("created_at", { ascending: false })
         : Promise.resolve({ data: [], error: null })
     ]);
 
-    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? eventsResponse.error ?? taskNotificationsResponse.error ?? pendingNotificationsResponse.error;
+    const detailError = assignmentsResponse.error ?? staffAssignmentsResponse.error ?? materialsResponse.error ?? profilesResponse.error ?? greenhousesResponse.error ?? evidenceResponse.error ?? eventsResponse.error ?? agentDispatchesResponse.error;
     if (detailError) {
       setNotice({ tone: "red", message: appErrorMessage(detailError, "Faltan detalles de algunas actividades.") });
     }
@@ -2080,16 +2081,11 @@ export function OperationsSection({
     setMaterials((materialsResponse.data ?? []) as MaterialRow[]);
     setEvidence((evidenceResponse.data ?? []) as WorkEvidenceRow[]);
     setWorkEvents((eventsResponse.data ?? []) as WorkEventRow[]);
-    setTaskNotifications((taskNotificationsResponse.data ?? []) as TaskNotificationRow[]);
+    setAgentDispatches((agentDispatchesResponse.data ?? []) as AgentDispatchRow[]);
     setAuditActorNames(Object.fromEntries((profilesResponse.data ?? []).map((profile: any) => [
       profile.id,
       profile.full_name ?? profile.email?.split("@")[0] ?? "Miembro del equipo"
     ])));
-    setPendingPublicationCount(new Set(
-      (pendingNotificationsResponse.data ?? [])
-        .map((notification: { task_id: string | null }) => notification.task_id)
-        .filter((taskId): taskId is string => Boolean(taskId))
-    ).size);
     setProductOptions((productsResponse.data ?? []) as ProductOption[]);
     setOperationGreenhouses((greenhousesResponse.data ?? []) as OperationGreenhouseOption[]);
     setManagers(managerIds.map((id) => {
@@ -2105,7 +2101,7 @@ export function OperationsSection({
       name: person.full_name,
       detail: person.phone ?? "Sin cuenta"
     })));
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [organization.id, selectedGreenhouseId, todayKey, weekEndKey, weekStartKey]);
 
   const loadWorkHistory = useCallback(async () => {
@@ -2168,7 +2164,7 @@ export function OperationsSection({
         .order("created_at", { ascending: false }),
       supabase
         .from("work_events")
-        .select("id, work_id, actor_user_id, update_type, note, metadata, created_at")
+        .select("id, work_id, actor_user_id, actor_staff_id, update_type, note, metadata, created_at")
         .in("work_id", workIds)
         .order("created_at", { ascending: true })
     ]);
@@ -2252,6 +2248,21 @@ export function OperationsSection({
   }, [loadOperations, operationRefreshKey]);
 
   useEffect(() => {
+    let refreshing = false;
+    const refreshFromAgent = async () => {
+      if (document.visibilityState !== "visible" || refreshing) return;
+      refreshing = true;
+      try {
+        await loadOperations(true);
+      } finally {
+        refreshing = false;
+      }
+    };
+    const intervalId = window.setInterval(refreshFromAgent, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [loadOperations]);
+
+  useEffect(() => {
     if (operationView !== "history") return;
     void loadWorkHistory();
   }, [loadWorkHistory, operationRefreshKey, operationView]);
@@ -2260,14 +2271,37 @@ export function OperationsSection({
   const staffAssignmentsForTask = (taskId: string) => staffAssignments.filter((item) => item.task_id === taskId);
   const materialsForTask = (taskId: string) => materials.filter((item) => item.task_id === taskId);
   const eventsForTask = (taskId: string) => [...workEvents, ...historyWorkEvents].filter((item) => item.work_id === taskId);
-  const auditActorName = (userId: string | null) => userId ? auditActorNames[userId] ?? "Miembro del equipo" : "Sistema";
   const managerName = (userId: string) => managers.find((manager) => manager.id === userId)?.name ?? "Encargado";
   const staffName = (staffId: string) => staff.find((person) => person.id === staffId)?.name ?? "Encargado";
+  const auditActorName = (userId: string | null, staffId?: string | null) => {
+    if (userId) return auditActorNames[userId] ?? "Miembro del equipo";
+    if (staffId) return staffName(staffId);
+    return "Sistema";
+  };
   const greenhouseName = (greenhouseId: string) =>
     (greenhouses.find((item) => item.id === greenhouseId)
       ? greenhouseDisplayName(greenhouses.find((item) => item.id === greenhouseId)!, crops)
       : operationGreenhouses.find((item) => item.id === greenhouseId)?.name) ??
     "Área productiva";
+  const deliveryStateForTask = (taskId: string) => {
+    const latestByRecipient = new Map<string, AgentDispatchRow>();
+    for (const dispatch of agentDispatches.filter((item) => item.work_id === taskId)) {
+      const key = dispatch.recipient_user_id
+        ? `user:${dispatch.recipient_user_id}`
+        : `staff:${dispatch.recipient_staff_id}`;
+      if (!latestByRecipient.has(key)) latestByRecipient.set(key, dispatch);
+    }
+    const latest = Array.from(latestByRecipient.values());
+    if (!latest.length) return { confirmed: false, label: "Sin enviar", tone: "amber" as const };
+    if (latest.some((dispatch) => dispatch.status === "failed")) {
+      return { confirmed: false, label: "Falló WhatsApp", tone: "red" as const };
+    }
+    const confirmedStatuses = new Set(["sent", "responded", "completed", "blocked"]);
+    if (latest.every((dispatch) => confirmedStatuses.has(dispatch.status))) {
+      return { confirmed: true, label: "WhatsApp enviado", tone: "green" as const };
+    }
+    return { confirmed: false, label: "En proceso", tone: "amber" as const };
+  };
 
   const ensureMaterialProducts = async (supabase: ReturnType<typeof getSupabaseBrowserClient>, draftMaterials: MaterialDraft[]) => {
     if (!supabase || !organization.id) return draftMaterials;
@@ -2369,10 +2403,33 @@ export function OperationsSection({
             target_materials: resolvedMaterials.map((material, index) => ({ ...material, mixingOrder: index + 1 })),
             target_technical_plan: payload.technicalPlan
           };
-      const { error } = await supabase.rpc(rpcName, rpcPayload);
+      const { data: savedTaskId, error } = await supabase.rpc(rpcName, rpcPayload);
       if (error) throw error;
 
-      setNotice({ tone: "green", message: editingTask ? "Actividad actualizada." : "Actividad agregada a la semana." });
+      const workId = editingTask?.id ?? (typeof savedTaskId === "string" ? savedTaskId : null);
+      let saveNotice: { tone: "green" | "red"; message: string } = {
+        tone: "green",
+        message: editingTask ? "Actividad actualizada." : "Actividad agregada a la semana."
+      };
+      if (plan?.status === "published" && workId) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
+        if (sessionError || !sessionData.session?.access_token) {
+          saveNotice = { tone: "red", message: "Actividad guardada, pero la sesión venció antes de avisar a Grok." };
+        } else {
+          const { data: dispatchData, error: dispatchError } = await supabase.functions.invoke("grok-dispatch", {
+            body: { weeklyPlanId: plan.id, taskIds: [workId] },
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+          });
+          const incomplete = Number(dispatchData?.failed ?? 0) + Number(dispatchData?.missingPhone ?? 0);
+          saveNotice = dispatchError || incomplete
+            ? {
+                tone: "red",
+                message: `Actividad guardada, pero no se notificó completamente: ${dispatchError ? await grokInvokeErrorMessage(dispatchError, "revisa la conexión con Grok.") : grokDispatchMessage(dispatchData)}`
+              }
+            : { tone: "green", message: `Actividad guardada. ${grokDispatchMessage(dispatchData)}` };
+        }
+      }
+      setNotice(saveNotice);
       setActivityModalOpen(false);
       setEditingTask(null);
       await loadOperations();
@@ -2397,18 +2454,19 @@ export function OperationsSection({
       const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
       if (sessionError || !sessionData.session?.access_token) throw sessionError ?? new Error("not_authenticated");
 
-      const { data, error: dispatchError } = await supabase.functions.invoke("telegram-dispatch", {
+      const { data, error: dispatchError } = await supabase.functions.invoke("grok-dispatch", {
         body: { weeklyPlanId: plan.id },
         headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
       });
 
-      if (dispatchError) {
+      const incomplete = Number(data?.failed ?? 0) + Number(data?.missingPhone ?? 0);
+      if (dispatchError || incomplete) {
         setNotice({
           tone: "red",
-          message: `Semana publicada, pero no se pudo enviar la notificación: ${await telegramInvokeErrorMessage(dispatchError, "revisa la función de envío.")}`
+          message: `Semana publicada, pero no se notificó completamente: ${dispatchError ? await grokInvokeErrorMessage(dispatchError, "revisa la conexión con Grok.") : grokDispatchMessage(data)}`
         });
       } else {
-        setNotice({ tone: "green", message: `Semana publicada. ${telegramDispatchMessage(data)}` });
+        setNotice({ tone: "green", message: `Semana publicada. ${grokDispatchMessage(data)}` });
       }
       await loadOperations();
     } catch (caught) {
@@ -2418,61 +2476,34 @@ export function OperationsSection({
     }
   };
 
-  const sendTelegramForPlan = async () => {
+  const resendActiveGrokForPlan = async () => {
     if (!plan) return;
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
-    setDispatchingTelegram(true);
+    setDispatchingGrok(true);
     setNotice(null);
     const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
     if (sessionError || !sessionData.session?.access_token) {
-      setDispatchingTelegram(false);
+      setDispatchingGrok(false);
       setNotice({ tone: "red", message: appErrorMessage(sessionError, "Tu sesión expiró. Vuelve a iniciar sesión.") });
       return;
     }
 
-    const { data, error } = await supabase.functions.invoke("telegram-dispatch", {
-      body: { weeklyPlanId: plan.id },
-      headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
-    });
-    setDispatchingTelegram(false);
-
-    if (error) {
-      setNotice({ tone: "red", message: await telegramInvokeErrorMessage(error, "No se pudo enviar los cambios pendientes.") });
-      return;
-    }
-
-    setNotice({ tone: "green", message: telegramDispatchMessage(data) });
-    await loadOperations();
-  };
-
-  const resendActiveTelegramForPlan = async () => {
-    if (!plan) return;
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
-
-    setDispatchingTelegram(true);
-    setNotice(null);
-    const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession();
-    if (sessionError || !sessionData.session?.access_token) {
-      setDispatchingTelegram(false);
-      setNotice({ tone: "red", message: appErrorMessage(sessionError, "Tu sesión expiró. Vuelve a iniciar sesión.") });
-      return;
-    }
-
-    const { data, error } = await supabase.functions.invoke("telegram-dispatch", {
+    const { data, error } = await supabase.functions.invoke("grok-dispatch", {
       body: { weeklyPlanId: plan.id, mode: "active" },
       headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
     });
-    setDispatchingTelegram(false);
+    setDispatchingGrok(false);
 
     if (error) {
-      setNotice({ tone: "red", message: await telegramInvokeErrorMessage(error, "No se pudo reenviar las actividades activas.") });
+      setNotice({ tone: "red", message: await grokInvokeErrorMessage(error, "No se pudieron reenviar las actividades activas.") });
       return;
     }
 
-    setNotice({ tone: "green", message: telegramDispatchMessage(data) });
+    const incomplete = Number(data?.failed ?? 0) + Number(data?.missingPhone ?? 0);
+    setNotice({ tone: incomplete ? "red" : "green", message: grokDispatchMessage(data) });
+    await loadOperations();
   };
 
   const openCompletionDetails = useCallback(async (task: OperationTaskRow, completion?: { occurredAt: string; note: string }) => {
@@ -3226,9 +3257,8 @@ export function OperationsSection({
   ).length;
   const overdueBlockedCount = globalOverdueTasks.filter((task) => task.status === "bloqueada").length;
   const overdueWithoutDeliveryCount = globalOverdueTasks.filter((task) => {
-    if (!assignmentsForTask(task.id).length) return false;
-    const notifications = taskNotifications.filter((item) => item.task_id === task.id);
-    return !notifications.some((item) => item.status === "sent");
+    if (!assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length) return false;
+    return !deliveryStateForTask(task.id).confirmed;
   }).length;
   const overdueWithIncompleteMaterialsCount = globalOverdueTasks.filter((task) => {
     if (!["aplicacion_foliar", "fertirriego", "fertilizacion"].includes(task.type)) return false;
@@ -3427,20 +3457,6 @@ export function OperationsSection({
             </div>
             {operationView !== "history" && canPlan && plan && weekTasks.length ? (
               <div className="flex flex-wrap items-center gap-2">
-                {plan.status === "published" && pendingPublicationCount ? (
-                  <>
-                    <span className="text-xs text-app-muted">{pendingPublicationCount} cambio{pendingPublicationCount === 1 ? "" : "s"} por enviar</span>
-                    <Button
-                      className="min-h-9 px-3"
-                      disabled={dispatchingTelegram}
-                      icon={<Send className="h-3.5 w-3.5" />}
-                      onClick={sendTelegramForPlan}
-                      variant="secondary"
-                    >
-                      {dispatchingTelegram ? "Enviando..." : "Enviar cambios pendientes"}
-                    </Button>
-                  </>
-                ) : null}
                 {plan.status === "published" ? (
                   <details className="relative">
                     <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-app-muted transition hover:bg-app-sidebar hover:text-app-text">
@@ -3450,11 +3466,11 @@ export function OperationsSection({
                     <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-56 rounded-xl border border-app-border bg-white p-1.5 shadow-xl">
                       <button
                         className="flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-medium text-app-text transition hover:bg-app-sidebar"
-                        disabled={dispatchingTelegram}
-                        onClick={resendActiveTelegramForPlan}
+                        disabled={dispatchingGrok}
+                        onClick={resendActiveGrokForPlan}
                         type="button"
                       >
-                        Reenviar actividades activas
+                        {dispatchingGrok ? "Enviando..." : "Reenviar actividades activas"}
                       </button>
                     </div>
                   </details>
@@ -3534,7 +3550,7 @@ export function OperationsSection({
                       <p className="mt-1 text-xs text-app-muted">{greenhouseName(task.greenhouse_id)}{task.blocked_reason ? ` · ${task.blocked_reason}` : ""}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {!assignmentsForTask(task.id).length && !staffAssignmentsForTask(task.id).length ? <StatusBadge tone="amber">Sin encargado</StatusBadge> : null}
-                        {assignmentsForTask(task.id).length && !taskNotifications.some((item) => item.task_id === task.id && item.status === "sent") ? <StatusBadge tone="amber">Sin envío confirmado</StatusBadge> : null}
+                        {(assignmentsForTask(task.id).length || staffAssignmentsForTask(task.id).length) && !deliveryStateForTask(task.id).confirmed ? <StatusBadge tone={deliveryStateForTask(task.id).tone}>{deliveryStateForTask(task.id).label}</StatusBadge> : null}
                         {["aplicacion_foliar", "fertirriego", "fertilizacion"].includes(task.type) && (!materialsForTask(task.id).length || materialsForTask(task.id).some((material) => !material.product_id || !material.dose?.trim() || !material.unit?.trim())) ? <StatusBadge tone="red">Revisar datos técnicos</StatusBadge> : null}
                       </div>
                     </div>
@@ -3685,6 +3701,7 @@ export function OperationsSection({
                         const taskAssignments = assignmentsForTask(task.id);
                         const taskStaffAssignments = staffAssignmentsForTask(task.id);
                         const taskMaterials = materialsForTask(task.id);
+                        const deliveryState = deliveryStateForTask(task.id);
                         const planSummary = technicalPlanSummary(task);
                         const assignedNames = [
                           ...taskAssignments.map((assignment) => managerName(assignment.user_id)),
@@ -3709,6 +3726,11 @@ export function OperationsSection({
                                 {assignedNames.join(", ")}
                               </p>
                             ) : <p className="mt-1 text-xs text-[#8A2E2E]">Sin encargado</p>}
+                            {plan?.status === "published" && assignedNames.length ? (
+                              <div className="mt-2">
+                                <StatusBadge tone={deliveryState.tone}>{deliveryState.label}</StatusBadge>
+                              </div>
+                            ) : null}
                             {task.blocked_reason ? (
                               <p className="mt-2 flex gap-1.5 text-xs leading-5 text-[#7B2A2A]">
                                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

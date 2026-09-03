@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FlaskConical, Home, Menu, Send, Sprout, X } from "lucide-react";
+import { CalendarDays, FlaskConical, Home, Menu, Sprout, X } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { navigationItemsForRole } from "@/data/navigation";
@@ -18,7 +18,7 @@ const iconFallback = {
   monitoring: FlaskConical
 };
 
-export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
+export function MobileNav() {
   const [open, setOpen] = useState(false);
   const activeSection = useGreenhouseStore((state) => state.activeSection);
   const organization = useGreenhouseStore((state) => state.organization);
@@ -26,10 +26,7 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
   const viewContexts = useGreenhouseStore((state) => state.viewContexts);
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const navigationItems = useMemo(() => navigationItemsForRole(currentUser.role), [currentUser.role]);
-  const mobileNavigationItems = useMemo(
-    () => navigationItems.filter((item) => item.id !== "settings"),
-    [navigationItems]
-  );
+  const mobileNavigationItems = navigationItems;
   const primary = useMemo(
     () => primaryIds.map((id) => navigationItems.find((item) => item.id === id)).filter(Boolean),
     [navigationItems]
@@ -61,19 +58,6 @@ export function MobileNav({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
               </button>
             </div>
             <OrganizationSwitcher className="mb-3" />
-            {currentUser.role === "manager" ? (
-              <button
-                className="mb-3 flex min-h-12 w-full items-center gap-3 rounded-lg border border-app-green/25 bg-app-soft px-3 text-sm font-medium text-app-green"
-                onClick={() => {
-                  setOpen(false);
-                  onOpenTelegram?.();
-                }}
-                type="button"
-              >
-                <Send className="h-4 w-4" />
-                Conectar Telegram
-              </button>
-            ) : null}
             {mobileNavigationItems.map((item) => {
               const Icon = item.icon;
               return (

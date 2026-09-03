@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LogOut, Send } from "lucide-react";
+import { ChevronDown, LogOut } from "lucide-react";
 import Link from "next/link";
 import { MiraWordmark, PortalMark } from "@/components/brand/MiraBrand";
 import { navigationItemsForRole } from "@/data/navigation";
@@ -51,7 +51,7 @@ export function NavButton({ id, label, icon: Icon }: NavButtonProps) {
   );
 }
 
-export function Sidebar({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
+export function Sidebar() {
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const organization = useGreenhouseStore((state) => state.organization);
   const initials = getInitials(currentUser.fullName);
@@ -95,16 +95,6 @@ export function Sidebar({ onOpenTelegram }: { onOpenTelegram?: () => void }) {
           </div>
           <ChevronDown className="h-3.5 w-3.5 text-app-muted" />
         </div>
-        {currentUser.role === "manager" ? (
-          <button
-            className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-app-border text-[11px] font-semibold uppercase tracking-[0.12em] text-app-green transition hover:bg-app-soft"
-            onClick={onOpenTelegram}
-            type="button"
-          >
-            <Send className="h-3.5 w-3.5" />
-            Telegram
-          </button>
-        ) : null}
         <button
           className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-app-border text-[11px] font-semibold uppercase tracking-[0.12em] text-app-muted transition hover:bg-app-sidebar hover:text-app-text"
           onClick={handleSignOut}

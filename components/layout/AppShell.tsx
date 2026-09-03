@@ -39,7 +39,6 @@ import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
 import { CostChart, YieldChart } from "@/components/dashboard/Charts";
 import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
-import { TelegramConnectionModal } from "@/components/integrations/TelegramConnectionModal";
 import { OperationsSection } from "@/components/operations/OperationsSection";
 import { InventorySection } from "@/components/inventory/InventorySection";
 import { NurserySection } from "@/components/nursery/NurserySection";
@@ -1910,6 +1909,9 @@ type CompanyMember = {
   invitedEmail: string | null;
   fullName: string;
   email: string;
+  phone: string;
+  address: string;
+  age: number | null;
   role: MemberRole;
   status: MemberStatus;
   createdAt: string;
@@ -1921,6 +1923,15 @@ type CompanyStaff = {
   phone: string;
   status: "active" | "disabled";
 };
+
+const profileAgeOptions = Array.from({ length: 86 }, (_, index) => index + 15);
+
+function profilePhoneParts(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("1")) return { countryCode: "+1", local: digits.slice(1) };
+  if (digits.startsWith("52")) return { countryCode: "+52", local: digits.slice(2) };
+  return { countryCode: "+52", local: digits };
+}
 
 const roleLabels: Record<MemberRole, string> = {
   owner: "Owner",
@@ -1998,6 +2009,8 @@ function SettingsSection() {
   const [membersNotice, setMembersNotice] = useState("");
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
+  const [editingProfileMember, setEditingProfileMember] = useState<CompanyMember | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isInvitingMember, setIsInvitingMember] = useState(false);
   const [companyStaff, setCompanyStaff] = useState<CompanyStaff[]>([]);
   const [staffNotice, setStaffNotice] = useState("");
@@ -2073,7 +2086,7 @@ function SettingsSection() {
       new Set((memberRows ?? []).map((member: any) => member.user_id).filter(Boolean))
     );
     const { data: profileRows, error: profilesError } = userIds.length
-      ? await supabase.from("profiles").select("id, full_name, email").in("id", userIds)
+      ? await supabase.from("profiles").select("id, full_name, email, phone, address, age").in("id", userIds)
       : { data: [], error: null };
     if (profilesError) {
       setMembersNotice(appErrorMessage(profilesError, "No se pudieron cargar algunos perfiles."));
@@ -2091,6 +2104,9 @@ function SettingsSection() {
           invitedEmail: member.invited_email,
           fullName: profile?.full_name ?? email.split("@")[0] ?? "Invitado",
           email,
+          phone: profile?.phone ?? "",
+          address: profile?.address ?? "",
+          age: profile?.age ?? null,
           role: member.role,
           status: member.status,
           createdAt: member.created_at
@@ -2389,6 +2405,55 @@ function SettingsSection() {
     }
   };
 
+  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingProfileMember?.userId) return;
+
+    setMembersNotice("");
+    setIsSavingProfile(true);
+    const form = new FormData(event.currentTarget);
+    const ageValue = String(form.get("profileAge") ?? "").trim();
+    const age = ageValue ? Number.parseInt(ageValue, 10) : null;
+    const countryCode = String(form.get("profileCountryCode") ?? "+52").trim();
+    const localPhone = String(form.get("profilePhoneLocal") ?? "").replace(/\D/g, "");
+    const countryDigits = countryCode.replace(/\D/g, "");
+    const phone = localPhone
+      ? `+${countryDigits}${localPhone.startsWith(countryDigits) ? localPhone.slice(countryDigits.length) : localPhone}`
+      : null;
+
+    try {
+      if (!canManageUsers) {
+        throw new Error("Tu rol no permite editar perfiles.");
+      }
+      if (age !== null && (!Number.isInteger(age) || age < 0 || age > 120)) {
+        throw new Error("La edad debe estar entre 0 y 120 años.");
+      }
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase || !organization.id) {
+        throw new Error("No se pudo conectar con Supabase.");
+      }
+
+      const { error } = await supabase.rpc("update_company_member_profile", {
+        target_company_id: organization.id,
+        target_user_id: editingProfileMember.userId,
+        target_phone: phone,
+        target_address: String(form.get("profileAddress") ?? "").trim() || null,
+        target_age: age
+      });
+
+      if (error) throw error;
+
+      setEditingProfileMember(null);
+      setMembersNotice("Perfil actualizado.");
+      await loadMembers();
+    } catch (caught) {
+      setMembersNotice(appErrorMessage(caught, "No se pudo actualizar el perfil."));
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const settingsCards: Array<{
     key: SettingsKey;
     title: string;
@@ -2451,7 +2516,7 @@ function SettingsSection() {
 
   if (!activeSetting) {
     return (
-      <section className="hidden lg:block">
+      <section className="block">
         <SectionHeader
           title="Ajustes"
           description="Elige un bloque de configuración para revisar o cambiar su información."
@@ -2478,7 +2543,7 @@ function SettingsSection() {
   }
 
   return (
-    <section className="hidden lg:block">
+    <section className="block">
       <SectionHeader
         action={
           <Button icon={<ArrowLeft className="h-4 w-4" />} onClick={() => setActiveSetting(null)} variant="secondary">
@@ -2554,7 +2619,7 @@ function SettingsSection() {
 
                     return (
                       <div key={member.id} className="border-t border-app-border py-4">
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_150px_160px] lg:items-center">
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_150px_160px_auto] lg:items-center">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-medium text-app-text">{member.fullName}</p>
@@ -2563,6 +2628,11 @@ function SettingsSection() {
                             <p className="mt-1 truncate text-xs leading-5 text-app-muted">
                               {member.email || member.invitedEmail || "Sin correo"} · {member.userId ? "Usuario activo" : "Invitación pendiente"}
                             </p>
+                            {member.userId ? (
+                              <p className="mt-1 truncate text-xs leading-5 text-app-muted">
+                                {member.phone || "Sin teléfono"}{member.age !== null ? ` · ${member.age} años` : ""}{member.address ? ` · ${member.address}` : ""}
+                              </p>
+                            ) : null}
                           </div>
                           <SelectInput
                             aria-label={`Rol de ${member.email}`}
@@ -2588,6 +2658,15 @@ function SettingsSection() {
                               </option>
                             ))}
                           </SelectInput>
+                          <Button
+                            disabled={!canManageUsers || !member.userId}
+                            icon={<Edit3 aria-hidden="true" className="h-4 w-4" />}
+                            onClick={() => setEditingProfileMember(member)}
+                            type="button"
+                            variant="ghost"
+                          >
+                            Editar perfil
+                          </Button>
                         </div>
                       </div>
                     );
@@ -2913,6 +2992,82 @@ function SettingsSection() {
           </Button>
         </div>
       </div>
+
+      <Modal
+        open={Boolean(editingProfileMember)}
+        onClose={() => {
+          if (!isSavingProfile) setEditingProfileMember(null);
+        }}
+        title={`Editar perfil · ${editingProfileMember?.fullName ?? "Usuario"}`}
+      >
+        {editingProfileMember ? (
+          <form className="grid gap-5" key={editingProfileMember.id} onSubmit={handleProfileSubmit}>
+            <p className="text-sm leading-6 text-app-muted">
+              Completa los datos operativos del usuario. El teléfono se usará para enviar actividades por WhatsApp; no crea un encargado duplicado.
+            </p>
+            <div className="grid gap-5">
+              <Field label="Nombre">
+                <TextInput defaultValue={editingProfileMember.fullName} disabled readOnly />
+              </Field>
+              <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Teléfono (WhatsApp)">
+                <div className="grid grid-cols-[minmax(110px,0.42fr)_minmax(0,1fr)] gap-2">
+                  <SelectInput
+                    aria-label="Lada del teléfono"
+                    autoComplete="tel-country-code"
+                    defaultValue={profilePhoneParts(editingProfileMember.phone).countryCode}
+                    disabled={isSavingProfile}
+                    name="profileCountryCode"
+                  >
+                    <option value="+52">+52 · México</option>
+                    <option value="+1">+1 · EUA / Canadá</option>
+                  </SelectInput>
+                  <TextInput
+                    autoComplete="tel-national"
+                    defaultValue={profilePhoneParts(editingProfileMember.phone).local}
+                    disabled={isSavingProfile}
+                    inputMode="tel"
+                    name="profilePhoneLocal"
+                    placeholder="Número local"
+                    type="tel"
+                  />
+                </div>
+              </Field>
+              <Field label="Edad">
+                <SelectInput
+                  autoComplete="bday"
+                  defaultValue={editingProfileMember.age ?? ""}
+                  disabled={isSavingProfile}
+                  name="profileAge"
+                >
+                  <option value="">Sin registrar</option>
+                  {profileAgeOptions.map((age) => <option key={age} value={age}>{age} años</option>)}
+                </SelectInput>
+              </Field>
+              </div>
+              <Field className="sm:col-span-2" label="Dirección">
+                <TextArea
+                  autoComplete="street-address"
+                  defaultValue={editingProfileMember.address}
+                  disabled={isSavingProfile}
+                  name="profileAddress"
+                  placeholder="Calle, localidad y referencias"
+                  rows={2}
+                  className="min-h-20"
+                />
+              </Field>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button disabled={isSavingProfile} onClick={() => setEditingProfileMember(null)} type="button" variant="secondary">
+                Cancelar
+              </Button>
+              <Button disabled={isSavingProfile} icon={<Save aria-hidden="true" className="h-4 w-4" />} type="submit" variant="primary">
+                {isSavingProfile ? "Guardando…" : "Guardar perfil"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
     </section>
   );
 }
@@ -3117,7 +3272,6 @@ export function AppShell() {
     && activeRoute.organizationSlug
     && activeRoute.organizationSlug !== organizationRouteSlug(organization.slug ?? organization.name)
   );
-  const [telegramOpen, setTelegramOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotRunning, setCopilotRunning] = useState(false);
   const [copilotNotice, setCopilotNotice] = useState<{ tone: "green" | "red"; message: string } | null>(null);
@@ -3408,7 +3562,7 @@ export function AppShell() {
       </a>
       <RouteSync />
       <div className="flex min-h-screen">
-        <Sidebar onOpenTelegram={() => setTelegramOpen(true)} />
+        <Sidebar />
         <div className="min-w-0 flex-1">
           <Topbar
             copilotInsightCount={copilotInsights.length}
@@ -3468,11 +3622,8 @@ export function AppShell() {
           </main>
         </div>
       </div>
-      <MobileNav onOpenTelegram={() => setTelegramOpen(true)} />
+      <MobileNav />
       <RecordModal onSaved={() => setOperationRefreshKey((current) => current + 1)} />
-      {currentUser.role === "manager" ? (
-        <TelegramConnectionModal onClose={() => setTelegramOpen(false)} open={telegramOpen} />
-      ) : null}
       {miraCopilotEnabled ? <MiraCopilotPanel
         chatMessages={copilotChatMessages}
         insights={copilotInsights}

@@ -24,6 +24,7 @@ declare
   paid numeric;
   status text;
   record_count integer;
+  split_group_id uuid;
 begin
   insert into auth.users (
     id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -232,6 +233,43 @@ begin
     raise exception 'Nursery cancelled a sale with active receipts';
   exception when others then
     if sqlerrm <> 'nursery_sale_has_active_receipts' then raise; end if;
+  end;
+
+  result := public.record_nursery_split_payment(
+    credit_sale_id,
+    current_date,
+    jsonb_build_array(
+      jsonb_build_object('paymentMethod', 'cash', 'amount', 400),
+      jsonb_build_object('paymentMethod', 'card', 'amount', 200)
+    ),
+    'Liquidación en efectivo y tarjeta'
+  );
+  split_group_id := (result->>'paymentGroupId')::uuid;
+
+  select paid_amount, balance_amount, payment_status
+  into paid, balance, status
+  from public.nursery_sale_balances where id = credit_sale_id;
+  if paid <> 1500 or balance <> 0 or status <> 'paid' then
+    raise exception 'Split payment did not settle correctly: paid %, balance %, status %', paid, balance, status;
+  end if;
+  select count(*) into record_count
+  from public.nursery_receipts
+  where payment_group_id = split_group_id
+    and payment_method in ('cash', 'card');
+  if record_count <> 2 then
+    raise exception 'Split payment did not preserve both payment methods';
+  end if;
+
+  begin
+    perform public.record_nursery_split_payment(
+      credit_sale_id,
+      current_date,
+      jsonb_build_array(jsonb_build_object('paymentMethod', 'cash', 'amount', 1)),
+      'Sobrepago dividido inválido'
+    );
+    raise exception 'Nursery accepted a split payment above the outstanding balance';
+  exception when others then
+    if sqlerrm <> 'nursery_sale_overpayment' then raise; end if;
   end;
 
   begin

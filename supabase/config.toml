@@ -9,5 +9,11 @@ verify_jwt = false
 [functions.telegram-dispatch]
 verify_jwt = false
 
+[functions.grok-dispatch]
+verify_jwt = false
+
+[functions.grok-callback]
+verify_jwt = false
+
 [functions.lab-extract]
 verify_jwt = true

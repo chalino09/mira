@@ -19,7 +19,7 @@ supabase db push
 supabase migration list
 ```
 
-Nunca se usa `db reset` contra una base remota. Antes de `db push`, revisa que la lista de migraciones locales contenga `20260101000001` a `20260101000053`, la reparación `20260625000000` y `20260727000000_weekly_notification_refresh.sql`.
+Nunca se usa `db reset` contra una base remota. Antes de `db push`, revisa que la lista de migraciones locales contenga `20260101000001` a `20260101000054`, las reparaciones posteriores y las migraciones Grok `20260827000100` y `20260827000200`.
 
 ## Verificar el esquema desplegado
 
@@ -40,3 +40,5 @@ La migración 53 define el contrato mínimo de Work. La app consulta `assert_wor
 La migración `20260727000000_weekly_notification_refresh.sql` sincroniza la cola cuando se agregan actividades o cambian responsables en una semana publicada. **Enviar cambios pendientes** procesa únicamente actividades nuevas o modificadas.
 
 La regresión correspondiente está en `supabase/tests/weekly_plan_notifications.sql`; ejecútala únicamente en una base de prueba porque crea fixtures dentro de una transacción y termina con `rollback`.
+
+Las migraciones `20260827000100_grok_whatsapp_work_events.sql` y `20260827000200_grok_per_dispatch_callback_tokens.sql` agregan entregas idempotentes, actores internos y callbacks autenticados con tokens únicos. Su regresión está en `supabase/tests/grok_whatsapp_events.sql` y también termina con `rollback`.

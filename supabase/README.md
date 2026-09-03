@@ -146,6 +146,8 @@ Para exigir el contrato mínimo de Work y evitar que una base atrasada actualice
 
 Para mantener las notificaciones de Telegram alineadas con las asignaciones actuales, avisar únicamente actividades nuevas o modificadas después de publicar y cancelar pendientes de responsables removidos, aplica `migrations/20260727000000_weekly_notification_refresh.sql` después de `53_work_schema_contract.sql`.
 
+Para reemplazar el canal operativo por Grok Bot + WhatsApp Web, aplicar callbacks idempotentes y conservar al encargado interno como actor de la bitácora, aplica `migrations/20260827000100_grok_whatsapp_work_events.sql`.
+
 Laboratorio usa IA para extraer PDFs/imágenes con la función `lab-extract`. Configura secretos antes de usarla:
 
 ```bash
@@ -163,46 +165,38 @@ supabase functions deploy mira-copilot
 supabase functions deploy mira-chat
 ```
 
-## Conectar Telegram
+## Conectar Grok Bot y WhatsApp Web
 
-1. En Telegram abre `@BotFather`, ejecuta `/newbot` y guarda el token y username entregados.
-2. Genera un secreto para validar el webhook:
+1. Crea en Grok Bot la rutina `Mira nuevas actividades` y copia su `POST URL` y `sender key` desde la app de escritorio.
+2. Genera un secreto diferente para validar los callbacks de Grok:
 
 ```bash
 openssl rand -hex 32
 ```
 
-3. Vincula Supabase CLI con el proyecto usando el identificador que aparece en la URL del proyecto:
+3. Vincula Supabase CLI con el proyecto:
 
 ```bash
 supabase login
 supabase link --project-ref <PROJECT_REF>
 ```
 
-4. Guarda los tres valores como secretos de Edge Functions. El username va sin `@`:
+4. Guarda los valores como secretos de Edge Functions:
 
 ```bash
 supabase secrets set \
-  TELEGRAM_BOT_TOKEN="token_de_botfather" \
-  TELEGRAM_BOT_USERNAME="username_del_bot" \
-  TELEGRAM_WEBHOOK_SECRET="secreto_generado"
+  GROK_ROUTINE_URL="https://..." \
+  GROK_ROUTINE_SENDER_KEY="sender_key_de_la_rutina" \
+  GROK_CALLBACK_URL="https://<PROJECT_REF>.supabase.co/functions/v1/grok-callback"
 ```
 
 5. Despliega las funciones:
 
 ```bash
-supabase functions deploy telegram-link
-supabase functions deploy telegram-dispatch
-supabase functions deploy telegram-webhook --no-verify-jwt
+supabase functions deploy grok-dispatch --no-verify-jwt
+supabase functions deploy grok-callback --no-verify-jwt
 ```
 
-6. Registra el webhook reemplazando los valores entre `< >`:
+6. Vincula el número dedicado en `web.whatsapp.com` desde la computadora de Grok mediante QR. Mira incluirá automáticamente un token diferente en cada evento para autenticar su callback.
 
-```bash
-curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
-  -d "url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook" \
-  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
-  -d 'allowed_updates=["message","callback_query"]'
-```
-
-Después, el manager entra a Mira, pulsa `Telegram`, abre el enlace y presiona `Iniciar` dentro del bot. Cuando un owner o admin publica una semana en `Operación`, `telegram-dispatch` procesa la cola y envía las actividades asignadas a cada chat conectado. Los tokens y secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.
+Cuando un owner o admin publica o modifica una actividad, `grok-dispatch` despierta la rutina. Grok envía mediante WhatsApp Web y llama `grok-callback` para registrar `sent`, `responded`, `completed`, `blocked` o `failed`. Consulta el [runbook completo](../docs/grok-whatsapp-runbook.md). Los secretos nunca deben usar el prefijo `NEXT_PUBLIC_` ni guardarse en Git.

@@ -72,9 +72,9 @@ Configura secretos en Supabase, nunca en variables `NEXT_PUBLIC_`:
 supabase secrets set OPENAI_API_KEY=sk-proj_...
 supabase secrets set OPENAI_COPILOT_MODEL=gpt-5.5
 supabase secrets set OPENAI_LAB_MODEL=gpt-5.5
-supabase secrets set TELEGRAM_BOT_TOKEN="token_de_botfather"
-supabase secrets set TELEGRAM_BOT_USERNAME="username_del_bot"
-supabase secrets set TELEGRAM_WEBHOOK_SECRET="secreto_largo"
+supabase secrets set GROK_ROUTINE_URL="https://..."
+supabase secrets set GROK_ROUTINE_SENDER_KEY="sender_key_de_la_rutina"
+supabase secrets set GROK_CALLBACK_URL="https://<PROJECT_REF>.supabase.co/functions/v1/grok-callback"
 ```
 
 Confirma que las funciones tienen acceso a:
@@ -90,18 +90,8 @@ Despliega:
 supabase functions deploy mira-copilot
 supabase functions deploy mira-chat
 supabase functions deploy lab-extract
-supabase functions deploy telegram-dispatch
-supabase functions deploy telegram-link
-supabase functions deploy telegram-webhook --no-verify-jwt
-```
-
-Despues registra o actualiza el webhook de Telegram:
-
-```bash
-curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
-  -d "url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook" \
-  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
-  -d 'allowed_updates=["message","callback_query"]'
+supabase functions deploy grok-dispatch --no-verify-jwt
+supabase functions deploy grok-callback --no-verify-jwt
 ```
 
 ## Checks SQL
@@ -134,14 +124,14 @@ Manager activo:
 2. Registra riego, nutricion, aplicacion, cosecha y alerta sanitaria.
 3. Sube una foto sanitaria y confirma que se muestra despues de refrescar.
 4. Agrega seguimiento a una alerta sanitaria y confirma que aparece en el historial.
-5. Vincula Telegram y responde una tarea asignada.
+5. Confirma que Grok envía por WhatsApp Web y que `LISTO` aparece en la bitácora de la actividad.
 6. Confirma que no ve costos, laboratorio, monitoreo nutrimental administrativo ni Copilot.
 
 Manager desactivado:
 
 1. Con owner/admin, cambia el miembro a `inactive`.
-2. Envia un mensaje al bot con ese usuario de Telegram.
-3. Debe recibir respuesta de acceso desactivado o no poder operar.
+2. Envía un callback para una actividad de ese encargado.
+3. Mira debe rechazarlo porque la asignación ya no está activa.
 4. Publica o reprocesa una semana.
 5. Confirma que no se le envian nuevas tareas y que la cola queda fallida para ese usuario.
 
@@ -178,6 +168,6 @@ Puedes pasar a beta controlada cuando:
 - `npm run test:db` pasa.
 - `29_pre_production_checks.sql` no muestra `missing` y los `review` estan justificados.
 - Owner/admin y manager activo pasan smoke test.
-- Manager desactivado no puede operar por Telegram.
+- Manager desactivado no puede operar mediante callbacks de Grok.
 - Adjuntos privados no cargan por URL publica directa.
 - Hay backup reciente y sabes como restaurarlo.
