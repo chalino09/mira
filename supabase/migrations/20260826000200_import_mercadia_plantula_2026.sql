@@ -37,8 +37,11 @@ from public.companies company
 join public.nurseries nursery on nursery.company_id = company.id and nursery.code = 'vivero'
 where company.slug = 'mercadia-ag' and nursery.is_active;
 
+-- This is an optional historical import. A clean installation may not have
+-- Mercadia yet, so leave the database untouched and let onboarding create it.
 if not exists (select 1 from _nursery_import_target) then
-  raise exception 'mercadia_ag_or_nursery_not_found';
+  drop table if exists public._nursery_import_target;
+  return;
 end if;
 
 create unlogged table public._nursery_import_sales (
