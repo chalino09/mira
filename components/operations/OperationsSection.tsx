@@ -37,6 +37,7 @@ import {
 } from "@/lib/application-categories";
 import { addDays, startOfIsoWeek, weekOfYear } from "@/lib/date";
 import { appErrorMessage } from "@/lib/errors";
+import { executionCatalogProduct } from "@/lib/execution-products";
 import { cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { harvestValuesFromForm } from "@/lib/harvest";
 import { normalizedProductName } from "@/lib/product-search";
@@ -1174,9 +1175,15 @@ function CompleteApplicationModal({
   const [occurredAt, setOccurredAt] = useState(() => dateKey(new Date()));
   const [appliedArea, setAppliedArea] = useState("");
   const [applications, setApplications] = useState<ApplicationExecutionDraft[]>([]);
+  const initializedTaskId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!task) return;
+    if (!task) {
+      initializedTaskId.current = null;
+      return;
+    }
+    if (initializedTaskId.current === task.id) return;
+    initializedTaskId.current = task.id;
     setOccurredAt(dateKey(new Date()));
     setAppliedArea(task.technical_plan?.appliedArea ?? "");
     setApplications(
@@ -1184,11 +1191,10 @@ function CompleteApplicationModal({
         .slice()
         .sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0))
         .map((material) => {
-          const catalogProduct = productOptions.find((product) => product.id === material.product_id)
-            ?? productOptions.find((product) => normalizedProductName(product.name) === normalizedProductName(material.product_name));
+          const catalogProduct = executionCatalogProduct(productOptions, material.product_id, material.product_name);
           return {
             materialId: material.id,
-            productId: material.product_id ?? catalogProduct?.id ?? "",
+            productId: catalogProduct?.id ?? "",
             productName: catalogProduct?.name ?? material.product_name,
             dose: material.dose ?? "",
             unit: material.unit ?? "",
@@ -1290,6 +1296,7 @@ function CompleteApplicationModal({
                     required
                     value={application.productName}
                   />
+                  {!application.productId ? <p className="mt-1 text-xs text-app-muted">Selecciona este producto desde el catálogo.</p> : null}
                 </Field>
                 <Field label="Dosis real">
                   <TextInput
@@ -1377,7 +1384,7 @@ function CompleteApplicationModal({
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
           {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !applications.length || applications.some((application) => !application.productName.trim() || !application.dose.trim() || !application.unit || !application.category || (application.materialId.startsWith("new:") && !application.productId))} type="submit" variant="primary">
+          <Button disabled={saving || !applications.length || applications.some((application) => !application.productName.trim() || !application.dose.trim() || !application.unit || !application.category || !application.productId)} type="submit" variant="primary">
             {saving ? "Guardando..." : "Completar y guardar registro"}
           </Button>
         </div>
@@ -1465,18 +1472,27 @@ function CompleteNutritionModal({
   onSave: (payload: NutritionExecutionPayload) => Promise<void>;
 }) {
   const [products, setProducts] = useState<NutritionExecutionDraft[]>([]);
+  const initializedTaskId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!task) return;
-    setProducts(materials.slice().sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0)).map((material) => ({
-      materialId: material.id,
-      productId: material.product_id ?? "",
-      productName: material.product_name,
-      composition: material.composition ?? "",
-      dose: material.dose ?? "",
-      unit: material.unit ?? ""
-    })));
-  }, [materials, task]);
+    if (!task) {
+      initializedTaskId.current = null;
+      return;
+    }
+    if (initializedTaskId.current === task.id) return;
+    initializedTaskId.current = task.id;
+    setProducts(materials.slice().sort((a, b) => (a.mixing_order ?? 0) - (b.mixing_order ?? 0)).map((material) => {
+      const catalogProduct = executionCatalogProduct(productOptions, material.product_id, material.product_name);
+      return {
+        materialId: material.id,
+        productId: catalogProduct?.id ?? "",
+        productName: catalogProduct?.name ?? material.product_name,
+        composition: material.composition ?? catalogProduct?.composition ?? "",
+        dose: material.dose ?? "",
+        unit: material.unit ?? ""
+      };
+    }));
+  }, [materials, productOptions, task]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1548,6 +1564,7 @@ function CompleteNutritionModal({
                   required
                   value={product.productName}
                 />
+                {!product.productId ? <p className="mt-1 text-xs text-app-muted">Selecciona este producto desde el catálogo.</p> : null}
               </Field>
               <Field label="Dosis real">
                 <TextInput
@@ -1594,7 +1611,7 @@ function CompleteNutritionModal({
         <div className="flex justify-end gap-2 border-t border-app-border pt-5">
           {error ? <p className="mr-auto text-sm leading-5 text-[#8A2E2E]" role="alert">{error}</p> : null}
           <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
-          <Button disabled={saving || !products.length || products.some((product) => !product.productName.trim() || !product.dose.trim() || !product.unit || (product.materialId.startsWith("new:") && !product.productId))} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
+          <Button disabled={saving || !products.length || products.some((product) => !product.productName.trim() || !product.dose.trim() || !product.unit || !product.productId)} type="submit" variant="primary">{saving ? "Guardando..." : "Completar y guardar"}</Button>
         </div>
       </form>
     </Modal>
@@ -2858,50 +2875,13 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: applicationTask.id });
-    if (reviewError) {
-      setCompleting(false);
-      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta aplicación.");
-      setCompletionError(message);
-      setNotice({ tone: "red", message });
-      return;
-    }
-    const requiresCatalogSync = payload.applications.some((application) => application.materialId.startsWith("new:"))
-      || payload.applications.every((application) => Boolean(application.productId));
-    let syncedMaterialIds = payload.applications.map((application) => application.materialId);
-    if (requiresCatalogSync) {
-      const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
-        target_work_id: applicationTask.id,
-        target_materials: payload.applications.map((application) => ({
-          materialId: application.materialId,
-          productId: application.productId,
-          productName: application.productName,
-          composition: application.composition,
-          dose: application.dose,
-          unit: application.unit
-        }))
-      });
-      if (syncError) {
-        setCompleting(false);
-        const message = appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.");
-        setCompletionError(message);
-        setNotice({ tone: "red", message });
-        return;
-      }
-      syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
-    }
-    const { data, error } = await supabase.rpc("complete_application_task", {
+    const { data, error } = await supabase.rpc("complete_application_execution", {
       target_task_id: applicationTask.id,
       target_occurred_at: payload.occurredAt,
       target_applied_area: payload.appliedArea || null,
-      target_applications: payload.applications.map((application, index) => ({
-        materialId: syncedMaterialIds[index],
-        productName: application.productName,
-        dose: doseWithUnit(application.dose, application.unit),
+      target_applications: payload.applications.map((application) => ({
+        ...application,
         category: applicationCategoryToDb[application.category as ApplicationRecord["category"]],
-        composition: application.composition,
-        safetyInterval: application.safetyInterval,
-        reentryInterval: application.reentryInterval,
         notes: applicationNotesWithFollowUp(application)
       }))
     });
@@ -2989,41 +2969,9 @@ export function OperationsSection({
 
     setCompleting(true);
     setNotice(null);
-    const { error: reviewError } = await supabase.rpc("require_work_verification", { target_work_id: nutritionTask.id });
-    if (reviewError) {
-      setCompleting(false);
-      const message = appErrorMessage(reviewError, "No se pudo preparar la revisión de esta nutrición.");
-      setCompletionError(message);
-      setNotice({ tone: "red", message });
-      return;
-    }
     const targetGreenhouse = greenhouses.find((greenhouse) => greenhouse.id === nutritionTask.greenhouse_id);
     const cropStage = cropStageFromDdt(daysBetween(targetGreenhouse?.transplantDate, payload.date));
-    const requiresCatalogSync = payload.products.some((product) => product.materialId.startsWith("new:"))
-      || payload.products.every((product) => Boolean(product.productId));
-    let syncedMaterialIds = payload.products.map((product) => product.materialId);
-    if (requiresCatalogSync) {
-      const { data: syncedData, error: syncError } = await supabase.rpc("sync_work_execution_materials", {
-        target_work_id: nutritionTask.id,
-        target_materials: payload.products.map((product) => ({
-          materialId: product.materialId,
-          productId: product.productId,
-          productName: product.productName,
-          composition: product.composition,
-          dose: product.dose,
-          unit: product.unit
-        }))
-      });
-      if (syncError) {
-        setCompleting(false);
-        const message = appErrorMessage(syncError, "No se pudieron sincronizar los productos aplicados.");
-        setCompletionError(message);
-        setNotice({ tone: "red", message });
-        return;
-      }
-      syncedMaterialIds = (syncedData as { materialIds?: string[] } | null)?.materialIds ?? [];
-    }
-    const { data, error } = await supabase.rpc("complete_nutrition_task", {
+    const { data, error } = await supabase.rpc("complete_nutrition_execution", {
       target_task_id: nutritionTask.id,
       target_occurred_at: payload.date,
       target_method: nutritionMethodToDb[payload.method],
@@ -3032,11 +2980,7 @@ export function OperationsSection({
       target_ph: payload.ph,
       target_ec: payload.ec,
       target_notes: payload.notes || null,
-      target_products: payload.products.map((product, index) => ({
-        materialId: syncedMaterialIds[index],
-        productName: product.productName,
-        dose: doseWithUnit(product.dose, product.unit)
-      }))
+      target_products: payload.products
     });
     setCompleting(false);
     if (error) {
