@@ -137,17 +137,6 @@ export function DatePickerInput({
     if (nextDate) setViewMonth(startOfMonth(nextDate));
   }, [selectedValue]);
 
-  useEffect(() => {
-    if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
-
   const setSelectedValue = (nextValue: string) => {
     if (!isDateAllowed(nextValue, minValue, maxValue)) return;
     if (value === undefined) setInternalValue(nextValue);
@@ -169,7 +158,17 @@ export function DatePickerInput({
   ].filter((action) => isDateAllowed(action.value, minValue, maxValue));
 
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }}
+    >
       <input disabled={disabled} name={name} readOnly required={required} type="hidden" value={selectedValue} {...props} />
       <button
         ref={triggerRef}
@@ -309,6 +308,7 @@ type TimePickerInputProps = Omit<
 };
 
 export function TimePickerInput({
+  "aria-label": ariaLabel,
   className,
   defaultValue = "",
   disabled,
@@ -321,6 +321,7 @@ export function TimePickerInput({
   const [internalValue, setInternalValue] = useState(defaultValue);
   const selectedValue = value ?? internalValue;
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const containerRef = useCloseOnOutsideClick<HTMLDivElement>(open, () => setOpen(false));
   const parsed = parseTime(selectedValue);
   const selectedHour12 = parsed.hour % 12 || 12;
@@ -350,13 +351,25 @@ export function TimePickerInput({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }}
+    >
       <input disabled={disabled} name={name} readOnly required={required} type="hidden" value={selectedValue} {...props} />
       <button
         aria-expanded={open}
+        aria-label={ariaLabel}
         className={cn(inputShellClass, className)}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
         <span className={cn(!selectedValue && "text-app-muted")}>{formatTimeLabel(selectedValue)}</span>

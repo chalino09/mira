@@ -108,6 +108,8 @@ Si aparece `review` o `missing`, no avances a datos reales hasta entenderlo.
 
 ## Smoke tests manuales
 
+Cuando cambien formularios o controles compartidos, ejecutar también las [regresiones de capturas y borradores](form-capture-regressions.md).
+
 Owner/admin:
 
 1. Inicia sesion y confirma que ve empresa, invernaderos, miembros y costos.

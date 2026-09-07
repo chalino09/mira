@@ -63,10 +63,8 @@ const FormattedInput = forwardRef<HTMLInputElement, FormattedInputProps & {
   const formattedDefaultValue = defaultValue == null ? "" : formatter(defaultValue);
   const [value, setValue] = useState(formattedDefaultValue);
 
-  useEffect(() => {
-    setValue(formattedDefaultValue);
-  }, [formattedDefaultValue, isControlled]);
-
+  // Like a native input, defaultValue initializes this capture only. Remote
+  // updates must not replace an uncontrolled value the user is editing.
   const displayValue = isControlled ? formatter(controlledValue) : value;
 
   return (

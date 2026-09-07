@@ -28,3 +28,35 @@ test("rechaza deducciones mayores al precio de alguna calidad", () => {
 
   assert.equal(result.isValid, false);
 });
+
+test("permite gastos cuando las calidades sin venta tienen precio cero", () => {
+  const result = calculateHarvestSale({
+    lines: [
+      { quality: "Primera", boxCount: "10", grossPricePerBox: "100" },
+      { quality: "Segunda", boxCount: "0", grossPricePerBox: "0" },
+      { quality: "Tercera", boxCount: "", grossPricePerBox: "" }
+    ],
+    commissionPerBox: "1",
+    freightPerBox: "2",
+    packagingPerBox: "3"
+  });
+
+  assert.equal(result.isValid, true);
+  assert.equal(result.soldBoxes, 10);
+  assert.equal(result.netAmount, 940);
+});
+
+test("sigue rechazando gastos excesivos en una calidad vendida aunque otras estén vacías", () => {
+  const result = calculateHarvestSale({
+    lines: [
+      { quality: "Primera", boxCount: "10", grossPricePerBox: "100" },
+      { quality: "Segunda", boxCount: "1", grossPricePerBox: "5" },
+      { quality: "Tercera", boxCount: "0", grossPricePerBox: "0" }
+    ],
+    commissionPerBox: "1",
+    freightPerBox: "2",
+    packagingPerBox: "3"
+  });
+
+  assert.equal(result.isValid, false);
+});

@@ -13,17 +13,18 @@ type ModalProps = {
   bodyClassName?: string;
   panelClassName?: string;
   closeOnBackdrop?: boolean;
+  busy?: boolean;
 };
 
-export function Modal({ title, open, onClose, children, bodyClassName, panelClassName, closeOnBackdrop = true }: ModalProps) {
+export function Modal({ title, open, onClose, children, bodyClassName, panelClassName, closeOnBackdrop, busy = false }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
 
   useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
+    onCloseRef.current = () => { if (!busy) onClose(); };
+  }, [busy, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +100,10 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
     <div
       className="modal-overlay-enter fixed inset-0 z-[60] flex items-end bg-black/20 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
       onMouseDown={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+        // Captures require an explicit close; informational dialogs keep their
+        // outside-click behavior unless the caller overrides it.
+        const dismissOnBackdrop = closeOnBackdrop ?? !panelRef.current?.querySelector("form");
+        if (!busy && dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
       <div
@@ -115,6 +119,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
           <Button
             aria-label="Cerrar"
             className="h-11 w-11 px-0 sm:h-8 sm:w-8"
+            disabled={busy}
             icon={<X aria-hidden="true" className="h-4 w-4" />}
             onClick={onClose}
             variant="ghost"

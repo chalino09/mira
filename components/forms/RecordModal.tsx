@@ -361,7 +361,7 @@ function FormShell({
         {error ? <p className="mt-5 text-sm text-[#8A2E2E]">{error}</p> : null}
       </aside> : null}
       <div className={cn("sticky bottom-0 z-20 -mx-4 -mb-5 flex flex-col gap-2 border-t border-app-border bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:flex-row sm:justify-end sm:px-5", layout === "default" && "lg:col-span-2")}>
-        <CloseButton className="w-full sm:w-auto sm:min-w-28" />
+        <CloseButton className="w-full sm:w-auto sm:min-w-28" disabled={disabled} />
         <Button className="w-full sm:w-auto sm:min-w-28" disabled={disabled} type="submit" variant="primary">
           {disabled ? "Guardando..." : "Guardar"}
         </Button>
@@ -370,11 +370,11 @@ function FormShell({
   );
 }
 
-function CloseButton({ className }: { className?: string }) {
+function CloseButton({ className, disabled }: { className?: string; disabled?: boolean }) {
   const closeModal = useGreenhouseStore((state) => state.closeModal);
 
   return (
-    <Button className={className} onClick={closeModal} type="button" variant="secondary">
+    <Button className={className} disabled={disabled} onClick={closeModal} type="button" variant="secondary">
       Cancelar
     </Button>
   );
@@ -457,6 +457,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
   const [priceReferences, setPriceReferences] = useState<HarvestPriceReferences>({ first: [], second: [], third: [] });
   const pendingDuplicateSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const initializedHarvestDraft = useRef<string | null>(null);
   const canAssignGreenhouseManager = currentUser.role === "owner" || currentUser.role === "admin";
   const costBatchTotal = useMemo(
     () => costRows.reduce((total, cost) => total + (parseNumericInput(cost.amount) ?? 0), 0),
@@ -635,9 +636,18 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     ?? (modal === "editGreenhouse" && selectedGreenhouseId === "__all__" ? greenhouses[0] : undefined);
   const selectedHarvest = harvestRecords.find((record) => record.id === selectedHarvestId);
   useEffect(() => {
+    if (modal !== "harvest" && modal !== "editHarvest" && modal !== "sale") {
+      initializedHarvestDraft.current = null;
+      return;
+    }
+    if (modal !== "harvest" && !selectedHarvest) return;
+    const draftKey = `${modal}:${modal === "harvest" ? "new" : selectedHarvest?.id}`;
+    if (initializedHarvestDraft.current === draftKey) return;
+    initializedHarvestDraft.current = draftKey;
     if (modal === "harvest") {
       setHarvestBreakdownOpen(false);
       setHarvestSaleBreakdown(emptyHarvestSaleBreakdown());
+      return;
     }
     if (modal === "editHarvest") {
       setHarvestBreakdownOpen(Boolean(
@@ -650,9 +660,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         freightPerBox: selectedHarvest?.sale?.freightPerBox?.toString() ?? "",
         packagingPerBox: selectedHarvest?.sale?.packagingPerBox?.toString() ?? ""
       });
+      return;
     }
-  }, [modal, selectedHarvest]);
-  useEffect(() => {
     if (modal !== "sale" || !selectedHarvest) return;
     const lineFor = (quality: "Primera" | "Segunda" | "Tercera") => selectedHarvest.sale?.lines.find((line) => line.quality === quality);
     const first = lineFor("Primera");
@@ -1471,6 +1480,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
   return (
     <Modal
+      busy={isSaving}
       bodyClassName={cn(
         modal === "cost" && "sm:min-h-[calc(96vh-64px)] sm:max-h-[calc(96vh-64px)]",
         isGreenhouseFormModal && "sm:h-[calc(92vh-64px)] sm:max-h-[calc(92vh-64px)]"
@@ -1565,7 +1575,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       ) : null}
 
       {modal === "editGreenhouse" && selectedGreenhouse ? (
-        <FormShell disabled={isSaving} error={error} onSubmit={handleEditGreenhouse}>
+        <FormShell disabled={isSaving} error={error} key={selectedGreenhouse.id} onSubmit={handleEditGreenhouse}>
           <Field label="Nombre del área">
             <TextInput name="name" required defaultValue={selectedGreenhouse.name} />
           </Field>
@@ -1826,7 +1836,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       ) : null}
 
       {modal === "editHarvest" && selectedHarvest ? (
-        <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleEditHarvest}>
+        <FormShell disabled={isSaving} error={error} key={selectedHarvest.id} layout="wide" onSubmit={handleEditHarvest}>
           <Field label="Área productiva">
             <SelectInput aria-label="Área productiva" disabled value={selectedHarvest.greenhouseId}>
               {greenhouses.map((greenhouse) => (
@@ -1856,7 +1866,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       ) : null}
 
       {modal === "sale" && selectedHarvest && saleDraft && saleCalculation ? (
-        <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleSale}>
+        <FormShell disabled={isSaving} error={error} key={selectedHarvest.id} layout="wide" onSubmit={handleSale}>
           <Field label="Comprador">
             <TextInput
               onChange={(event) => setSaleDraft((current) => current ? { ...current, buyerName: event.target.value } : current)}

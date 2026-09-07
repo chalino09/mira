@@ -51,6 +51,6 @@ export function calculateHarvestSale({
     freightAmount,
     packagingAmount,
     netAmount,
-    isValid: normalizedLines.every((line) => line.grossPricePerBox >= deductionPerBox) && netAmount >= 0
+    isValid: normalizedLines.every((line) => line.boxCount === 0 || line.grossPricePerBox >= deductionPerBox) && netAmount >= 0
   };
 }
