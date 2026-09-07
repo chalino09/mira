@@ -704,6 +704,7 @@ function ActivityFormModal({
   const [scheduledDate, setScheduledDate] = useState("");
   const [selectedGreenhouseId, setSelectedGreenhouseId] = useState("");
   const [formError, setFormError] = useState("");
+  const initializedActivityId = useRef<string | null>(null);
 
   const applyGreenhouseDefaultAssignee = useCallback((greenhouseId: string) => {
     const greenhouse = greenhouses.find((item) => item.id === greenhouseId);
@@ -712,7 +713,15 @@ function ActivityFormModal({
   }, [greenhouses]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedActivityId.current = null;
+      return;
+    }
+    const activityId = task?.id ?? "new-operation";
+    // Polling replaces these data arrays every 30 seconds. Only initialize a
+    // draft when opening the form or switching to another activity.
+    if (initializedActivityId.current === activityId) return;
+    initializedActivityId.current = activityId;
     const defaultGreenhouseId = task?.greenhouse_id ?? greenhouses[0]?.id ?? "";
     setScheduledDate(task?.scheduled_date ?? dateKey(weekDays[0]));
     setSelectedGreenhouseId(defaultGreenhouseId);
@@ -777,7 +786,7 @@ function ActivityFormModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={task ? "Editar actividad" : "Nueva actividad semanal"}>
+    <Modal closeOnBackdrop={false} open={open} onClose={() => { if (!saving) onClose(); }} title={task ? "Editar actividad" : "Nueva actividad semanal"}>
       <form className="grid gap-6" key={task?.id ?? "new-operation"} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Área productiva">
@@ -1103,7 +1112,7 @@ function ActivityFormModal({
 
         {formError ? <p className="text-sm text-[#8A2E2E]" role="alert">{formError}</p> : null}
         <div className="flex flex-col-reverse gap-2 border-t border-app-border pt-5 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button disabled={saving} onClick={onClose} type="button" variant="secondary">Cancelar</Button>
           <Button disabled={saving || (!managers.length && !staff.length)} type="submit" variant="primary">
             {saving ? "Guardando..." : task ? "Guardar cambios" : "Agregar actividad"}
           </Button>

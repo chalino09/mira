@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { TextInput } from "@/components/forms/FormControls";
 import { normalizedProductName } from "@/lib/product-search";
 
@@ -43,6 +43,8 @@ export function ProductCatalogCombobox({
   value: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listId = useId();
   const query = normalizedProductName(value);
   const exactMatch = products.find((product) => normalizedProductName(product.name) === query);
   const matches = useMemo(() => {
@@ -53,6 +55,13 @@ export function ProductCatalogCombobox({
       product.description
     ].filter(Boolean).join(" ")).includes(query));
   }, [products, query]);
+  const showCustomOption = allowCustom && Boolean(value.trim()) && !exactMatch;
+  const optionCount = matches.length + (showCustomOption ? 1 : 0);
+
+  const selectCustomProduct = () => {
+    onChange({ productId: "", productName: value.trim(), category: null, composition: "" });
+    setOpen(false);
+  };
 
   const selectProduct = (product: ProductCatalogOption) => {
     onChange({
@@ -65,8 +74,21 @@ export function ProductCatalogCombobox({
   };
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
       <TextInput
+        aria-activedescendant={open && activeIndex >= 0 && activeIndex < optionCount ? `${listId}-${activeIndex}` : undefined}
+        aria-autocomplete="list"
+        aria-controls={open ? listId : undefined}
+        aria-expanded={open && !disabled}
         aria-label={ariaLabel}
         autoComplete="off"
         disabled={disabled}
@@ -82,21 +104,47 @@ export function ProductCatalogCombobox({
             category: nextMatch?.category ?? null,
             composition: nextMatch?.composition ?? ""
           });
+          setActiveIndex(-1);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { setActiveIndex(-1); setOpen(true); }}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const nextIndex = !open || activeIndex < 0 || activeIndex >= optionCount
+              ? event.key === "ArrowDown" ? 0 : optionCount - 1
+              : (activeIndex + (event.key === "ArrowDown" ? 1 : -1) + optionCount) % optionCount;
+            setOpen(true);
+            setActiveIndex(optionCount ? nextIndex : -1);
+            window.requestAnimationFrame(() => {
+              document.getElementById(`${listId}-${nextIndex}`)?.scrollIntoView({ block: "nearest" });
+            });
+          } else if (event.key === "Enter" && open) {
+            // Selecting a product must never submit the surrounding activity.
+            event.preventDefault();
+            const product = matches[activeIndex] ?? (activeIndex < 0 ? exactMatch ?? matches[0] : undefined);
+            if (product) selectProduct(product);
+            else if (showCustomOption) selectCustomProduct();
+          }
+        }}
         placeholder={placeholder}
         required={required}
+        role="combobox"
         value={value}
       />
       {open && !disabled ? (
-        <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-72 overflow-auto border border-app-border bg-white shadow-lg">
-          {matches.map((product) => (
+        <div aria-label={ariaLabel} className="absolute left-0 right-0 top-full z-40 mt-1 max-h-72 overflow-auto border border-app-border bg-white shadow-lg" id={listId} role="listbox">
+          {matches.map((product, index) => (
             <button
-              className="block w-full border-b border-app-border/60 px-3 py-2 text-left last:border-b-0 hover:bg-app-sidebar"
+              aria-selected={activeIndex === index}
+              className={`block w-full border-b border-app-border/60 px-3 py-2 text-left last:border-b-0 hover:bg-app-sidebar ${activeIndex === index ? "bg-app-sidebar" : ""}`}
+              id={`${listId}-${index}`}
               key={product.id}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectProduct(product)}
+              role="option"
+              tabIndex={-1}
               type="button"
             >
               <span className="block truncate text-sm font-medium text-app-text">{product.name}</span>
@@ -110,14 +158,15 @@ export function ProductCatalogCombobox({
           {!matches.length ? (
             <p className="px-3 py-2 text-sm text-app-muted">No se encontraron productos.</p>
           ) : null}
-          {allowCustom && value.trim() && !exactMatch ? (
+          {showCustomOption ? (
             <button
+              aria-selected={activeIndex === matches.length}
               className="sticky bottom-0 block w-full border-t border-app-border bg-white px-3 py-2 text-left text-sm font-medium text-app-green hover:bg-app-soft"
+              id={`${listId}-${matches.length}`}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange({ productId: "", productName: value.trim(), category: null, composition: "" });
-                setOpen(false);
-              }}
+              onClick={selectCustomProduct}
+              role="option"
+              tabIndex={-1}
               type="button"
             >
               Agregar otro: {value.trim()}

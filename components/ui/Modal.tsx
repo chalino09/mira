@@ -12,9 +12,10 @@ type ModalProps = {
   children: ReactNode;
   bodyClassName?: string;
   panelClassName?: string;
+  closeOnBackdrop?: boolean;
 };
 
-export function Modal({ title, open, onClose, children, bodyClassName, panelClassName }: ModalProps) {
+export function Modal({ title, open, onClose, children, bodyClassName, panelClassName, closeOnBackdrop = true }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -54,6 +55,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseRef.current();
@@ -97,7 +99,7 @@ export function Modal({ title, open, onClose, children, bodyClassName, panelClas
     <div
       className="modal-overlay-enter fixed inset-0 z-[60] flex items-end bg-black/20 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
       <div
