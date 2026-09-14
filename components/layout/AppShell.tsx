@@ -1539,7 +1539,7 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
           </>
         ) : (
           <>
-            <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da y 3ra calidad" />
+            <MetricCard icon={CheckCircle2} label="Kg comerciales" value={`${formatNumber(commercialKg)} kg`} detail="1ra, 2da, 3ra, Canica y Papel" />
             <MetricCard icon={WalletCards} label="Venta neta" value={formatCurrency(netRevenue)} detail="Después de comisión y flete" />
             <MetricCard icon={WalletCards} label="Precio promedio por caja" value={formatPricePerBox(averagePrice)} detail="Ponderado por cajas vendidas" />
           </>
