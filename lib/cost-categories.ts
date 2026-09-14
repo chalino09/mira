@@ -5,6 +5,7 @@ export const costCategories = [
   { label: "Fertilizantes", value: "fertilizantes" },
   { label: "Agroinsumos", value: "agroinsumos" },
   { label: "Gasolina", value: "gasolina" },
+  { label: "Microorganismos", value: "microorganismos" },
   { label: "Preparación de terreno y maquinaria", value: "preparacion_terreno_maquinaria" },
   { label: "Análisis y laboratorio", value: "analisis_laboratorio" },
   { label: "Material vegetal", value: "material_vegetal" },

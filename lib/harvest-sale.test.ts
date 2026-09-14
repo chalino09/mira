@@ -60,3 +60,19 @@ test("sigue rechazando gastos excesivos en una calidad vendida aunque otras estÃ
 
   assert.equal(result.isValid, false);
 });
+
+test("aplica los descuentos por caja a las ventas de Canica y Papel", () => {
+  const result = calculateHarvestSale({
+    lines: [
+      { quality: "Canica", boxCount: 3, grossPricePerBox: 40 },
+      { quality: "Papel", boxCount: 4, grossPricePerBox: 20 }
+    ],
+    commissionPerBox: 2,
+    freightPerBox: 3,
+    packagingPerBox: 1
+  });
+  assert.equal(result.soldBoxes, 7);
+  assert.equal(result.grossAmount, 200);
+  assert.equal(result.netAmount, 158);
+  assert.equal(result.isValid, true);
+});

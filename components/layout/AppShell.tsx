@@ -1055,7 +1055,9 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
         <EditorialObject index="A" label="Primera" value={`${formatNumber(harvest.firstQuality)} kg`} detail={`${formatNumber(harvest.firstQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="B" label="Segunda" value={`${formatNumber(harvest.secondQuality)} kg`} detail={`${formatNumber(harvest.secondQualityBoxes)} cajas`} icon={CheckCircle2} />
         <EditorialObject index="C" label="Tercera" value={`${formatNumber(harvest.thirdQuality)} kg`} detail={`${formatNumber(harvest.thirdQualityBoxes)} cajas`} icon={CheckCircle2} />
-        <EditorialObject index="D" label="Venta neta" value={formatCurrency(harvest.netRevenue ?? harvest.grossRevenue ?? 0)} detail={`${formatNumber(harvest.soldBoxes ?? 0)} cajas vendidas${(harvest.specialBoxes ?? 0) ? ` · ${formatNumber(harvest.specialBoxes ?? 0)} especiales` : ""}${(harvest.unsoldBoxes ?? 0) ? ` · ${formatNumber(harvest.unsoldBoxes ?? 0)} pendientes` : ""}`} icon={WalletCards} />
+        <EditorialObject index="D" label="Canica" value={`${formatNumber(harvest.canica)} kg`} detail={`${formatNumber(harvest.canicaBoxes)} cajas`} icon={CheckCircle2} />
+        <EditorialObject index="E" label="Papel" value={`${formatNumber(harvest.papel)} kg`} detail={`${formatNumber(harvest.papelBoxes)} cajas`} icon={CheckCircle2} />
+        <EditorialObject index="F" label="Venta neta" value={formatCurrency(harvest.netRevenue ?? harvest.grossRevenue ?? 0)} detail={`${formatNumber(harvest.soldBoxes ?? 0)} cajas vendidas${(harvest.specialBoxes ?? 0) ? ` · ${formatNumber(harvest.specialBoxes ?? 0)} especiales` : ""}${(harvest.unsoldBoxes ?? 0) ? ` · ${formatNumber(harvest.unsoldBoxes ?? 0)} pendientes` : ""}`} icon={WalletCards} />
       </div>
       {harvest.sale ? (
         <section aria-labelledby="sale-breakdown-title" className="mt-6 border border-app-border bg-white p-5">
@@ -1573,6 +1575,8 @@ function HarvestSection({ embedded = false }: { embedded?: boolean }) {
             { key: "first", label: "1ra", render: (item) => qualityCell(item.firstQualityBoxes, item.firstQuality) },
             { key: "second", label: "2da", render: (item) => qualityCell(item.secondQualityBoxes, item.secondQuality) },
             { key: "third", label: "3ra", render: (item) => qualityCell(item.thirdQualityBoxes, item.thirdQuality) },
+            { key: "canica", label: "Canica", render: (item) => qualityCell(item.canicaBoxes, item.canica) },
+            { key: "papel", label: "Papel", render: (item) => qualityCell(item.papelBoxes, item.papel) },
             { key: "merma", label: "Merma", render: (item) => qualityCell(item.mermaBoxes, item.merma) },
             ...(!isManager ? [{ key: "price", label: "Precio por caja", render: (item: HarvestRecord) => formatPricePerBox(item.estimatedPrice), sortable: true }] : []),
             { key: "sale", label: "Venta neta", render: (item) => item.netRevenue ? formatCurrency(item.netRevenue) : item.grossRevenue ? formatCurrency(item.grossRevenue) : "--", mobileHidden: true },

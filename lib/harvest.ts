@@ -16,14 +16,20 @@ export type HarvestCaptureValues = {
   firstQuality: number;
   secondQuality: number;
   thirdQuality: number;
+  canica: number;
+  papel: number;
   merma: number;
   firstQualityBoxes: number;
   secondQualityBoxes: number;
   thirdQualityBoxes: number;
+  canicaBoxes: number;
+  papelBoxes: number;
   mermaBoxes: number;
   firstQualityPrice: number;
   secondQualityPrice: number;
   thirdQualityPrice: number;
+  canicaPrice: number;
+  papelPrice: number;
   estimatedPrice: number;
   estimatedRevenue: number;
 };
@@ -50,6 +56,8 @@ export function reconcileHarvestBoxes({
   firstQualityBoxes,
   secondQualityBoxes,
   thirdQualityBoxes,
+  canicaBoxes = 0,
+  papelBoxes = 0,
   mermaBoxes
 }: Pick<HarvestCaptureValues,
   | "boxCount"
@@ -57,8 +65,8 @@ export function reconcileHarvestBoxes({
   | "secondQualityBoxes"
   | "thirdQualityBoxes"
   | "mermaBoxes"
->): HarvestBoxReconciliation {
-  const classifiedBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + mermaBoxes;
+> & Partial<Pick<HarvestCaptureValues, "canicaBoxes" | "papelBoxes">>): HarvestBoxReconciliation {
+  const classifiedBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + canicaBoxes + papelBoxes + mermaBoxes;
   const difference = classifiedBoxes - boxCount;
   const isBalanced = boxCount > 0 && Math.abs(difference) < 0.000001;
 
@@ -106,23 +114,31 @@ export function harvestValuesFromForm(form: FormData): HarvestCaptureValues {
   const firstQualityBoxes = formNumber(form, "firstQualityBoxes");
   const secondQualityBoxes = formNumber(form, "secondQualityBoxes");
   const thirdQualityBoxes = formNumber(form, "thirdQualityBoxes");
+  const canicaBoxes = formNumber(form, "canicaBoxes");
+  const papelBoxes = formNumber(form, "papelBoxes");
   const mermaBoxes = formNumber(form, "mermaBoxes");
-  const qualityBoxTotal = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + mermaBoxes;
+  const qualityBoxTotal = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + canicaBoxes + papelBoxes + mermaBoxes;
   const boxCount = formNumber(form, "boxCount") || qualityBoxTotal;
   const firstQualityPrice = formNumber(form, "firstQualityPrice");
   const secondQualityPrice = formNumber(form, "secondQualityPrice");
   const thirdQualityPrice = formNumber(form, "thirdQualityPrice");
+  const canicaPrice = formNumber(form, "canicaPrice");
+  const papelPrice = formNumber(form, "papelPrice");
 
   const firstQuality = firstQualityBoxes * boxWeightKg;
   const secondQuality = secondQualityBoxes * boxWeightKg;
   const thirdQuality = thirdQualityBoxes * boxWeightKg;
+  const canica = canicaBoxes * boxWeightKg;
+  const papel = papelBoxes * boxWeightKg;
   const merma = mermaBoxes * boxWeightKg;
   const kilograms = boxCount * boxWeightKg;
-  const commercialBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes;
+  const commercialBoxes = firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + canicaBoxes + papelBoxes;
   const estimatedRevenue =
     firstQualityBoxes * firstQualityPrice +
     secondQualityBoxes * secondQualityPrice +
-    thirdQualityBoxes * thirdQualityPrice;
+    thirdQualityBoxes * thirdQualityPrice +
+    canicaBoxes * canicaPrice +
+    papelBoxes * papelPrice;
   const estimatedPrice = commercialBoxes ? estimatedRevenue / commercialBoxes : 0;
 
   return {
@@ -132,14 +148,20 @@ export function harvestValuesFromForm(form: FormData): HarvestCaptureValues {
     firstQuality,
     secondQuality,
     thirdQuality,
+    canica,
+    papel,
     merma,
     firstQualityBoxes,
     secondQualityBoxes,
     thirdQualityBoxes,
+    canicaBoxes,
+    papelBoxes,
     mermaBoxes,
     firstQualityPrice,
     secondQualityPrice,
     thirdQualityPrice,
+    canicaPrice,
+    papelPrice,
     estimatedPrice,
     estimatedRevenue
   };

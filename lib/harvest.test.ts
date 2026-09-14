@@ -78,3 +78,39 @@ test("advierte precios por caja fuera del rango histórico", () => {
 
   assert.match(message, /Verifica el dato antes de guardar/);
 });
+
+test("incluye Canica y Papel en cajas, kilos e ingresos y detecta descuadres", () => {
+  const form = new FormData();
+  form.set("boxCount", "10");
+  form.set("boxWeightKg", "20");
+  form.set("firstQualityBoxes", "2");
+  form.set("firstQualityPrice", "100");
+  form.set("canicaBoxes", "3");
+  form.set("canicaPrice", "40");
+  form.set("papelBoxes", "4");
+  form.set("papelPrice", "20");
+  form.set("mermaBoxes", "1");
+
+  const values = harvestValuesFromForm(form);
+  assert.equal(values.canica, 60);
+  assert.equal(values.papel, 80);
+  assert.equal(values.kilograms, 200);
+  assert.equal(values.estimatedRevenue, 400);
+  assert.equal(values.estimatedPrice, 400 / 9);
+  assert.equal(reconcileHarvestBoxes(values).isBalanced, true);
+  assert.equal(reconcileHarvestBoxes({ ...values, papelBoxes: 5 }).difference, 1);
+  assert.equal(reconcileHarvestBoxes({ ...values, canicaBoxes: 2 }).isBalanced, false);
+});
+
+test("los registros anteriores conservan sus totales sin Canica ni Papel", () => {
+  const form = new FormData();
+  form.set("firstQualityBoxes", "5");
+  form.set("firstQualityPrice", "100");
+  const values = harvestValuesFromForm(form);
+  assert.equal(values.canicaBoxes, 0);
+  assert.equal(values.papelBoxes, 0);
+  assert.equal(values.canicaPrice, 0);
+  assert.equal(values.papelPrice, 0);
+  assert.equal(values.estimatedRevenue, 500);
+  assert.equal(values.boxCount, 5);
+});

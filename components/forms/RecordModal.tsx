@@ -85,7 +85,7 @@ type CostDraft = {
 type SaleDraft = {
   buyerName: string;
   date: string;
-  lines: Array<{ quality: "Primera" | "Segunda" | "Tercera"; boxCount: string; grossPricePerBox: string }>;
+  lines: Array<{ quality: "Primera" | "Segunda" | "Tercera" | "Canica" | "Papel"; boxCount: string; grossPricePerBox: string }>;
   commissionPerBox: string;
   freightPerBox: string;
   packagingPerBox: string;
@@ -663,17 +663,21 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       return;
     }
     if (modal !== "sale" || !selectedHarvest) return;
-    const lineFor = (quality: "Primera" | "Segunda" | "Tercera") => selectedHarvest.sale?.lines.find((line) => line.quality === quality);
+    const lineFor = (quality: "Primera" | "Segunda" | "Tercera" | "Canica" | "Papel") => selectedHarvest.sale?.lines.find((line) => line.quality === quality);
     const first = lineFor("Primera");
     const second = lineFor("Segunda");
     const third = lineFor("Tercera");
+    const canica = lineFor("Canica");
+    const papel = lineFor("Papel");
     setSaleDraft({
       buyerName: selectedHarvest.sale?.buyerName || selectedHarvest.destination || "",
       date: selectedHarvest.sale?.date || selectedHarvest.date,
       lines: [
         { quality: "Primera", boxCount: String(first?.boxCount ?? selectedHarvest.firstQualityBoxes), grossPricePerBox: String(first?.grossPricePerBox ?? selectedHarvest.firstQualityPrice) },
         { quality: "Segunda", boxCount: String(second?.boxCount ?? selectedHarvest.secondQualityBoxes), grossPricePerBox: String(second?.grossPricePerBox ?? selectedHarvest.secondQualityPrice) },
-        { quality: "Tercera", boxCount: String(third?.boxCount ?? selectedHarvest.thirdQualityBoxes), grossPricePerBox: String(third?.grossPricePerBox ?? selectedHarvest.thirdQualityPrice) }
+        { quality: "Tercera", boxCount: String(third?.boxCount ?? selectedHarvest.thirdQualityBoxes), grossPricePerBox: String(third?.grossPricePerBox ?? selectedHarvest.thirdQualityPrice) },
+        { quality: "Canica", boxCount: String(canica?.boxCount ?? selectedHarvest.canicaBoxes), grossPricePerBox: String(canica?.grossPricePerBox ?? selectedHarvest.canicaPrice) },
+        { quality: "Papel", boxCount: String(papel?.boxCount ?? selectedHarvest.papelBoxes), grossPricePerBox: String(papel?.grossPricePerBox ?? selectedHarvest.papelPrice) }
       ],
       commissionPerBox: selectedHarvest.sale?.commissionPerBox ? String(selectedHarvest.sale.commissionPerBox) : "",
       freightPerBox: selectedHarvest.sale?.freightPerBox ? String(selectedHarvest.sale.freightPerBox) : "",
@@ -1321,7 +1325,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       target_lines: [
         { quality: "Primera", boxCount: record.firstQualityBoxes, grossPricePerBox: record.firstQualityPrice },
         { quality: "Segunda", boxCount: record.secondQualityBoxes, grossPricePerBox: record.secondQualityPrice },
-        { quality: "Tercera", boxCount: record.thirdQualityBoxes, grossPricePerBox: record.thirdQualityPrice }
+        { quality: "Tercera", boxCount: record.thirdQualityBoxes, grossPricePerBox: record.thirdQualityPrice },
+        { quality: "Canica", boxCount: record.canicaBoxes, grossPricePerBox: record.canicaPrice },
+        { quality: "Papel", boxCount: record.papelBoxes, grossPricePerBox: record.papelPrice }
       ]
     });
     if (saleError) throw saleError;
@@ -1357,11 +1363,15 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_first_quality_boxes: record.firstQualityBoxes,
         target_second_quality_boxes: record.secondQualityBoxes,
         target_third_quality_boxes: record.thirdQualityBoxes,
+        target_canica_boxes: record.canicaBoxes,
+        target_papel_boxes: record.papelBoxes,
         target_merma_boxes: record.mermaBoxes,
         target_third_quality_kg: record.thirdQuality,
         target_first_quality_price: record.firstQualityPrice,
         target_second_quality_price: record.secondQualityPrice,
-        target_third_quality_price: record.thirdQualityPrice
+        target_third_quality_price: record.thirdQualityPrice,
+        target_canica_price: record.canicaPrice,
+        target_papel_price: record.papelPrice,
       });
       if (rpcError) throw rpcError;
       const harvestId = rpcRecordId(data as { recordId?: string }, "No se pudo confirmar la cosecha guardada.");
@@ -1389,10 +1399,14 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_first_quality_boxes: record.firstQualityBoxes,
         target_second_quality_boxes: record.secondQualityBoxes,
         target_third_quality_boxes: record.thirdQualityBoxes,
+        target_canica_boxes: record.canicaBoxes,
+        target_papel_boxes: record.papelBoxes,
         target_merma_boxes: record.mermaBoxes,
         target_first_quality_price: record.firstQualityPrice,
         target_second_quality_price: record.secondQualityPrice,
         target_third_quality_price: record.thirdQualityPrice,
+        target_canica_price: record.canicaPrice,
+        target_papel_price: record.papelPrice,
         target_destination: record.destination || null,
         target_notes: record.notes || null,
         target_change_note: String(form.get("changeNote") ?? "").trim()

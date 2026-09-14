@@ -270,14 +270,20 @@ export type HarvestRecord = {
   firstQuality: number;
   secondQuality: number;
   thirdQuality: number;
+  canica: number;
+  papel: number;
   merma: number;
   firstQualityBoxes: number;
   secondQualityBoxes: number;
   thirdQualityBoxes: number;
+  canicaBoxes: number;
+  papelBoxes: number;
   mermaBoxes: number;
   firstQualityPrice: number;
   secondQualityPrice: number;
   thirdQualityPrice: number;
+  canicaPrice: number;
+  papelPrice: number;
   estimatedPrice: number;
   soldBoxes?: number;
   specialBoxes?: number;
@@ -293,7 +299,7 @@ export type HarvestRecord = {
 };
 
 export type HarvestSaleLine = {
-  quality: "Primera" | "Segunda" | "Tercera";
+  quality: "Primera" | "Segunda" | "Tercera" | "Canica" | "Papel";
   boxCount: number;
   grossPricePerBox: number;
 };
@@ -323,6 +329,7 @@ export type CostRecord = {
     | "Análisis y laboratorio"
     | "Material vegetal"
     | "Polinización"
+    | "Microorganismos"
     | "Agua"
     | "Energía"
     | "Plásticos"

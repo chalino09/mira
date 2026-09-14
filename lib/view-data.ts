@@ -25,7 +25,7 @@ const NUTRITION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, produ
 const APPLICATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, category, product_name, composition, dose, applied_area, safety_interval, reentry_interval, notes";
 const PEST_COLUMNS = "id, public_id, greenhouse_id, problem, severity, affected_zone, detected_at, action_taken, follow_up, case_status, photo_storage_path, photo_url";
 const PEST_UPDATE_COLUMNS = "id, pest_alert_id, greenhouse_id, update_status, severity, action_type, notes, next_review_date, photo_storage_path, created_at";
-const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, estimated_price, destination, notes";
+const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, canica_kg, papel_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, canica_boxes, papel_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, canica_price, papel_price, estimated_price, destination, notes";
 const HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, packaging_amount, net_amount, payment_status, paid_at, notes";
 const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box, packaging_per_box";
 const LEGACY_HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, net_amount, payment_status, paid_at, notes";
@@ -194,9 +194,9 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
     const lines = linesBySale.get(sale.id) ?? [];
     const soldBoxes = lines.reduce((total, line) => total + Number(line.box_count ?? 0), 0);
     const specialBoxes = lines
-      .filter((line) => !/^(primeras?|segundas?|terceras?)(-|$)/i.test(String(line.quality_label ?? "")))
+      .filter((line) => !/^(primeras?|segundas?|terceras?|canica|papel)(-|$)/i.test(String(line.quality_label ?? "")))
       .reduce((total, line) => total + Number(line.box_count ?? 0), 0);
-    const firstStandardLine = lines.find((line) => /^(primera|primeras|segunda|segundas|tercera|terceras)(-|$)/i.test(String(line.quality_label ?? "")));
+    const firstStandardLine = lines.find((line) => /^(primera|primeras|segunda|segundas|tercera|terceras|canica|papel)(-|$)/i.test(String(line.quality_label ?? "")));
     const saleDetails: HarvestRecord["sale"] = {
       id: sale.id,
       buyerName: sale.buyer_name ?? "",
@@ -209,7 +209,7 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
       notes: sale.notes ?? "",
       lines: lines.flatMap((line) => {
         const label = String(line.quality_label ?? "").toLocaleLowerCase("es-MX");
-        const quality = /^primer/.test(label) ? "Primera" : /^segund/.test(label) ? "Segunda" : /^tercer/.test(label) ? "Tercera" : null;
+        const quality = /^primer/.test(label) ? "Primera" : /^segund/.test(label) ? "Segunda" : /^tercer/.test(label) ? "Tercera" : label === "canica" ? "Canica" : label === "papel" ? "Papel" : null;
         return quality ? [{ quality, boxCount: Number(line.box_count ?? 0), grossPricePerBox: Number(line.gross_unit_price ?? 0) }] : [];
       })
     };
@@ -229,13 +229,17 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
     const firstQualityBoxes = Number(row.first_quality_boxes ?? 0);
     const secondQualityBoxes = Number(row.second_quality_boxes ?? 0);
     const thirdQualityBoxes = Number(row.third_quality_boxes ?? 0);
+    const canicaBoxes = Number(row.canica_boxes ?? 0);
+    const papelBoxes = Number(row.papel_boxes ?? 0);
     const boxCount = Number(row.box_count ?? 0);
     const estimatedRevenue =
       firstQualityBoxes * Number(row.first_quality_price ?? 0)
       + secondQualityBoxes * Number(row.second_quality_price ?? 0)
-      + thirdQualityBoxes * Number(row.third_quality_price ?? 0);
+      + thirdQualityBoxes * Number(row.third_quality_price ?? 0)
+      + canicaBoxes * Number(row.canica_price ?? 0)
+      + papelBoxes * Number(row.papel_price ?? 0);
     const sales = salesByHarvest.get(row.id);
-    const soldBoxes = sales?.soldBoxes ?? (firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes);
+    const soldBoxes = sales?.soldBoxes ?? (firstQualityBoxes + secondQualityBoxes + thirdQualityBoxes + canicaBoxes + papelBoxes);
     const netRevenue = sales?.netRevenue ?? estimatedRevenue;
     return {
       id: row.id, publicId: row.public_id ?? publicEntityId("lot", row.id), sourceTaskId: row.source_task_id ?? undefined,
@@ -243,9 +247,12 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
       boxCount, boxWeightKg: Number(row.box_weight_kg ?? 20),
       firstQuality: Number(row.first_quality_kg ?? 0), secondQuality: Number(row.second_quality_kg ?? 0),
       thirdQuality: Number(row.third_quality_kg ?? 0), merma: Number(row.merma_kg ?? row.discard_kg ?? 0),
-      firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes: Number(row.merma_boxes ?? row.discard_boxes ?? 0),
+      firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, canicaBoxes, papelBoxes, mermaBoxes: Number(row.merma_boxes ?? row.discard_boxes ?? 0),
       firstQualityPrice: Number(row.first_quality_price ?? 0), secondQualityPrice: Number(row.second_quality_price ?? 0),
       thirdQualityPrice: Number(row.third_quality_price ?? 0),
+      canicaPrice: Number(row.canica_price ?? 0),
+      papelPrice: Number(row.papel_price ?? 0),
+      canica: Number(row.canica_kg ?? 0), papel: Number(row.papel_kg ?? 0),
       estimatedPrice: soldBoxes > 0 ? netRevenue / soldBoxes : Number(row.estimated_price ?? 0),
       soldBoxes,
       specialBoxes: sales?.specialBoxes ?? 0,

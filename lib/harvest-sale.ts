@@ -1,7 +1,7 @@
 import { parseNumericInput } from "./utils.ts";
 
 export type HarvestSaleCalculationLine = {
-  quality: "Primera" | "Segunda" | "Tercera";
+  quality: "Primera" | "Segunda" | "Tercera" | "Canica" | "Papel";
   boxCount: string | number;
   grossPricePerBox: string | number;
 };

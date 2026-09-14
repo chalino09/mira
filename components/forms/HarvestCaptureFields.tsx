@@ -15,10 +15,14 @@ type HarvestCaptureFieldsProps = {
     firstQualityBoxes: number;
     secondQualityBoxes: number;
     thirdQualityBoxes: number;
+    canicaBoxes: number;
+    papelBoxes: number;
     mermaBoxes: number;
     firstQualityPrice: number;
     secondQualityPrice: number;
     thirdQualityPrice: number;
+    canicaPrice: number;
+    papelPrice: number;
   }>;
   priceReferences?: HarvestPriceReferences;
   saleDeductions?: {
@@ -48,27 +52,37 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
   const [firstQualityBoxes, setFirstQualityBoxes] = useState(initialValues?.firstQualityBoxes?.toString() ?? "");
   const [secondQualityBoxes, setSecondQualityBoxes] = useState(initialValues?.secondQualityBoxes?.toString() ?? "");
   const [thirdQualityBoxes, setThirdQualityBoxes] = useState(initialValues?.thirdQualityBoxes?.toString() ?? "");
+  const [canicaBoxes, setCanicaBoxes] = useState(initialValues?.canicaBoxes?.toString() ?? "");
+  const [papelBoxes, setPapelBoxes] = useState(initialValues?.papelBoxes?.toString() ?? "");
   const [mermaBoxes, setMermaBoxes] = useState(initialValues?.mermaBoxes?.toString() ?? "");
   const [firstQualityPrice, setFirstQualityPrice] = useState(initialValues?.firstQualityPrice?.toString() ?? "");
   const [secondQualityPrice, setSecondQualityPrice] = useState(initialValues?.secondQualityPrice?.toString() ?? "");
   const [thirdQualityPrice, setThirdQualityPrice] = useState(initialValues?.thirdQualityPrice?.toString() ?? "");
+  const [canicaPrice, setCanicaPrice] = useState(initialValues?.canicaPrice?.toString() ?? "");
+  const [papelPrice, setPapelPrice] = useState(initialValues?.papelPrice?.toString() ?? "");
 
   const summary = useMemo(() => {
     const weight = numberValue(boxWeightKg) || 20;
     const firstBoxes = numberValue(firstQualityBoxes);
     const secondBoxes = numberValue(secondQualityBoxes);
     const thirdBoxes = numberValue(thirdQualityBoxes);
+    const canicaBoxTotal = numberValue(canicaBoxes);
+    const papelBoxTotal = numberValue(papelBoxes);
     const mermaBoxTotal = numberValue(mermaBoxes);
-    const qualityBoxTotal = firstBoxes + secondBoxes + thirdBoxes + mermaBoxTotal;
+    const qualityBoxTotal = firstBoxes + secondBoxes + thirdBoxes + canicaBoxTotal + papelBoxTotal + mermaBoxTotal;
     const totalBoxes = numberValue(boxCount) || qualityBoxTotal;
     const firstKg = firstBoxes * weight;
     const secondKg = secondBoxes * weight;
     const thirdKg = thirdBoxes * weight;
+    const canicaKg = canicaBoxTotal * weight;
+    const papelKg = papelBoxTotal * weight;
     const revenue =
       firstBoxes * numberValue(firstQualityPrice) +
       secondBoxes * numberValue(secondQualityPrice) +
-      thirdBoxes * numberValue(thirdQualityPrice);
-    const commercialBoxes = firstBoxes + secondBoxes + thirdBoxes;
+      thirdBoxes * numberValue(thirdQualityPrice) +
+      canicaBoxTotal * numberValue(canicaPrice) +
+      papelBoxTotal * numberValue(papelPrice);
+    const commercialBoxes = firstBoxes + secondBoxes + thirdBoxes + canicaBoxTotal + papelBoxTotal;
 
     return harvestSummary({
       boxCount: totalBoxes,
@@ -77,14 +91,20 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
       firstQuality: firstKg,
       secondQuality: secondKg,
       thirdQuality: thirdKg,
+      canica: canicaKg,
+      papel: papelKg,
       merma: mermaBoxTotal * weight,
       firstQualityBoxes: firstBoxes,
       secondQualityBoxes: secondBoxes,
       thirdQualityBoxes: thirdBoxes,
+      canicaBoxes: canicaBoxTotal,
+      papelBoxes: papelBoxTotal,
       mermaBoxes: mermaBoxTotal,
       firstQualityPrice: numberValue(firstQualityPrice),
       secondQualityPrice: numberValue(secondQualityPrice),
       thirdQualityPrice: numberValue(thirdQualityPrice),
+      canicaPrice: numberValue(canicaPrice),
+      papelPrice: numberValue(papelPrice),
       estimatedPrice: commercialBoxes ? revenue / commercialBoxes : 0,
       estimatedRevenue: revenue
     });
@@ -94,21 +114,27 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     firstQualityBoxes,
     secondQualityBoxes,
     thirdQualityBoxes,
+    canicaBoxes,
+    papelBoxes,
     mermaBoxes,
     firstQualityPrice,
     secondQualityPrice,
-    thirdQualityPrice
+    thirdQualityPrice,
+    canicaPrice,
+    papelPrice,
   ]);
 
-  const hasBoxValues = [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes]
+  const hasBoxValues = [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, canicaBoxes, papelBoxes, mermaBoxes]
     .some((value) => value.trim() !== "");
   const reconciliation = useMemo(() => reconcileHarvestBoxes({
     boxCount: numberValue(boxCount),
     firstQualityBoxes: numberValue(firstQualityBoxes),
     secondQualityBoxes: numberValue(secondQualityBoxes),
     thirdQualityBoxes: numberValue(thirdQualityBoxes),
+    canicaBoxes: numberValue(canicaBoxes),
+    papelBoxes: numberValue(papelBoxes),
     mermaBoxes: numberValue(mermaBoxes)
-  }), [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, mermaBoxes]);
+  }), [boxCount, firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, canicaBoxes, papelBoxes, mermaBoxes]);
   const reconciliationMessage = hasBoxValues ? reconciliation.message : "";
   const reconciliationInvalid = hasBoxValues && !reconciliation.isBalanced;
   const priceReferenceHistory = priceReferences ?? { first: [], second: [], third: [] };
@@ -121,12 +147,14 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     lines: [
       { quality: "Primera", boxCount: firstQualityBoxes, grossPricePerBox: firstQualityPrice },
       { quality: "Segunda", boxCount: secondQualityBoxes, grossPricePerBox: secondQualityPrice },
-      { quality: "Tercera", boxCount: thirdQualityBoxes, grossPricePerBox: thirdQualityPrice }
+      { quality: "Tercera", boxCount: thirdQualityBoxes, grossPricePerBox: thirdQualityPrice },
+      { quality: "Canica", boxCount: canicaBoxes, grossPricePerBox: canicaPrice },
+      { quality: "Papel", boxCount: papelBoxes, grossPricePerBox: papelPrice }
     ],
     commissionPerBox: saleDeductions?.commissionPerBox ?? "",
     freightPerBox: saleDeductions?.freightPerBox ?? "",
     packagingPerBox: saleDeductions?.packagingPerBox ?? ""
-  }), [firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, firstQualityPrice, secondQualityPrice, thirdQualityPrice, saleDeductions]);
+  }), [firstQualityBoxes, secondQualityBoxes, thirdQualityBoxes, canicaBoxes, papelBoxes, firstQualityPrice, secondQualityPrice, thirdQualityPrice, canicaPrice, papelPrice, saleDeductions]);
   const hasSaleDeductions = Boolean(
     numberValue(saleDeductions?.commissionPerBox ?? "")
     || numberValue(saleDeductions?.freightPerBox ?? "")
@@ -142,7 +170,7 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
   const qualityFields = [
     {
       key: "first",
-      title: "1ra",
+      title: "1ra calidad",
       boxesName: "firstQualityBoxes",
       boxesValue: firstQualityBoxes,
       setBoxes: setFirstQualityBoxes,
@@ -152,7 +180,7 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     },
     {
       key: "second",
-      title: "2da",
+      title: "2da calidad",
       boxesName: "secondQualityBoxes",
       boxesValue: secondQualityBoxes,
       setBoxes: setSecondQualityBoxes,
@@ -162,13 +190,33 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     },
     {
       key: "third",
-      title: "3ra",
+      title: "3ra calidad",
       boxesName: "thirdQualityBoxes",
       boxesValue: thirdQualityBoxes,
       setBoxes: setThirdQualityBoxes,
       priceName: "thirdQualityPrice",
       priceValue: thirdQualityPrice,
       setPrice: setThirdQualityPrice
+    },
+    {
+      key: "canica",
+      title: "Canica",
+      boxesName: "canicaBoxes",
+      boxesValue: canicaBoxes,
+      setBoxes: setCanicaBoxes,
+      priceName: "canicaPrice",
+      priceValue: canicaPrice,
+      setPrice: setCanicaPrice
+    },
+    {
+      key: "papel",
+      title: "Papel",
+      boxesName: "papelBoxes",
+      boxesValue: papelBoxes,
+      setBoxes: setPapelBoxes,
+      priceName: "papelPrice",
+      priceValue: papelPrice,
+      setPrice: setPapelPrice
     }
   ];
 
@@ -203,10 +251,10 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {qualityFields.map((field) => (
           <fieldset key={field.key} className="rounded-xl bg-app-sidebar/65 p-3">
-            <legend className="px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{field.title} calidad</legend>
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">{field.title}</legend>
             <div className="mt-2 grid gap-3">
               <label className="grid gap-1.5">
                 <span className="text-xs font-medium text-app-muted">Cajas</span>

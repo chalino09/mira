@@ -3050,11 +3050,15 @@ export function OperationsSection({
       target_first_quality_boxes: payload.firstQualityBoxes,
       target_second_quality_boxes: payload.secondQualityBoxes,
       target_third_quality_boxes: payload.thirdQualityBoxes,
+      target_canica_boxes: payload.canicaBoxes,
+      target_papel_boxes: payload.papelBoxes,
       target_merma_boxes: payload.mermaBoxes,
       target_third_quality_kg: payload.thirdQuality,
       target_first_quality_price: payload.firstQualityPrice,
       target_second_quality_price: payload.secondQualityPrice,
-      target_third_quality_price: payload.thirdQualityPrice
+      target_third_quality_price: payload.thirdQualityPrice,
+      target_canica_price: payload.canicaPrice,
+      target_papel_price: payload.papelPrice,
     });
     setCompleting(false);
     if (error) {
