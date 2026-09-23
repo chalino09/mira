@@ -1800,8 +1800,9 @@ function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView
             <Building2 aria-hidden="true" className="h-4 w-4 shrink-0 text-app-green" />
             <span className="min-w-0 flex-1">
               <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">Invernadero</span>
-              <select
-                className="mt-0.5 h-6 w-full min-w-0 cursor-pointer bg-transparent text-sm font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+              <SelectInput
+                aria-label="Invernadero"
+                className="mt-0.5 h-7 min-h-0 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium shadow-none hover:bg-transparent"
                 onChange={(event) => navigateContext({ greenhouseId: event.target.value })}
                 value={selectedGreenhouseId}
               >
@@ -1811,22 +1812,23 @@ function InventoryCostsSection({ view = "summary" }: { view?: InventoryCostsView
                     {greenhouseDisplayName(greenhouse, crops)}
                   </option>
                 ))}
-              </select>
+              </SelectInput>
             </span>
           </label>
           <label className="flex min-h-12 items-center gap-3 rounded-lg border-t border-app-border px-3 py-2 transition-colors duration-150 hover:bg-app-sidebar focus-within:bg-app-sidebar sm:border-l sm:border-t-0">
             <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-app-green" />
             <span className="min-w-0 flex-1">
               <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-app-muted">Periodo</span>
-              <select
-                className="mt-0.5 h-6 w-full min-w-0 cursor-pointer bg-transparent text-sm font-medium text-app-text outline-none focus-visible:ring-2 focus-visible:ring-app-green/25"
+              <SelectInput
+                aria-label="Periodo"
+                className="mt-0.5 h-7 min-h-0 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium shadow-none hover:bg-transparent"
                 onChange={(event) => navigateContext({ period: event.target.value as typeof selectedPeriod })}
                 value={selectedPeriod}
               >
                 <option value="week">Semana actual</option>
                 <option value="month">Mes actual</option>
                 <option value="all">Todo el historial</option>
-              </select>
+              </SelectInput>
             </span>
           </label>
           <span

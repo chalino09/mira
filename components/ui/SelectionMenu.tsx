@@ -14,8 +14,11 @@ export type SelectionMenuOption = {
 export function SelectionMenu({
   align = "left",
   ariaLabel,
+  autoFocus,
   buttonClassName,
   className,
+  disabled = false,
+  id,
   menuClassName,
   onChange,
   options,
@@ -23,8 +26,11 @@ export function SelectionMenu({
 }: {
   align?: "left" | "right";
   ariaLabel: string;
+  autoFocus?: boolean;
   buttonClassName?: string;
   className?: string;
+  disabled?: boolean;
+  id?: string;
   menuClassName?: string;
   onChange: (value: string) => void;
   options: SelectionMenuOption[];
@@ -83,11 +89,13 @@ export function SelectionMenu({
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={ariaLabel}
+        autoFocus={autoFocus}
         className={cn(
           "flex min-h-9 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-app-border bg-white px-3 text-left text-xs font-medium text-app-text outline-none transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-app-sidebar focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green active:scale-[0.96]",
           buttonClassName
         )}
-        disabled={!options.length}
+        disabled={disabled || !options.length}
+        id={id}
         onClick={() => open ? setOpen(false) : openMenu()}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {

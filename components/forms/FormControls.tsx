@@ -1,8 +1,9 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react";
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { Children, forwardRef, isValidElement, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, InputHTMLAttributes, ReactElement, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn, formatCurrencyInput, formatNumericInput, formatQuantityInput } from "@/lib/utils";
+import { SelectionMenu, type SelectionMenuOption } from "@/components/ui/SelectionMenu";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10";
@@ -99,11 +100,69 @@ export const FormattedQuantityInput = forwardRef<HTMLInputElement, FormattedInpu
   return <FormattedInput {...props} formatter={formatQuantityInput} ref={ref} />;
 });
 
-export function SelectInput({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+function selectOptions(children: ReactNode, group?: string): SelectionMenuOption[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement(child)) return [];
+    const element = child as ReactElement<{ children?: ReactNode; disabled?: boolean; label?: string; value?: string | number }>;
+    if (element.type === "optgroup") {
+      return selectOptions(element.props.children, element.props.label);
+    }
+    if (element.type !== "option") return [];
+    const label = Children.toArray(element.props.children).join("") || String(element.props.value ?? "");
+    return [{
+      value: String(element.props.value ?? label),
+      label,
+      description: group,
+      disabled: element.props.disabled
+    }];
+  });
+}
+
+export function SelectInput({
+  "aria-label": ariaLabel,
+  autoFocus,
+  children,
+  className,
+  defaultValue,
+  disabled,
+  id,
+  name,
+  onChange,
+  required,
+  value,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  const options = selectOptions(children);
+  const firstValue = options.find((option) => !option.disabled)?.value ?? options[0]?.value ?? "";
+  const [internalValue, setInternalValue] = useState(String(defaultValue ?? firstValue));
+  const selectedValue = value === undefined ? internalValue : String(value);
+  const selectedLabel = options.find((option) => option.value === selectedValue)?.label ?? "Seleccionar";
+
+  const handleChange = (nextValue: string) => {
+    if (value === undefined) setInternalValue(nextValue);
+    onChange?.({
+      target: { name, value: nextValue },
+      currentTarget: { name, value: nextValue }
+    } as ChangeEvent<HTMLSelectElement>);
+  };
+
   return (
-    <select className={cn(fieldClass, "appearance-none", className)} {...props}>
-      {children}
-    </select>
+    <>
+      <input disabled={disabled} name={name} type="hidden" value={selectedValue} />
+      <SelectionMenu
+        ariaLabel={String(ariaLabel ?? props.title ?? selectedLabel)}
+        autoFocus={autoFocus}
+        buttonClassName={cn(fieldClass, "min-w-0 justify-between", className)}
+        className="min-w-0"
+        disabled={disabled}
+        id={id}
+        menuClassName="max-h-72 w-full overflow-y-auto"
+        onChange={handleChange}
+        options={options}
+        value={selectedValue}
+      />
+      {required && !selectedValue ? <span className="sr-only" role="alert">Selecciona una opción</span> : null}
+    </>
   );
 }
 

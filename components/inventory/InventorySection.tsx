@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PageTitle } from "@/components/ui/PageTitle";
 import { Field, FormattedNumberInput, SelectInput, TextInput, UnitSelectInput } from "@/components/forms/FormControls";
+import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { appErrorMessage } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -392,7 +393,7 @@ export function InventorySection({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Costo por unidad"><FormattedNumberInput min="0" name="unitCost" required /></Field>
-              <Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field>
+              <Field label="Fecha"><DatePickerInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required /></Field>
             </div>
             <Field label="Nota (opcional)"><TextInput name="note" placeholder="Proveedor, lote o referencia" /></Field>
           </> : <p className="text-sm leading-6 text-app-muted">No hay productos disponibles todavía.</p>}
@@ -420,7 +421,7 @@ export function InventorySection({
         <form className="grid gap-5" onSubmit={adjust}>
           <p className="text-sm leading-6 text-app-muted">Usa un valor positivo para sumar y negativo para descontar. El ajuste quedará auditado.</p>
           <Field label="Artículo"><SelectInput name="itemId" required defaultValue=""><option disabled value="">Selecciona</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></Field>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Diferencia (+/-)"><FormattedNumberInput name="quantity" required /></Field><Field label="Fecha"><TextInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Diferencia (+/-)"><FormattedNumberInput name="quantity" required /></Field><Field label="Fecha"><DatePickerInput defaultValue={new Date().toISOString().slice(0, 10)} name="date" required /></Field></div>
           <Field label="Motivo"><TextInput name="reason" placeholder="Ej. Conteo físico" required /></Field>
           <div className="flex justify-end gap-2 border-t border-app-border pt-4"><Button onClick={() => setActiveForm(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">Guardar ajuste</Button></div>
         </form>
