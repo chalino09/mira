@@ -75,6 +75,7 @@ function sameOptionalText(left: string | null | undefined, right: string | null 
 
 type CostDraft = {
   category: CostRecord["category"];
+  sectorId: string;
   amount: string;
   quantity: string;
   unit: string;
@@ -108,7 +109,7 @@ type ManagerOption = {
 };
 
 function emptyCost(): CostDraft {
-  return { category: "Agroinsumos", amount: "", quantity: "", unit: "", unitPrice: "", notes: "" };
+  return { category: "Agroinsumos", sectorId: "", amount: "", quantity: "", unit: "", unitPrice: "", notes: "" };
 }
 
 type ProductOption = ProductCatalogOption;
@@ -445,6 +446,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
+  const [costGreenhouseId, setCostGreenhouseId] = useState("");
+  const [costSectorOptions, setCostSectorOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null);
   const [saleBreakdownOpen, setSaleBreakdownOpen] = useState(false);
   const [harvestBreakdownOpen, setHarvestBreakdownOpen] = useState(false);
@@ -472,10 +475,42 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       closeModal();
       return;
     }
-    if (modal === "cost") setCostRows([emptyCost()]);
+    if (modal === "cost") {
+      setCostRows([emptyCost()]);
+      setCostGreenhouseId(selectedGreenhouseId === "__all__"
+        ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
+        : selectedGreenhouseId);
+    }
     if (modal === "nutrition") setNutritionProducts([emptyNutritionProduct()]);
     if (modal === "application") setApplicationProducts([emptyApplicationProduct()]);
-  }, [closeModal, currentUser.role, modal]);
+  }, [closeModal, currentUser.role, greenhouses, modal, selectedGreenhouseId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (modal !== "cost" || !organization.id || !costGreenhouseId) {
+      setCostSectorOptions([]);
+      return;
+    }
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    void supabase
+      .from("greenhouse_sectors")
+      .select("id, name")
+      .eq("company_id", organization.id)
+      .eq("greenhouse_id", costGreenhouseId)
+      .order("order_index", { ascending: true })
+      .order("name", { ascending: true })
+      .then(({ data, error: sectorError }) => {
+        if (cancelled) return;
+        if (sectorError) {
+          setCostSectorOptions([]);
+          setError("No se pudieron cargar los módulos del invernadero.");
+          return;
+        }
+        setCostSectorOptions((data ?? []).map((sector) => ({ id: sector.id, name: sector.name })));
+      });
+    return () => { cancelled = true; };
+  }, [costGreenhouseId, modal, organization.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1423,6 +1458,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     save(async () => {
       const records = costRows.map((cost) => ({
         greenhouseId: String(form.get("greenhouseId")),
+        sectorId: cost.sectorId || null,
+        sectorName: costSectorOptions.find((sector) => sector.id === cost.sectorId)?.name ?? "",
         date: String(form.get("date")),
         category: cost.category,
         amount: requiredNumber(cost.amount),
@@ -1436,6 +1473,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .insert(records.map((record) => ({
           company_id: organization.id,
           greenhouse_id: record.greenhouseId || null,
+          greenhouse_sector_id: record.sectorId,
           category: costCategoryToDb[record.category],
           amount: record.amount,
           quantity: record.quantity,
@@ -1963,7 +2001,19 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "cost" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva">
+            <SelectInput
+              name="greenhouseId"
+              onChange={(event) => {
+                setCostGreenhouseId(event.target.value);
+                setCostRows((current) => current.map((item) => ({ ...item, sectorId: "" })));
+              }}
+              required
+              value={costGreenhouseId}
+            >
+              {greenhouseOptions}
+            </SelectInput>
+          </Field>
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section aria-labelledby="cost-items-title" className="grid gap-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -2053,7 +2103,19 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
                     />
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Field label="Módulo físico">
+                    <SelectInput
+                      aria-label={`Módulo físico de la partida ${index + 1}`}
+                      onChange={(event) => setCostRows((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, sectorId: event.target.value } : item
+                      ))}
+                      value={cost.sectorId}
+                    >
+                      <option value="">General / sin módulo</option>
+                      {costSectorOptions.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
+                    </SelectInput>
+                  </Field>
                   <Field label="Cantidad">
                     <FormattedNumberInput
                       aria-label={`Cantidad de la partida ${index + 1}`}

@@ -320,6 +320,8 @@ export type HarvestSaleDetails = {
 export type CostRecord = {
   id: string;
   greenhouseId: string;
+  sectorId?: string | null;
+  sectorName?: string;
   date: string;
   category:
     | "Nómina"
@@ -343,7 +345,17 @@ export type CostRecord = {
   quantity?: number | null;
   unit?: string;
   unitPrice?: number | null;
+  supplier?: string;
+  invoiceReference?: string;
+  sourceReference?: string;
+  origin?: "manual" | "inventory" | "resource" | "reversal";
   notes: string;
+};
+
+export type GreenhouseSector = {
+  id: string;
+  greenhouseId: string;
+  name: string;
 };
 
 export type ViewOperationalAggregates = {

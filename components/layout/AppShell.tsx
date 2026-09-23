@@ -41,6 +41,7 @@ import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
 import { OperationsSection } from "@/components/operations/OperationsSection";
 import { InventorySection } from "@/components/inventory/InventorySection";
+import { CostReportPanel } from "@/components/costs/CostReportPanel";
 import { NurserySection } from "@/components/nursery/NurserySection";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Button } from "@/components/ui/Button";
@@ -1619,7 +1620,7 @@ function qualityCell(boxes: number, kilograms: number) {
 }
 
 function CostsSection({ embedded = false }: { embedded?: boolean }) {
-  const { costListRecords, currentUser, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
+  const { costListRecords, costReportRecords, costSectors, currentUser, greenhouse, openModal, viewAggregates, viewDataMeta } = useFilteredData();
   const { list, updateList } = useListNavigation();
   const totalCost = viewAggregates?.totalCost ?? 0;
   const totalKg = viewAggregates?.totalHarvestKg ?? 0;
@@ -1716,6 +1717,18 @@ function CostsSection({ embedded = false }: { embedded?: boolean }) {
           pagination={viewDataMeta?.resource === "costs" ? { ...viewDataMeta, onPageChange: (page) => updateList({ page }) } : undefined}
         />
       </div>
+      {greenhouse ? (
+        <CostReportPanel
+          greenhouseName={greenhouse.name}
+          records={costReportRecords}
+          sectors={costSectors.map((sector) => ({ id: sector.id, name: sector.name }))}
+        />
+      ) : (
+        <div className="mt-6 rounded-app border border-app-border bg-white p-5">
+          <p className="text-sm font-medium text-app-text">Reporte por invernadero</p>
+          <p className="mt-1 text-sm text-app-muted">Selecciona un invernadero en el selector superior para generar su reporte de gastos.</p>
+        </div>
+      )}
     </section>
   );
 }

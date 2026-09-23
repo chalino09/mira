@@ -196,3 +196,29 @@ button {
     animation: productive-area-subview-fade 120ms ease-out both;
   }
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body:has(.cost-report-print-root) * {
+    visibility: hidden;
+  }
+
+  body:has(.cost-report-print-root) .cost-report-print-root,
+  body:has(.cost-report-print-root) .cost-report-print-root * {
+    visibility: visible;
+  }
+
+  .cost-report-print-root {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border: 0;
+  }
+
+  .cost-report-print-root table {
+    min-width: 0;
+  }
+}

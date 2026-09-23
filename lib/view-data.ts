@@ -7,6 +7,7 @@ import type {
   ApplicationRecord,
   ContextPeriod,
   CostRecord,
+  GreenhouseSector,
   HarvestRecord,
   IrrigationRecord,
   NutritionRecord,
@@ -30,7 +31,8 @@ const HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gr
 const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box, packaging_per_box";
 const LEGACY_HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, net_amount, payment_status, paid_at, notes";
 const LEGACY_HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box";
-const COST_COLUMNS = "id, greenhouse_id, occurred_at, category, amount, quantity, unit, unit_price, notes";
+const COST_COLUMNS = "id, greenhouse_id, greenhouse_sector_id, occurred_at, category, amount, quantity, unit, unit_price, supplier, invoice_reference, source_reference, origin, notes, greenhouse_sectors(name)";
+const COST_SECTOR_COLUMNS = "id, greenhouse_id, name";
 
 type ViewDataRequest = {
   supabase: SupabaseClient;
@@ -88,6 +90,30 @@ function withScope(query: any, greenhouseId: string) {
 function withPeriod(query: any, column: string, period: ContextPeriod) {
   const bounds = periodBounds(period);
   return bounds ? query.gte(column, bounds.start).lte(column, bounds.end) : query;
+}
+
+async function loadAllCostRows(
+  supabase: SupabaseClient,
+  companyId: string,
+  greenhouseId: string,
+  period: ContextPeriod
+) {
+  const batchSize = 1000;
+  const data: any[] = [];
+  for (let from = 0; ; from += batchSize) {
+    const query = withPeriod(
+      withScope(supabase.from("cost_records").select(COST_COLUMNS).eq("company_id", companyId), greenhouseId),
+      "occurred_at",
+      period
+    );
+    const response = await query
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + batchSize - 1);
+    if (response.error) return response;
+    data.push(...(response.data ?? []));
+    if ((response.data?.length ?? 0) < batchSize) return { data, error: null };
+  }
 }
 
 function safeSearch(value?: string) {
@@ -266,19 +292,27 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
       destination: row.destination ?? "", notes: row.notes ?? ""
     };
   });
-  const costRecords: CostRecord[] = (rows.costs ?? []).map((row) => ({
-    id: row.id, greenhouseId: row.greenhouse_id ?? "", date: row.occurred_at,
-    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
-    quantity: row.quantity == null ? null : Number(row.quantity), unit: row.unit ?? "",
-    unitPrice: row.unit_price == null ? null : Number(row.unit_price), notes: row.notes ?? ""
+  const mapCostRow = (row: any): CostRecord => {
+    const sector = Array.isArray(row.greenhouse_sectors) ? row.greenhouse_sectors[0] : row.greenhouse_sectors;
+    return {
+      id: row.id, greenhouseId: row.greenhouse_id ?? "", sectorId: row.greenhouse_sector_id ?? null,
+      sectorName: sector?.name ?? "", date: row.occurred_at,
+      category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
+      quantity: row.quantity == null ? null : Number(row.quantity), unit: row.unit ?? "",
+      unitPrice: row.unit_price == null ? null : Number(row.unit_price), supplier: row.supplier ?? "",
+      invoiceReference: row.invoice_reference ?? "", sourceReference: row.source_reference ?? "",
+      origin: row.origin ?? "manual", notes: row.notes ?? ""
+    };
+  };
+  const costRecords = (rows.costs ?? []).map(mapCostRow);
+  const costListRecords = (rows.costList ?? []).map(mapCostRow);
+  const costReportRecords = (rows.costReport ?? []).map(mapCostRow);
+  const costSectors: GreenhouseSector[] = (rows.costSectors ?? []).map((row) => ({
+    id: row.id,
+    greenhouseId: row.greenhouse_id,
+    name: row.name
   }));
-  const costListRecords: CostRecord[] = (rows.costList ?? []).map((row) => ({
-    id: row.id, greenhouseId: row.greenhouse_id ?? "", date: row.occurred_at,
-    category: mapCostCategory(row.category), amount: Number(row.amount ?? 0),
-    quantity: row.quantity == null ? null : Number(row.quantity), unit: row.unit ?? "",
-    unitPrice: row.unit_price == null ? null : Number(row.unit_price), notes: row.notes ?? ""
-  }));
-  return { tasks, irrigationRecords, nutritionRecords, applicationRecords, harvestRecords, costRecords, costListRecords };
+  return { tasks, irrigationRecords, nutritionRecords, applicationRecords, harvestRecords, costRecords, costListRecords, costReportRecords, costSectors };
 }
 
 async function mapPests(supabase: SupabaseClient, pestRows: any[], updateRows: any[]): Promise<PestAlert[]> {
@@ -391,6 +425,11 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
     if (search) listQuery = listQuery.ilike("notes", `%${search}%`);
     if (list.status) listQuery = listQuery.eq("category", list.status);
     queries.costList = withPage(listQuery.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
+    queries.costReport = loadAllCostRows(supabase, companyId, greenhouseId, period);
+    queries.costSectors = withScope(
+      supabase.from("greenhouse_sectors").select(COST_SECTOR_COLUMNS).eq("company_id", companyId),
+      greenhouseId
+    ).order("order_index", { ascending: true }).order("name", { ascending: true });
     const bounds = periodBounds(period);
     queries.aggregates = supabase.rpc("get_view_operational_aggregates", {
       target_company_id: companyId,

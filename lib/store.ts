@@ -11,6 +11,7 @@ import type {
   CurrentUser,
   ContextPeriod,
   Greenhouse,
+  GreenhouseSector,
   HarvestRecord,
   IrrigationRecord,
   ModalType,
@@ -39,6 +40,8 @@ export type WorkspaceViewData = Partial<Pick<AppState,
   | "harvestRecords"
   | "costRecords"
   | "costListRecords"
+  | "costReportRecords"
+  | "costSectors"
   | "viewAggregates"
   | "activities"
 >>;
@@ -73,6 +76,8 @@ type AppState = {
   harvestRecords: HarvestRecord[];
   costRecords: CostRecord[];
   costListRecords: CostRecord[];
+  costReportRecords: CostRecord[];
+  costSectors: GreenhouseSector[];
   viewAggregates: ViewOperationalAggregates | null;
   activities: Activity[];
   viewDataMeta: ViewDataMeta | null;
@@ -148,6 +153,8 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
   harvestRecords: [],
   costRecords: [],
   costListRecords: [],
+  costReportRecords: [],
+  costSectors: [],
   viewAggregates: null,
   activities: [],
   viewDataMeta: null,
@@ -215,6 +222,8 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
         harvestRecords: [],
         costRecords: [],
         costListRecords: [],
+        costReportRecords: [],
+        costSectors: [],
         viewAggregates: null,
         activities: [],
         viewDataMeta: null
@@ -419,6 +428,7 @@ export const useGreenhouseStore = create<AppState>()(persist((set) => ({
     invalidateViewDataCache();
     set((state) => ({
       costRecords: [{ ...record, id: record.id ?? makeId("cost") }, ...state.costRecords],
+      costReportRecords: [{ ...record, id: record.id ?? makeId("cost") }, ...state.costReportRecords],
       activities: [
         {
           id: makeId("act"),
