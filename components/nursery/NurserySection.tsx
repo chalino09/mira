@@ -14,6 +14,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useGreenhouseStore } from "@/lib/store";
 import { appErrorMessage } from "@/lib/errors";
 import { calculatedCostAmount } from "@/lib/cost-entry";
+import { NURSERY_VARIETY_PRESETS } from "@/lib/nursery-varieties";
 import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
 
 type Nursery = { id: string; name: string };
@@ -32,6 +33,11 @@ type Sale = {
   payment_status: "paid" | "pending" | "partial" | "overdue" | "cancelled";
   notes: string | null;
 };
+type SaleLine = { id: string; description: string; quantity: number | null; unit: string | null; unit_price: number | null; line_total: number };
+type SaleDraft = { id: string; catalogItemId: string; description: string; quantity: string; unit: string; unitPrice: string; amount: string };
+const emptySaleLine = (): SaleDraft => ({ id: crypto.randomUUID(), catalogItemId: "", description: "", quantity: "", unit: "pieza", unitPrice: "", amount: "" });
+const saleLineAmount = (row: SaleDraft) => calculatedCostAmount(row.quantity, row.unitPrice) ?? parseNumericInput(row.amount) ?? 0;
+
 type SaleReceipt = { id: string; occurred_at: string; payment_method: string; payment_group_id: string | null; amount: number; notes: string | null; voided_at: string | null; void_reason: string | null };
 type LedgerEntry = {
   source_id: string;
@@ -139,6 +145,19 @@ export function NurserySection() {
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [saleRows, setSaleRows] = useState<SaleDraft[]>([]);
+  const [saleLines, setSaleLines] = useState<SaleLine[]>([]);
+  const [saleLinesLoading, setSaleLinesLoading] = useState(false);
+  const [saleLinesError, setSaleLinesError] = useState(false);
+  const saleTotal = saleRows.reduce((cents, row) => cents + Math.round(saleLineAmount(row) * 100), 0) / 100;
+  const updateSaleRow = (id: string, changes: Partial<SaleDraft>) => setSaleRows((rows) => rows.map((row) => row.id === id ? { ...row, ...changes } : row));
+  const saleUnitOptions = useMemo(() => Array.from(new Set([
+    "pieza", "charola", "charolas", "millar", "servicio", "kg",
+    ...catalogItems.map((item) => item.unit)
+  ])), [catalogItems]);
+  const availableVarietyPresets = useMemo(() => NURSERY_VARIETY_PRESETS.filter((preset) => !catalogItems.some((item) =>
+    item.name.localeCompare(preset.name, "es", { sensitivity: "base" }) === 0 && item.unit === preset.unit
+  )), [catalogItems]);
   const [saleReceipts, setSaleReceipts] = useState<SaleReceipt[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<SaleReceipt | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -320,14 +339,19 @@ export function NurserySection() {
     event.preventDefault();
     if (!nursery) return;
     const form = new FormData(event.currentTarget);
-    const amount = Number(form.get("amount"));
+    const amount = saleTotal;
+    if (!saleRows.length || saleRows.some((row) => !row.description.trim() || !Number.isFinite(saleLineAmount(row)) || saleLineAmount(row) <= 0)) {
+      return setNotice({ tone: "red", message: "Escribe la variedad o descripción y un importe mayor que cero en cada fila." });
+    }
+    const initialPayment = saleTerms === "cash" ? amount : Number(form.get("initialPayment") || 0);
+    if (!Number.isFinite(initialPayment) || initialPayment < 0 || initialPayment > amount) {
+      return setNotice({ tone: "red", message: "El abono inicial debe estar entre cero y el total de la venta." });
+    }
     const customerName = String(form.get("customer") ?? "");
     if (saleTerms === "credit" && !customerName.trim()) return setNotice({ tone: "red", message: "Escribe el cliente para guardar una venta a crédito." });
     setSaving(true);
     try {
       const customerId = await ensureCustomer(customerName);
-      const quantity = String(form.get("quantity") ?? "").trim();
-      const unitPrice = String(form.get("unitPrice") ?? "").trim();
       const { error } = await getSupabaseBrowserClient()!.rpc("create_nursery_sale", {
         target_nursery_id: nursery.id,
         target_customer_id: customerId,
@@ -336,8 +360,8 @@ export function NurserySection() {
         target_payment_terms: saleTerms,
         target_due_date: saleTerms === "credit" ? form.get("dueDate") : null,
         target_notes: String(form.get("notes") ?? "") || null,
-        target_lines: [{ description: form.get("description"), quantity: quantity || null, unit: quantity ? form.get("unit") : null, unitPrice: unitPrice || null, lineTotal: amount }],
-        target_initial_receipt_amount: saleTerms === "cash" ? amount : Number(form.get("initialPayment") || 0),
+        target_lines: saleRows.map((row) => ({ catalogItemId: row.catalogItemId.startsWith("preset:") || row.catalogItemId === "other" ? null : row.catalogItemId || null, description: row.description.trim(), quantity: parseNumericInput(row.quantity), unit: row.quantity ? row.unit : null, unitPrice: parseNumericInput(row.unitPrice), lineTotal: saleLineAmount(row) })),
+        target_initial_receipt_amount: initialPayment,
         target_payment_method: form.get("paymentMethod"),
         target_source_reference: null,
         target_receipt_source_reference: null
@@ -428,11 +452,27 @@ export function NurserySection() {
     setSaleReceipts((receiptResponse.data ?? []).map((receipt) => ({ ...receipt, amount: allocatedAmounts.get(receipt.id) ?? Number(receipt.amount) })) as SaleReceipt[]);
   };
 
+  const loadSaleLines = async (saleId: string) => {
+    setSaleLinesLoading(true);
+    setSaleLinesError(false);
+    try {
+      const { data, error } = await getSupabaseBrowserClient()!.from("nursery_sale_lines")
+        .select("id,description,quantity,unit,unit_price,line_total").eq("sale_id", saleId).order("created_at").order("id");
+      if (error) throw error;
+      setSaleLines((data ?? []) as SaleLine[]);
+    } catch {
+      setSaleLinesError(true);
+    } finally {
+      setSaleLinesLoading(false);
+    }
+  };
+
   const openSaleDetails = async (sale: Sale) => {
     setSelectedSale(sale);
     setSaleReceipts([]);
+    setSaleLines([]);
     setDialog("saleDetails");
-    await loadSaleReceipts(sale.id);
+    await Promise.all([loadSaleReceipts(sale.id), loadSaleLines(sale.id)]);
   };
 
   const saveSaleCorrection = async (event: FormEvent<HTMLFormElement>) => {
@@ -549,7 +589,7 @@ export function NurserySection() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div><MiraWordmark className="mb-4 block text-[11px] tracking-[0.36em] text-app-muted" /><PageTitle>Vivero</PageTitle><p className="mt-5 max-w-2xl text-sm leading-6 text-app-muted">Control de ventas de plántula, dinero recibido, créditos y gastos del vivero.</p></div>
           <div className="flex flex-wrap gap-2">
-            {activeView === "overview" ? <><Button icon={<ReceiptText className="h-4 w-4" />} onClick={() => { setSaleTerms("cash"); setDialog("sale"); }} variant="primary">Registrar venta</Button><Button icon={<Plus className="h-4 w-4" />} onClick={() => { setExpenseRows([emptyExpense()]); setDialog("expense"); }}>Registrar gastos</Button></> : null}
+            {activeView === "overview" ? <><Button icon={<ReceiptText className="h-4 w-4" />} onClick={() => { setSaleTerms("cash"); setSaleRows([emptySaleLine()]); setDialog("sale"); }} variant="primary">Registrar venta</Button><Button icon={<Plus className="h-4 w-4" />} onClick={() => { setExpenseRows([emptyExpense()]); setDialog("expense"); }}>Registrar gastos</Button></> : null}
             {activeView === "customers" ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedCustomer(null); setDialog("customer"); }} variant="primary">Agregar cliente</Button> : null}
             {activeView === "catalog" ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setSelectedCatalogItem(null); setDialog("catalog"); }} variant="primary">Agregar plántula</Button> : null}
             <Button aria-label="Actualizar Vivero" className="w-11 px-0" icon={<RefreshCw className="h-4 w-4" />} onClick={load} variant="ghost" />
@@ -697,7 +737,65 @@ export function NurserySection() {
       ) : null}
 
       <Modal onClose={() => setDialog(null)} open={dialog === "sale"} panelClassName="sm:max-w-2xl" title="Registrar venta">
-        <form className="grid gap-4" onSubmit={saveSale}><div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha"><DatePickerInput aria-label="Fecha de venta" defaultValue={today()} name="date" required /></Field><Field label="Forma de venta"><SelectionMenu ariaLabel="Forma de venta" buttonClassName="h-11 rounded-xl px-3 text-sm font-normal" menuClassName="w-full" onChange={(value) => setSaleTerms(value as "cash" | "credit")} options={[{ value: "cash", label: "Pagada", description: "El dinero ya fue recibido" }, { value: "credit", label: "A crédito", description: "Quedará saldo por cobrar" }]} value={saleTerms} /></Field></div><Field label={saleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><TextInput autoComplete="off" list="nursery-customers" name="customer" placeholder="Nombre del cliente" /><datalist id="nursery-customers">{customers.map((customer) => <option key={customer.id} value={customer.display_name} />)}</datalist></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Concepto"><TextInput name="description" placeholder="Ej. Plántula de tomate" required /></Field><Field label="Tipo"><SelectInput name="kind"><option value="seedling">Plántula</option><option value="maquila">Maquila</option><option value="seed">Semilla</option><option value="freight">Flete</option><option value="other">Otro</option></SelectInput></Field></div><div className="grid gap-4 sm:grid-cols-3"><Field label="Cantidad real (opcional)"><TextInput inputMode="decimal" min="0.0001" name="quantity" placeholder="Ej. 512" step="0.0001" type="number" /></Field><Field label="Unidad"><SelectInput defaultValue="pieza" name="unit"><option value="pieza">Pieza</option><option value="charola">Charola</option><option value="servicio">Servicio</option><option value="kg">kg</option></SelectInput></Field><Field label="Precio unitario (opcional)"><TextInput inputMode="decimal" min="0" name="unitPrice" placeholder="0.00" step="0.000001" type="number" /></Field></div><Field label="Total recibido o por cobrar"><TextInput inputMode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" /></Field>{saleTerms === "credit" ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={today()} min={today()} name="dueDate" required /></Field><Field label="Abono inicial"><TextInput defaultValue="0" inputMode="decimal" min="0" name="initialPayment" step="0.01" type="number" /></Field></div> : null}<Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Detalles de la venta" /></Field><div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar venta"}</Button></div></form>
+        <form className="grid gap-4" onSubmit={saveSale}><div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha"><DatePickerInput aria-label="Fecha de venta" defaultValue={today()} name="date" required /></Field><Field label="Forma de venta"><SelectionMenu ariaLabel="Forma de venta" buttonClassName="h-11 rounded-xl px-3 text-sm font-normal" menuClassName="w-full" onChange={(value) => setSaleTerms(value as "cash" | "credit")} options={[{ value: "cash", label: "Pagada", description: "El dinero ya fue recibido" }, { value: "credit", label: "A crédito", description: "Quedará saldo por cobrar" }]} value={saleTerms} /></Field></div><Field label={saleTerms === "credit" ? "Cliente" : "Cliente (opcional)"}><TextInput autoComplete="off" list="nursery-customers" name="customer" placeholder="Nombre del cliente" /><datalist id="nursery-customers">{customers.map((customer) => <option key={customer.id} value={customer.display_name} />)}</datalist></Field><Field label="Tipo"><SelectInput name="kind"><option value="seedling">Plántula</option><option value="maquila">Maquila</option><option value="seed">Semilla</option><option value="freight">Flete</option><option value="other">Otro</option></SelectInput></Field>
+          <section aria-labelledby="sale-varieties-title" className="grid gap-4">
+            <div><h3 className="font-medium text-app-text" id="sale-varieties-title">Variedades de la venta</h3><p className="mt-1 text-xs leading-5 text-app-muted">Agrega una fila por variedad. Captura el importe o calcúlalo con cantidad y precio unitario.</p></div>
+            {saleRows.map((row, index) => {
+              const calculated = calculatedCostAmount(row.quantity, row.unitPrice);
+              return <fieldset className="grid gap-3 rounded-2xl border border-app-border p-4" disabled={saving} key={row.id}>
+                <legend className="px-2 text-xs font-semibold text-app-text">Variedad {index + 1}</legend>
+                <Field label="Variedad">
+                  <SelectInput id={`sale-description-${row.id}`} onChange={(event) => {
+                    const catalogItemId = event.target.value;
+                    const item = catalogItems.find((candidate) => candidate.id === catalogItemId);
+                    const presetIndex = catalogItemId.startsWith("preset:") ? Number(catalogItemId.slice(7)) : -1;
+                    const preset = availableVarietyPresets[presetIndex];
+                    updateSaleRow(row.id, item ? {
+                      catalogItemId,
+                      description: [item.name, item.variety].filter(Boolean).join(" · "),
+                      unit: item.unit,
+                      unitPrice: item.default_unit_price == null ? "" : String(item.default_unit_price),
+                      amount: ""
+                    } : preset ? {
+                      catalogItemId,
+                      description: preset.name,
+                      unit: preset.unit,
+                      unitPrice: "",
+                      amount: ""
+                    } : { catalogItemId, description: "", unitPrice: "", amount: "" });
+                    if (catalogItemId === "other") {
+                      requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`sale-custom-variety-${row.id}`)?.focus()));
+                    }
+                  }} required value={row.catalogItemId}>
+                    <option disabled value="">Selecciona una variedad</option>
+                    {catalogItems.length ? <optgroup label="Catálogo del vivero">{catalogItems.map((item) => <option key={item.id} value={item.id}>{[item.name, item.variety, item.unit].filter(Boolean).join(" · ")}</option>)}</optgroup> : null}
+                    <optgroup label="Variedades frecuentes">{availableVarietyPresets.map((preset, presetIndex) => <option key={`${preset.name}-${preset.unit}`} value={`preset:${presetIndex}`}>{preset.name} · {preset.unit}</option>)}</optgroup>
+                    <option value="other">Otra variedad (escribir nombre)</option>
+                  </SelectInput>
+                </Field>
+                {row.catalogItemId === "other" ? <Field label="Escribe la variedad"><TextInput id={`sale-custom-variety-${row.id}`} onChange={(event) => updateSaleRow(row.id, { description: event.target.value })} placeholder="Ej. Nueva variedad" required value={row.description} /></Field> : null}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Cantidad"><TextInput inputMode="decimal" min="0.0001" onChange={(event) => updateSaleRow(row.id, { quantity: event.target.value })} placeholder="Opcional · Ej. 512" step="0.0001" type="number" value={row.quantity} /></Field>
+                  <Field label="Unidad"><SelectInput onChange={(event) => updateSaleRow(row.id, { unit: event.target.value })} value={row.unit}>{saleUnitOptions.map((unit) => <option key={unit} value={unit}>{unit.charAt(0).toUpperCase() + unit.slice(1)}</option>)}</SelectInput></Field>
+                  <Field label="Precio unitario"><TextInput inputMode="decimal" min="0" onChange={(event) => updateSaleRow(row.id, { unitPrice: event.target.value })} placeholder="Opcional · 0.00" step="0.000001" type="number" value={row.unitPrice} /></Field>
+                </div>
+                <div className="flex items-end gap-3">
+                  <Field className="flex-1" label={calculated === null ? "Importe" : "Importe calculado"}><TextInput inputMode="decimal" min="0.01" onChange={(event) => updateSaleRow(row.id, { amount: event.target.value })} placeholder="0.00" readOnly={calculated !== null} required step="0.01" type="number" value={calculated === null ? row.amount : calculated.toFixed(2)} /></Field>
+                  {saleRows.length > 1 ? <Button aria-label={`Quitar variedad ${index + 1}`} className="h-11 w-11 px-0" icon={<Minus aria-hidden="true" className="h-4 w-4" />} onClick={() => {
+                    setSaleRows((rows) => rows.filter((item) => item.id !== row.id));
+                    document.getElementById(`sale-description-${saleRows[index === 0 ? 1 : index - 1].id}`)?.focus();
+                  }} type="button" variant="ghost" /> : null}
+                </div>
+              </fieldset>;
+            })}
+            <Button disabled={saving} icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={() => {
+              const row = emptySaleLine();
+              setSaleRows((rows) => [...rows, row]);
+              requestAnimationFrame(() => document.getElementById(`sale-description-${row.id}`)?.focus());
+            }} type="button" variant="ghost">Agregar variedad</Button>
+            <div aria-live="polite" className="flex items-center justify-between gap-3 border-t border-app-border pt-4"><span className="text-sm font-medium text-app-text">Total de la venta</span><output className="text-lg font-semibold tabular-nums text-app-text">{formatCurrency(saleTotal)}</output></div>
+          </section>
+          {saleTerms === "credit" ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Fecha límite de pago"><DatePickerInput aria-label="Fecha límite de pago" defaultValue={today()} min={today()} name="dueDate" required /></Field><Field label="Abono inicial"><TextInput defaultValue="0" inputMode="decimal" max={saleTotal} min="0" name="initialPayment" step="0.01" type="number" /></Field></div> : null}<Field label="Método de pago"><SelectInput name="paymentMethod"><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="other">Otro</option></SelectInput></Field><Field label="Notas (opcional)"><TextArea autoGrow name="notes" placeholder="Detalles de la venta" /></Field><div className="flex justify-end gap-2 pt-2"><Button onClick={() => setDialog(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={saving} type="submit" variant="primary">{saving ? "Guardando…" : "Registrar venta"}</Button></div></form>
       </Modal>
 
       <Modal onClose={() => setDialog(null)} open={dialog === "expense"} panelClassName="sm:max-w-5xl" title="Registrar gastos">
@@ -762,6 +860,13 @@ export function NurserySection() {
             <div><p className="text-xs text-app-muted">Saldo pendiente</p><p className="mt-1 font-medium tabular-nums text-app-text">{selectedSale.payment_status === "cancelled" ? "—" : formatCurrency(selectedSale.balance_amount)}</p></div>
           </div>
           <div className="grid gap-1 text-sm"><p className="font-medium text-app-text">{customerNames.get(selectedSale.customer_id ?? "") ?? "Venta de mostrador"}</p><p className="text-app-muted">{dateLabel(selectedSale.occurred_at)}{selectedSale.due_date ? ` · vence ${dateLabel(selectedSale.due_date)}` : ""}</p>{selectedSale.notes ? <p className="mt-2 leading-6 text-app-muted">{selectedSale.notes}</p> : null}</div>
+          <section aria-labelledby="sale-lines-title">
+            <h3 className="border-b border-app-border pb-3 font-medium text-app-text" id="sale-lines-title">Detalle de variedades</h3>
+            {saleLinesLoading ? <p role="status" className="py-4 text-sm text-app-muted">Cargando variedades…</p> : saleLinesError ? <div className="py-4"><p role="alert" className="text-sm text-app-muted">No se pudieron cargar las variedades.</p><Button onClick={() => void loadSaleLines(selectedSale.id)} variant="ghost">Reintentar</Button></div> : saleLines.length ? <ul>{saleLines.map((line) => <li className="flex flex-wrap items-start justify-between gap-3 border-b border-app-border py-3" key={line.id}>
+              <div className="min-w-0 flex-1"><p className="break-words text-sm font-medium text-app-text">{line.description}</p>{line.quantity !== null ? <p className="mt-1 text-xs text-app-muted">{Number(line.quantity).toLocaleString("es-MX", { maximumFractionDigits: 4 })} {line.unit}{line.unit_price !== null ? ` × ${Number(line.unit_price).toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 6 })}` : ""}</p> : null}</div>
+              <p className="text-sm font-medium tabular-nums text-app-text">{formatCurrency(line.line_total)}</p>
+            </li>)}</ul> : <p className="py-4 text-sm text-app-muted">Esta venta no tiene variedades registradas.</p>}
+          </section>
           <section aria-labelledby="sale-payment-history">
             <div className="border-b border-app-border pb-3"><h3 className="font-medium text-app-text" id="sale-payment-history">Historial de abonos</h3></div>
             {detailLoading ? <p aria-live="polite" className="py-6 text-sm text-app-muted">Cargando abonos…</p> : saleReceiptGroups.length ? <div>{saleReceiptGroups.map((group) => {
