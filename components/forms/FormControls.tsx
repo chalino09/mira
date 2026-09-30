@@ -1,9 +1,10 @@
 "use client";
 
-import { Children, forwardRef, isValidElement, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, InputHTMLAttributes, ReactElement, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn, formatCurrencyInput, formatNumericInput, formatQuantityInput } from "@/lib/utils";
-import { SelectionMenu, type SelectionMenuOption } from "@/components/ui/SelectionMenu";
+import { selectOptions } from "@/lib/select-options";
+import { SelectionMenu } from "@/components/ui/SelectionMenu";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm text-app-text outline-none transition placeholder:text-app-muted focus:border-app-green focus:ring-2 focus:ring-app-green/10";
@@ -99,24 +100,6 @@ export const FormattedCurrencyInput = forwardRef<HTMLInputElement, FormattedInpu
 export const FormattedQuantityInput = forwardRef<HTMLInputElement, FormattedInputProps>(function FormattedQuantityInput(props, ref) {
   return <FormattedInput {...props} formatter={formatQuantityInput} ref={ref} />;
 });
-
-function selectOptions(children: ReactNode, group?: string): SelectionMenuOption[] {
-  return Children.toArray(children).flatMap((child) => {
-    if (!isValidElement(child)) return [];
-    const element = child as ReactElement<{ children?: ReactNode; disabled?: boolean; label?: string; value?: string | number }>;
-    if (element.type === "optgroup") {
-      return selectOptions(element.props.children, element.props.label);
-    }
-    if (element.type !== "option") return [];
-    const label = Children.toArray(element.props.children).join("") || String(element.props.value ?? "");
-    return [{
-      value: String(element.props.value ?? label),
-      label,
-      description: group,
-      disabled: element.props.disabled
-    }];
-  });
-}
 
 export function SelectInput({
   "aria-label": ariaLabel,
