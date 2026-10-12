@@ -21,3 +21,14 @@ test("reconoce vivero como la ruta canónica", () => {
   assert.equal(route.isKnown, true);
   assert.equal(route.isLegacy, false);
 });
+
+test("cycle filters survive navigation and pending membership is explicit", () => {
+  const cycle = "cc400000-0000-0000-0000-000000000001";
+  const path = appRoute("Mercadia AG", { section: "harvest", greenhouseId: "greenhouse-1", period: "all", list: { cycle } });
+  const url = new URL(path, "https://example.test");
+  assert.equal(parseAppRoute(url.pathname, url.searchParams).list?.cycle, cycle);
+  assert.equal(parseAppRoute("/mercadia-ag/harvest", new URLSearchParams("cycle=__pending__")).list?.cycle, "__pending__");
+  assert.equal(parseAppRoute("/mercadia-ag/harvest", new URLSearchParams("cycle=invalid")).list?.cycle, undefined);
+  assert.equal(appRoute("Mercadia AG", { section: "harvest", greenhouseId: "__all__", list: { cycle } }).includes("cycle="), false);
+  assert.equal(parseAppRoute("/mercadia-ag/greenhouses/gh-123/cycles", new URLSearchParams()).entity?.type, "cycle");
+});

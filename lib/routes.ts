@@ -19,6 +19,7 @@ type RouteState = {
 export type InventoryCostsView = "summary" | "stock" | "movements" | "costs";
 
 export type ListQueryState = {
+  cycle?: string;
   tab?: "applications" | "nutrition" | "irrigation";
   q?: string;
   sort?: string;
@@ -95,7 +96,7 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   const isLegacyNurseryRoute = sectionKey === "nursery";
   const entity = routeSegments[0] === "greenhouses" && routeSegments.length === 2
     ? { type: "greenhouse" as const, greenhousePublicId: routeSegments[1] }
-    : routeSegments[0] === "greenhouses" && routeSegments[2] === "cycles" && routeSegments[3] === "current" && routeSegments.length === 4
+    : routeSegments[0] === "greenhouses" && routeSegments[2] === "cycles" && (routeSegments.length === 3 || (routeSegments[3] === "current" && routeSegments.length === 4))
       ? { type: "cycle" as const, greenhousePublicId: routeSegments[1] }
       : routeSegments[0] === "health" && routeSegments[1] === "cases" && routeSegments.length === 3
         ? { type: "pestCase" as const, pestPublicId: routeSegments[2] }
@@ -124,7 +125,9 @@ export function parseAppRoute(pathname: string, searchParams: URLSearchParams): 
   const operationViewValue = searchParams.get("view");
   const inventoryViewValue = isLegacyCostsRoute ? "costs" : searchParams.get("view");
   const pageValue = Number(searchParams.get("page") ?? "1");
+  const cycleValue = searchParams.get("cycle");
   const list: ListQueryState = {
+    ...(cycleValue && (cycleValue === "__pending__" || /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(cycleValue)) ? { cycle: cycleValue } : {}),
     tab: tabValue === "nutrition" || tabValue === "irrigation" ? tabValue : tabValue === "applications" ? tabValue : undefined,
     q: searchParams.get("q")?.trim().slice(0, 100) || undefined,
     sort: searchParams.get("sort")?.trim().slice(0, 40) || undefined,
@@ -173,6 +176,7 @@ export function appRoute(
   if (supportsPeriod(section, inventoryView) && period) query.set("period", period);
   if (section === "calendar" && operationView && operationView !== "calendar") query.set("view", operationView);
   if (section === "inventory" && inventoryView && inventoryView !== "summary") query.set("view", inventoryView);
+  if (list?.cycle && greenhouseId && greenhouseId !== allGreenhousesId) query.set("cycle", list.cycle);
   if (list?.tab && list.tab !== "applications") query.set("tab", list.tab);
   if (list?.q) query.set("q", list.q);
   if (list?.sort) query.set("sort", list.sort);
@@ -191,6 +195,10 @@ function entityRoute(organizationName: string, segments: string[]) {
 
 export function greenhouseRoute(organizationName: string, greenhousePublicId: string) {
   return entityRoute(organizationName, ["greenhouses", greenhousePublicId]);
+}
+
+export function greenhouseCyclesRoute(organizationName: string, greenhousePublicId: string) {
+  return entityRoute(organizationName, ["greenhouses", greenhousePublicId, "cycles"]);
 }
 
 export function currentCycleRoute(organizationName: string, greenhousePublicId: string) {

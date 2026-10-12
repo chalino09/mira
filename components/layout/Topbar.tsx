@@ -3,11 +3,12 @@
 import { Building2, CalendarDays, Plus, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MiraCopilotCommand } from "@/components/copilot/MiraCopilot";
+import { CycleViewFilter } from "@/components/cycles/CycleViewFilter";
 import { OrganizationSwitcher } from "@/components/layout/OrganizationSwitcher";
 import { Button } from "@/components/ui/Button";
 import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { greenhouseDisplayName } from "@/lib/crop-ddt";
-import { appRoute, parseAppRoute } from "@/lib/routes";
+import { appRoute, parseAppRoute, publicEntityId } from "@/lib/routes";
 import { weekOfYear } from "@/lib/date";
 import { defaultPeriodForSection, useGreenhouseStore } from "@/lib/store";
 import { getInitials, todayLabel } from "@/lib/utils";
@@ -32,6 +33,10 @@ export function Topbar({
   const currentUser = useGreenhouseStore((state) => state.currentUser);
   const initials = getInitials(currentUser.fullName);
   const currentRoute = parseAppRoute(pathname, new URLSearchParams(searchParams.toString()));
+  const entityRoute = currentRoute.entity;
+  const entityGreenhouse = entityRoute?.type === "greenhouse" || entityRoute?.type === "cycle"
+    ? greenhouses.find((greenhouse) => (greenhouse.publicId ?? publicEntityId("gh", greenhouse.id)) === entityRoute.greenhousePublicId)
+    : undefined;
   const acceptsAll = ["calendar", "records", "pests", "harvest", "costs"].includes(activeSection);
   const acceptsPeriod = ["records", "pests", "harvest", "costs"].includes(activeSection);
   const hasContextPeriod = acceptsPeriod || activeSection === "calendar";
@@ -40,6 +45,10 @@ export function Topbar({
   const periodLabel = activeSection === "calendar"
     ? `Semana ${weekOfYear()}`
     : selectedPeriod === "week" ? `Semana ${weekOfYear()}` : selectedPeriod === "month" ? "Mes actual" : "Todo el historial";
+  const hasCycleFilter = !currentRoute.entity && selectedGreenhouseId !== "__all__" && (
+    ["harvest", "pests", "costs", "records"].includes(activeSection)
+    || (activeSection === "inventory" && ["summary", "costs"].includes(currentRoute.inventoryView ?? "summary"))
+  );
   const navigate = (next: { section?: typeof activeSection; greenhouseId?: string; period?: typeof selectedPeriod }) => {
     const targetSection = next.section ?? activeSection;
     const staysInSection = targetSection === activeSection;
@@ -49,7 +58,7 @@ export function Topbar({
       greenhouseId: next.greenhouseId ?? (staysInSection ? selectedGreenhouseId : savedContext?.greenhouseId ?? selectedGreenhouseId),
       period: next.period ?? (staysInSection ? selectedPeriod : savedContext?.period ?? defaultPeriodForSection(targetSection)),
       inventoryView: currentRoute.inventoryView,
-      list: staysInSection ? { ...currentRoute.list, page: undefined } : undefined
+      list: staysInSection ? { ...currentRoute.list, page: undefined, ...(next.greenhouseId && next.greenhouseId !== selectedGreenhouseId ? { cycle: undefined } : {}) } : undefined
     }));
   };
 
@@ -62,7 +71,7 @@ export function Topbar({
             <OrganizationSwitcher className="h-full max-w-40" compact showIcon={false} />
             {!isNurseryView ? <span aria-hidden="true">→</span> : null}
             {isNurseryView ? null : isCompanyView ? (
-              <span className="font-medium text-app-text">Toda la empresa</span>
+              <span className="truncate font-medium text-app-text">{entityGreenhouse?.name ?? "Toda la empresa"}</span>
             ) : (
               <SelectionMenu
                 ariaLabel="Alcance de invernaderos"
@@ -97,6 +106,7 @@ export function Topbar({
               ) : <span className="font-medium text-app-text">{periodLabel}</span>}
             </div>
           ) : null}
+          {hasCycleFilter ? <CycleViewFilter /> : null}
           <button
             className="hidden h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-xs text-app-muted transition-[background-color,color] duration-150 ease-out hover:bg-app-sidebar hover:text-app-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green sm:flex"
             onClick={() => navigate({ section: "records" })}

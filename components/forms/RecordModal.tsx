@@ -17,6 +17,7 @@ import { costCategories, costCategoryToDb } from "@/lib/cost-categories";
 import { suggestedCostCategory } from "@/lib/cost-category-suggestions";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
 import { cropVarietyOptionsForSlug } from "@/lib/crop-varieties";
+import { CycleCaptureField } from "@/components/cycles/CycleCaptureField";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
@@ -255,7 +256,7 @@ const modalCopy = {
   editGreenhouse: {
     title: "Editar área productiva",
     kicker: "Infraestructura",
-    note: "Actualiza variedad, trasplante, plantas y datos base del cultivo."
+    note: "Actualiza los datos físicos y el encargado del área."
   },
   task: {
     title: "Nueva actividad",
@@ -447,6 +448,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
   const [costRows, setCostRows] = useState<CostDraft[]>([emptyCost()]);
   const [costGreenhouseId, setCostGreenhouseId] = useState("");
+  const [captureGreenhouseId, setCaptureGreenhouseId] = useState("");
+  const [captureCycleId, setCaptureCycleId] = useState("");
   const [costSectorOptions, setCostSectorOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null);
   const [saleBreakdownOpen, setSaleBreakdownOpen] = useState(false);
@@ -734,6 +737,16 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const defaultGreenhouseId = selectedGreenhouseId === "__all__"
     ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
     : selectedGreenhouseId;
+  useEffect(() => {
+    setCaptureGreenhouseId(defaultGreenhouseId);
+    setCaptureCycleId("");
+  }, [defaultGreenhouseId, modal]);
+
+  const changeCaptureGreenhouse = (id: string) => {
+    setCaptureGreenhouseId(id);
+    setCaptureCycleId("");
+  };
+
   const activeCropOptions = crops.filter((crop) => crop.isActive);
   const cropOptions = activeCropOptions.length
     ? activeCropOptions
@@ -963,7 +976,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       target_type: type,
       target_title: title,
       target_occurred_at: occurredAt,
-      target_payload: { materials }
+      target_payload: { materials, cropCycleId: captureCycleId || null }
     });
     if (rpcError) throw rpcError;
     const result = data as { workId?: string; materialIds?: string[] } | null;
@@ -1054,17 +1067,25 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     if (!selectedGreenhouse) return;
     const form = new FormData(event.currentTarget);
     save(async () => {
+      const managerValue = String(form.get("managerRef") ?? "");
+      const surfaceM2 = requiredNumber(form.get("surfaceM2"));
       const greenhouse = {
         ...selectedGreenhouse,
-        ...readGreenhouseForm(form),
-        healthStatus: selectedGreenhouse.healthStatus,
-        temperature: selectedGreenhouse.temperature,
-        humidity: selectedGreenhouse.humidity,
-        estimatedProductionKg: selectedGreenhouse.estimatedProductionKg
+        name: String(form.get("name")), location: String(form.get("location")),
+        latitude: optionalNumber(form.get("latitude")), longitude: optionalNumber(form.get("longitude")),
+        locationAccuracyM: optionalNumber(form.get("locationAccuracyM")),
+        surfaceM2, surface: surfaceM2 ? `${surfaceM2.toLocaleString("es-MX")} m2` : "Sin superficie",
+        managerUserId: managerValue.startsWith("user:") ? managerValue.slice(5) : selectedGreenhouse.managerUserId,
+        managerStaffId: managerValue.startsWith("staff:") ? managerValue.slice(6) : selectedGreenhouse.managerStaffId,
+        manager: managerOptions.find((option) => managerValueFor(option) === managerValue)?.name ?? selectedGreenhouse.manager
       };
+      if (managerValue.startsWith("user:")) greenhouse.managerStaffId = null;
+      if (managerValue.startsWith("staff:")) greenhouse.managerUserId = null;
       const { error: updateError } = await getSupabaseBrowserClient()!
         .from("greenhouses")
-        .update(greenhousePayload(form, greenhouse))
+        .update({ name: greenhouse.name, location: greenhouse.location, latitude: greenhouse.latitude,
+          longitude: greenhouse.longitude, location_accuracy_m: greenhouse.locationAccuracyM,
+          surface_m2: greenhouse.surfaceM2, manager_user_id: greenhouse.managerUserId, manager_staff_id: greenhouse.managerStaffId })
         .eq("id", selectedGreenhouse.id)
         .eq("company_id", organization.id);
       if (updateError) throw updateError;
@@ -1092,6 +1113,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .insert({
           company_id: organization.id,
           greenhouse_id: greenhouseId,
+          crop_cycle_id: captureCycleId || null,
           type: taskTypeToDb[type],
           title: record.title,
           scheduled_date: record.date,
@@ -1301,6 +1323,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .insert({
           company_id: organization.id,
           greenhouse_id: record.greenhouseId,
+          crop_cycle_id: captureCycleId || null,
           problem: record.problem,
           severity: riskLevelToDb[record.severity],
           affected_zone: record.zone,
@@ -1455,9 +1478,10 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const handleCost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const greenhouseId = String(form.get("greenhouseId") ?? "");
     save(async () => {
       const records = costRows.map((cost) => ({
-        greenhouseId: String(form.get("greenhouseId")),
+        greenhouseId,
         sectorId: cost.sectorId || null,
         sectorName: costSectorOptions.find((sector) => sector.id === cost.sectorId)?.name ?? "",
         date: String(form.get("date")),
@@ -1473,6 +1497,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .insert(records.map((record) => ({
           company_id: organization.id,
           greenhouse_id: record.greenhouseId || null,
+          crop_cycle_id: captureCycleId || null,
           greenhouse_sector_id: record.sectorId,
           category: costCategoryToDb[record.category],
           amount: record.amount,
@@ -1644,58 +1669,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
               defaultValue={selectedGreenhouse.surfaceM2 ?? 0}
             />
           </Field>
-          <Field label="Cultivo">
-            <SelectInput
-              name="cropId"
-              onChange={(event) => setDraftCropId(event.target.value)}
-              required
-              value={draftCropId}
-            >
-              {cropOptions.map((crop) => (
-                <option key={crop.id} value={crop.id}>
-                  {crop.name}
-                </option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="Variedad">
-            <SelectInput
-              defaultValue={draftVarietyOptions.find((variety) => variety.toLowerCase() === selectedGreenhouse.variety.toLowerCase()) ?? draftVarietyOptions[0]}
-              key={`edit-${selectedGreenhouse.id}-${draftCropId}`}
-              name="variety"
-              required
-            >
-              {draftVarietyOptions.map((variety) => (
-                <option key={variety}>{variety}</option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="Presupuesto del ciclo">
-            <BudgetInput defaultValue={selectedGreenhouse.budgetAmount ?? ""} />
-          </Field>
-          <Field label="Fecha de trasplante">
-            <DatePickerInput max={todayInputValue()} name="transplantDate" defaultValue={selectedGreenhouse.transplantDate} />
-          </Field>
-          <Field label="Plantas">
-            <FormattedNumberInput name="plants" defaultValue={selectedGreenhouse.plants} />
-          </Field>
-          <Field label="Manejo de tallos">
-            <SelectInput name="stemCount" defaultValue={selectedGreenhouse.stemCount?.toString() ?? ""}>
-              <option value="">Sin configurar</option>
-              <option value="1">Un tallo</option>
-              <option value="2">Doble tallo</option>
-            </SelectInput>
-          </Field>
-          <Field label="Injerto">
-            <SelectInput name="isGrafted" defaultValue={selectedGreenhouse.isGrafted === null ? "" : String(selectedGreenhouse.isGrafted)}>
-              <option value="">Sin configurar</option>
-              <option value="true">Sí</option>
-              <option value="false">No</option>
-            </SelectInput>
-          </Field>
-          <Field label="Camas">
-            <FormattedNumberInput name="beds" defaultValue={selectedGreenhouse.beds} />
-          </Field>
+          <p className="text-sm leading-6 text-app-muted sm:col-span-2">
+            Los datos del cultivo se editan en «Ver ciclos».
+          </p>
           {canAssignGreenhouseManager ? (
             <Field label="Encargado">
               <SelectInput name="managerRef" defaultValue={selectedManagerValueFor(selectedGreenhouse)} required>
@@ -1717,8 +1693,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       {modal === "task" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleTask}>
           <Field label="Área productiva">
-            <SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput>
+            <SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput>
           </Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Tipo">
             <SelectInput name="type" defaultValue="Riego">
               {Object.keys(taskTypeToDb).map((type) => <option key={type}>{type}</option>)}
@@ -1738,7 +1715,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "irrigation" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleIrrigation} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput></Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <Field label="Duración min"><FormattedNumberInput name="durationMin" required defaultValue={0} /></Field>
           <Field label="Litros estimados"><FormattedNumberInput name="liters" required defaultValue={0} /></Field>
@@ -1751,7 +1729,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "nutrition" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleNutrition} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput></Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
@@ -1802,7 +1781,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "application" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handleApplication} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput></Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section className="border-t border-app-border pt-5 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
@@ -1858,7 +1838,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "pest" ? (
         <FormShell disabled={isSaving} error={error} onSubmit={handlePest}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput></Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="detectedAt" required defaultValue={todayInputValue()} /></Field>
           <Field label="Problema"><TextInput name="problem" required placeholder="Mosquita blanca" /></Field>
           <Field label="Incidencia"><SelectInput name="severity" defaultValue="Baja">{["Baja", "Media", "Alta"].map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
@@ -1878,7 +1859,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
       {modal === "harvest" ? (
         <FormShell disabled={isSaving} error={error} layout="wide" onSubmit={handleHarvest} {...manualRecordShellProps}>
-          <Field label="Área productiva"><SelectInput name="greenhouseId" required defaultValue={defaultGreenhouseId}>{greenhouseOptions}</SelectInput></Field>
+          <Field label="Área productiva"><SelectInput name="greenhouseId" required value={captureGreenhouseId} onChange={(event) => changeCaptureGreenhouse(event.target.value)}>{greenhouseOptions}</SelectInput></Field>
+          <CycleCaptureField greenhouseId={captureGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <HarvestCaptureFields priceReferences={priceReferences} saleDeductions={harvestSaleBreakdown} showPrices={currentUser.role !== "manager"} />
           <Field className="sm:col-span-2" label="Comprador"><TextInput name="destination" placeholder="Nombre del comprador" required /></Field>
@@ -2003,9 +1985,11 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
           <Field label="Área productiva">
             <SelectInput
+              aria-label="Área productiva"
               name="greenhouseId"
               onChange={(event) => {
                 setCostGreenhouseId(event.target.value);
+                setCaptureCycleId("");
                 setCostRows((current) => current.map((item) => ({ ...item, sectorId: "" })));
               }}
               required
@@ -2014,6 +1998,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
               {greenhouseOptions}
             </SelectInput>
           </Field>
+          <CycleCaptureField greenhouseId={costGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <section aria-labelledby="cost-items-title" className="grid gap-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">

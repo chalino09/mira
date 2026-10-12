@@ -18,6 +18,7 @@ export function SelectionMenu({
   buttonClassName,
   className,
   disabled = false,
+  dropUp = false,
   id,
   menuClassName,
   onChange,
@@ -30,6 +31,7 @@ export function SelectionMenu({
   buttonClassName?: string;
   className?: string;
   disabled?: boolean;
+  dropUp?: boolean;
   id?: string;
   menuClassName?: string;
   onChange: (value: string) => void;
@@ -114,7 +116,8 @@ export function SelectionMenu({
         <div
           aria-label={ariaLabel}
           className={cn(
-            "absolute top-[calc(100%+6px)] z-50 min-w-full w-max max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-app-border bg-white p-1.5 shadow-[0_18px_44px_rgba(13,13,13,0.16)]",
+            "absolute z-50 min-w-full w-max max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-app-border bg-white p-1.5 shadow-[0_18px_44px_rgba(13,13,13,0.16)]",
+            dropUp ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
             align === "right" ? "right-0" : "left-0",
             menuClassName
           )}

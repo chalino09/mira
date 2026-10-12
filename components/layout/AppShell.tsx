@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ActivitySquare,
   AlertTriangle,
@@ -33,9 +33,10 @@ import { RouteSync } from "@/components/layout/RouteSync";
 import { RouteAccessDenied } from "@/components/access/RouteAccessDenied";
 import { MiraCopilotPanel } from "@/components/copilot/MiraCopilot";
 import { MiraBrand, MiraWordmark } from "@/components/brand/MiraBrand";
+import { GreenhouseCyclesPanel } from "@/components/cycles/GreenhouseCyclesPanel";
 import { CropDdtPanel } from "@/components/crop/CropDdtPanel";
 import { MetricCard } from "@/components/dashboard/MetricCard";
-import { GreenhouseCard } from "@/components/dashboard/GreenhouseCard";
+import { GreenhousesSection } from "@/components/greenhouses/GreenhousesSection";
 import { CostChart, YieldChart } from "@/components/dashboard/Charts";
 import { MonitoringSection } from "@/components/monitoring/MonitoringSection";
 import { TodayDecisionBoard } from "@/components/overview/TodayDecisionBoard";
@@ -53,9 +54,9 @@ import { RecordModal } from "@/components/forms/RecordModal";
 import { Field, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { navigationItemsForRole } from "@/data/navigation";
 import { Modal } from "@/components/ui/Modal";
-import { cropLabelForId, getCropDdtStatus, greenhouseDisplayName } from "@/lib/crop-ddt";
+import { greenhouseDisplayName } from "@/lib/crop-ddt";
 import { addDays, startOfIsoWeek } from "@/lib/date";
-import { appRoute, currentCycleRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
+import { appRoute, greenhouseCyclesRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
 import { costCategories } from "@/lib/cost-categories";
 import { formatPricePerBox } from "@/lib/harvest";
@@ -77,7 +78,6 @@ import { createPrivateCompanyFileUrl, uploadCompanyAsset, uploadPrivateCompanyFi
 import { cn, formatCurrency, formatDate, formatNumber, formatPersonName, parseNumericInput } from "@/lib/utils";
 import type {
   CostRecord,
-  CropCatalogItem,
   Greenhouse,
   HarvestRecord,
   PestAlert,
@@ -177,208 +177,6 @@ function EditorialRail({
       <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-app-muted">{title}</p>
       {children}
     </aside>
-  );
-}
-
-function productiveAreaIssues(greenhouse: Greenhouse) {
-  const issues: string[] = [];
-  const hasManager = Boolean(greenhouse.managerUserId || greenhouse.managerStaffId)
-    || Boolean(greenhouse.manager && !greenhouse.manager.toLocaleLowerCase().startsWith("sin "));
-  if (greenhouse.budgetAmount === null) issues.push("Presupuesto pendiente");
-  if (!hasManager) issues.push("Responsable pendiente");
-  if (!greenhouse.surfaceM2 || greenhouse.plants <= 0 || !greenhouse.transplantDate) {
-    issues.push("Datos productivos incompletos");
-  }
-  return issues;
-}
-
-function ProductiveAreaDetail({
-  active,
-  canManage,
-  crops,
-  issues,
-  lastTask,
-  mobile = false,
-  onEdit,
-  organizationName,
-}: {
-  active: Greenhouse;
-  canManage: boolean;
-  crops: CropCatalogItem[];
-  issues: string[];
-  lastTask?: Task;
-  mobile?: boolean;
-  onEdit: () => void;
-  organizationName: string;
-}) {
-  const cropStages = useGreenhouseStore((state) => state.cropStages);
-  const [showAgronomicDetail, setShowAgronomicDetail] = useState(false);
-  const panelRootRef = useRef<HTMLDivElement>(null);
-  const agronomicTriggerRef = useRef<HTMLButtonElement>(null);
-  const backToAreaRef = useRef<HTMLButtonElement>(null);
-  const hasChangedDetailView = useRef(false);
-  const ddtStatus = getCropDdtStatus(
-    active.cropId,
-    active.transplantDate,
-    active.daysSinceTransplant,
-    cropStages
-  );
-  const detailItems = [
-    {
-      label: "Presupuesto",
-      value: active.budgetAmount === null ? "Pendiente" : formatCurrency(active.budgetAmount)
-    },
-    {
-      label: "Capacidad",
-      value: `${formatNumber(active.plants)} plantas · ${formatNumber(active.beds)} camas`
-    },
-    {
-      label: "Superficie",
-      value: active.surfaceM2 ? `${formatNumber(active.surfaceM2)} m²` : active.surface || "Pendiente"
-    },
-    {
-      label: "Responsable",
-      value: active.manager || "Pendiente"
-    }
-  ];
-  const ddtValue = ddtStatus.status === "missing-catalog"
-    ? "Sin catálogo"
-    : ddtStatus.status === "missing-date"
-      ? "Sin trasplante"
-      : `${formatNumber(ddtStatus.ddt)} DDT`;
-  const changeDetailView = (showAgronomic: boolean) => {
-    const scrollContainer = panelRootRef.current?.closest<HTMLElement>("[data-productive-area-scroll], [data-modal-scroll]");
-    if (scrollContainer) scrollContainer.scrollTop = 0;
-    setShowAgronomicDetail(showAgronomic);
-  };
-
-  useEffect(() => {
-    if (!hasChangedDetailView.current) {
-      hasChangedDetailView.current = true;
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      if (showAgronomicDetail) {
-        backToAreaRef.current?.focus();
-      } else {
-        agronomicTriggerRef.current?.focus();
-      }
-    });
-  }, [showAgronomicDetail]);
-
-  if (showAgronomicDetail) {
-    return (
-      <div className="productive-area-subview-enter" ref={panelRootRef}>
-        <div
-          className={cn(
-            "sticky top-0 z-10 border-b border-app-border bg-app-background pb-4",
-            mobile ? "-mx-4 -mt-5 px-4 pt-4" : "pt-1"
-          )}
-        >
-          <button
-            className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-app-green underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
-            onClick={() => changeDetailView(false)}
-            ref={backToAreaRef}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-            Volver al área
-          </button>
-          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Detalle agronómico</p>
-          <h3 className="mt-2 text-2xl font-light tracking-normal text-app-text">{active.name}</h3>
-          <p className="mt-2 text-sm leading-6 text-app-muted">{ddtValue} · {ddtStatus.label}</p>
-        </div>
-        <CropDdtPanel className="border-t-0 pb-8 pt-5" greenhouse={active} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="productive-area-detail-enter" ref={panelRootRef}>
-      <div
-        className={cn(
-          "sticky top-0 z-10 border-b border-app-border bg-app-background pb-5",
-          mobile ? "-mx-4 -mt-5 px-4 pt-4" : "pt-1"
-        )}
-      >
-        {!mobile ? (
-          <>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted">Área seleccionada</p>
-            <h3 className="mt-3 text-3xl font-light tracking-normal text-app-text">{active.name}</h3>
-          </>
-        ) : null}
-        <p className={cn("text-sm leading-6 text-app-muted", !mobile && "mt-2")}>
-          {cropLabelForId(active.cropId, crops)} · {active.variety || "Sin variedad"} · {active.stage}
-        </p>
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <Link
-            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-app-green bg-app-green px-3 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#244B37] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
-            href={appRoute(organizationName, { section: "calendar", greenhouseId: active.id })}
-          >
-            Abrir operación
-          </Link>
-          {canManage ? (
-            <Button
-              className="whitespace-nowrap"
-              icon={<Edit3 aria-hidden="true" className="h-4 w-4" />}
-              onClick={onEdit}
-              variant="secondary"
-            >
-              Editar área
-            </Button>
-          ) : null}
-        </div>
-        <Link
-          className="mt-3 inline-flex min-h-10 items-center text-sm font-medium text-app-green underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
-          href={greenhouseRoute(organizationName, active.publicId ?? publicEntityId("gh", active.id))}
-        >
-          Ver ficha del área
-        </Link>
-      </div>
-
-      <dl className="grid grid-cols-2 pt-5">
-        {detailItems.map((item) => (
-          <div className="border-b border-app-border py-4 pr-3 odd:border-r odd:pr-4 even:pl-4" key={item.label}>
-            <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{item.label}</dt>
-            <dd className="mt-2 text-sm leading-5 text-app-text">{item.value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {issues.length ? (
-        <div className="mt-5 border-l-2 border-[#D7C58F] bg-[#FFF8E6] px-4 py-3 text-[#725A1A]">
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            <AlertTriangle aria-hidden="true" className="h-4 w-4" />
-            Requiere atención
-          </p>
-          <ul className="mt-2 grid gap-1 pl-6 text-xs leading-5">
-            {issues.map((issue) => <li className="list-disc" key={issue}>{issue}</li>)}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="border-b border-app-border py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">Actividad más reciente</p>
-        <p className="mt-2 text-sm text-app-text">{lastTask?.title ?? "Sin actividad registrada"}</p>
-        {lastTask ? (
-          <p className="mt-1 text-xs text-app-muted">{formatDate(lastTask.date)} · {lastTask.status}</p>
-        ) : null}
-      </div>
-
-      <button
-        aria-label={`Abrir detalle agronómico de ${active.name}`}
-        className="flex min-h-16 w-full items-center justify-between gap-4 border-b border-app-border py-4 text-left transition-colors duration-150 hover:text-app-green focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green"
-        onClick={() => changeDetailView(true)}
-        ref={agronomicTriggerRef}
-        type="button"
-      >
-          <span className="min-w-0">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">Detalle agronómico</span>
-            <span className="mt-1 block text-sm text-app-text">{ddtValue} · {ddtStatus.label}</span>
-          </span>
-        <ArrowRight aria-hidden="true" className="h-5 w-5 shrink-0 text-app-green" />
-      </button>
-    </div>
   );
 }
 
@@ -759,127 +557,6 @@ function OverviewSection({
   );
 }
 
-function GreenhousesSection() {
-  const { crops, currentUser, greenhouses, openModal, organization, selectedGreenhouseId, setSelectedGreenhouseId, tasks } = useGreenhouseStore();
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const active = greenhouses.find((greenhouse) => greenhouse.id === selectedGreenhouseId) ?? greenhouses[0];
-  const canManageGreenhouses = currentUser.role === "owner" || currentUser.role === "admin";
-  const totalSurfaceM2 = greenhouses.reduce((total, greenhouse) => total + (greenhouse.surfaceM2 ?? 0), 0);
-  const cropCount = new Set(greenhouses.map((greenhouse) => greenhouse.cropId).filter(Boolean)).size;
-  const areasWithIssues = greenhouses.filter((greenhouse) => productiveAreaIssues(greenhouse).length > 0).length;
-  const activeIssues = active ? productiveAreaIssues(active) : [];
-  const lastTask = active
-    ? tasks
-      .filter((task) => task.greenhouseId === active.id && task.date <= localDateKey())
-      .sort((left, right) => right.date.localeCompare(left.date))[0]
-    : undefined;
-  const organizationName = organization.slug ?? organization.name;
-  const summary = [
-    { label: "Áreas registradas", value: formatNumber(greenhouses.length) },
-    { label: "Superficie total", value: totalSurfaceM2 ? `${formatNumber(totalSurfaceM2)} m²` : "--" },
-    { label: "Cultivos", value: formatNumber(cropCount) },
-    { label: "Requieren atención", value: formatNumber(areasWithIssues), attention: areasWithIssues > 0 }
-  ];
-  const selectArea = (greenhouseId: string) => {
-    setSelectedGreenhouseId(greenhouseId);
-    if (window.matchMedia("(max-width: 1279px)").matches) {
-      setMobileDetailOpen(true);
-    }
-  };
-  const editArea = (greenhouseId: string) => {
-    setSelectedGreenhouseId(greenhouseId);
-    openModal("editGreenhouse");
-  };
-
-  return (
-    <section>
-      <SectionHeader
-        action={canManageGreenhouses ? <Button icon={<Plus className="h-4 w-4" />} onClick={() => openModal("greenhouse")} variant="secondary">Nueva área</Button> : undefined}
-        title="Áreas productivas"
-        description="Inventario de áreas, cultivos, variedades, responsables y estado productivo."
-      />
-      <dl className="mb-8 grid grid-cols-2 border-y border-app-border md:grid-cols-4">
-        {summary.map((item, index) => (
-          <div
-            className={cn(
-              "py-4",
-              index % 2 === 0 ? "pr-4" : "border-l border-app-border pl-4",
-              index > 1 && "border-t border-app-border md:border-t-0",
-              index > 0 && "md:border-l md:border-app-border md:pl-5",
-              index === 0 && "md:border-l-0 md:pl-0"
-            )}
-            key={item.label}
-          >
-            <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-app-muted">{item.label}</dt>
-            <dd className={cn("mt-2 text-2xl font-light text-app-text", item.attention && "text-[#725A1A]")}>{item.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <div>
-          <div className="grid gap-3">
-            {greenhouses.map((greenhouse) => (
-              <GreenhouseCard
-                greenhouse={greenhouse}
-                issues={productiveAreaIssues(greenhouse)}
-                key={greenhouse.id}
-                onSelect={() => selectArea(greenhouse.id)}
-                selected={greenhouse.id === active?.id}
-              />
-            ))}
-          </div>
-        </div>
-        {active ? (
-          <div className="hidden xl:block">
-            <div
-              className="sticky top-24 h-[calc(100dvh-7rem)] overflow-y-auto pr-2"
-              data-productive-area-scroll
-              key={active.id}
-            >
-              <EditorialRail title="Detalle del área">
-                <ProductiveAreaDetail
-                  active={active}
-                  canManage={canManageGreenhouses}
-                  crops={crops}
-                  issues={activeIssues}
-                  lastTask={lastTask}
-                  onEdit={() => editArea(active.id)}
-                  organizationName={organizationName}
-                />
-              </EditorialRail>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      {active ? (
-        <div className="xl:hidden">
-          <Modal
-            bodyClassName="pt-5"
-            onClose={() => setMobileDetailOpen(false)}
-            open={mobileDetailOpen}
-            panelClassName="sm:max-w-xl"
-            title={active.name}
-          >
-            <ProductiveAreaDetail
-              active={active}
-              canManage={canManageGreenhouses}
-              crops={crops}
-              issues={activeIssues}
-              lastTask={lastTask}
-              mobile
-              onEdit={() => {
-                setMobileDetailOpen(false);
-                editArea(active.id);
-              }}
-              organizationName={organizationName}
-            />
-          </Modal>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 function EntityNotFound({ section, label }: { section: SectionId; label: string }) {
   const organization = useGreenhouseStore((state) => state.organization);
   const selectedGreenhouseId = useGreenhouseStore((state) => state.selectedGreenhouseId);
@@ -909,6 +586,7 @@ function ActiveOrganizationRouteAccessDenied() {
 }
 
 function EntityRouteView({ route }: { route: EntityRoute }) {
+  const searchParams = useSearchParams();
   const organization = useGreenhouseStore((state) => state.organization);
   const crops = useGreenhouseStore((state) => state.crops);
   const greenhouses = useGreenhouseStore((state) => state.greenhouses);
@@ -926,25 +604,16 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
     if (route.type === "cycle") {
       return (
         <section>
-          <SectionHeader
-            action={(
-              <Link
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
-                href={greenhouseRoute(organizationRouteName, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Invernadero
-              </Link>
-            )}
-            title={`Ciclo actual · ${greenhouse.name}`}
-            description="Contexto productivo actual del invernadero, disponible mediante un enlace directo y compartible."
-          />
-          <div className="grid gap-3 md:grid-cols-3">
-            <EditorialObject index="01" label="Cultivo" value={cropLabelForId(greenhouse.cropId, crops)} detail={greenhouse.variety || "Variedad sin configurar"} icon={Sprout} />
-            <EditorialObject index="02" label="Etapa actual" value={greenhouse.stage} detail={greenhouse.transplantDate ? `Trasplante: ${formatDate(greenhouse.transplantDate)}` : "Trasplante sin registrar"} icon={Leaf} />
-            <EditorialObject index="03" label="Días del ciclo" value={formatNumber(greenhouse.daysSinceTransplant)} detail={`${formatNumber(greenhouse.plants)} plantas`} icon={CalendarDays} />
+          <div className="mb-8 border-b border-app-border pb-7 pt-4 md:pt-6">
+            <Link className="inline-flex min-h-11 items-center gap-2 text-xs text-app-muted underline-offset-4 hover:text-app-green hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-green" href={appRoute(organizationRouteName, { section: "greenhouses", greenhouseId: greenhouse.id })}>
+              <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />Áreas productivas
+            </Link>
+            <div className="mt-3 flex flex-wrap items-end gap-x-5 gap-y-3">
+              <PageTitle className="md:text-5xl">Ciclos</PageTitle>
+              <p className="pb-1 text-sm text-app-muted">{greenhouse.name}</p>
+            </div>
           </div>
-          <div className="mt-8 max-w-xl"><CropDdtPanel greenhouse={greenhouse} /></div>
+          <GreenhouseCyclesPanel key={greenhouse.id} greenhouse={greenhouse} initialAction={searchParams.get("action") === "new" ? "start" : undefined} />
         </section>
       );
     }
@@ -955,10 +624,10 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
           action={(
             <Link
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-medium text-app-text transition hover:bg-app-sidebar"
-              href={currentCycleRoute(organizationRouteName, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
+              href={greenhouseCyclesRoute(organizationRouteName, greenhouse.publicId ?? publicEntityId("gh", greenhouse.id))}
             >
               <CalendarDays className="h-4 w-4" />
-              Ver ciclo actual
+              Ver ciclos
             </Link>
           )}
           title={greenhouseDisplayName(greenhouse, crops)}
@@ -3588,7 +3257,7 @@ export function AppShell() {
             onOpenCopilot={miraCopilotEnabled ? () => setCopilotOpen(true) : undefined}
           />
           <main className="mx-auto w-full max-w-[1500px] scroll-mt-20 px-4 pb-24 pt-5 lg:px-6 lg:pb-5" id="main-content">
-            <div className="mb-4 lg:hidden">
+            <div className={cn("mb-4 lg:hidden", (activeRoute.entity?.type === "cycle" || activeSection === "greenhouses") && "hidden")}>
               <p className="text-xs font-medium uppercase text-app-muted">{activeLabel}</p>
               <MiraBrand className="mt-1" markClassName="h-5 w-8" wordClassName="text-lg tracking-[0.34em]" />
             </div>

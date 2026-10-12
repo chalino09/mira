@@ -87,6 +87,11 @@ function withScope(query: any, greenhouseId: string) {
   return greenhouseId && greenhouseId !== "__all__" ? query.eq("greenhouse_id", greenhouseId) : query;
 }
 
+function withCycle(query: any, cycleId?: string) {
+  if (!cycleId) return query;
+  return cycleId === "__pending__" ? query.is("crop_cycle_id", null) : query.eq("crop_cycle_id", cycleId);
+}
+
 function withPeriod(query: any, column: string, period: ContextPeriod) {
   const bounds = periodBounds(period);
   return bounds ? query.gte(column, bounds.start).lte(column, bounds.end) : query;
@@ -96,13 +101,14 @@ async function loadAllCostRows(
   supabase: SupabaseClient,
   companyId: string,
   greenhouseId: string,
-  period: ContextPeriod
+  period: ContextPeriod,
+  cycleId?: string
 ) {
   const batchSize = 1000;
   const data: any[] = [];
   for (let from = 0; ; from += batchSize) {
     const query = withPeriod(
-      withScope(supabase.from("cost_records").select(COST_COLUMNS).eq("company_id", companyId), greenhouseId),
+      withCycle(withScope(supabase.from("cost_records").select(COST_COLUMNS).eq("company_id", companyId), greenhouseId), cycleId),
       "occurred_at",
       period
     );
@@ -342,6 +348,8 @@ async function mapPests(supabase: SupabaseClient, pestRows: any[], updateRows: a
 
 export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<WorkspaceViewDataResult> {
   const { supabase, companyId, currentUserName, section, greenhouseId, period, entity, list = {} } = request;
+  const cycleId = greenhouseId !== "__all__" && !entity ? list.cycle : undefined;
+  const withViewScope = (query: any, id: string) => withCycle(withScope(query, id), cycleId);
   const queries: Record<string, any> = {};
   const page = list.page ?? 1;
   let metaResource: ViewDataMeta["resource"] | null = null;
@@ -359,33 +367,33 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
     queries.pests = query.limit(1);
   } else if (section === "overview") {
     const bounds = overviewBounds();
-    queries.tasks = withScope(supabase.from("tasks").select(TASK_COLUMNS).eq("company_id", companyId)
+    queries.tasks = withViewScope(supabase.from("tasks").select(TASK_COLUMNS).eq("company_id", companyId)
       .or(`and(scheduled_date.gte.${bounds.start},scheduled_date.lte.${bounds.end}),and(scheduled_date.lt.${bounds.today},status.in.(pendiente,en_progreso,bloqueada))`), greenhouseId)
       .order("scheduled_date", { ascending: true });
-    queries.irrigation = withScope(supabase.from("irrigation_records").select(IRRIGATION_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
-    queries.applications = withScope(supabase.from("application_records").select(APPLICATION_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
-    queries.pests = withScope(supabase.from("pest_alerts").select(PEST_COLUMNS).eq("company_id", companyId), greenhouseId).gte("detected_at", bounds.start).lte("detected_at", bounds.end).order("detected_at", { ascending: false });
-    queries.harvests = withScope(supabase.from("harvest_records").select(HARVEST_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
+    queries.irrigation = withViewScope(supabase.from("irrigation_records").select(IRRIGATION_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
+    queries.applications = withViewScope(supabase.from("application_records").select(APPLICATION_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
+    queries.pests = withViewScope(supabase.from("pest_alerts").select(PEST_COLUMNS).eq("company_id", companyId), greenhouseId).gte("detected_at", bounds.start).lte("detected_at", bounds.end).order("detected_at", { ascending: false });
+    queries.harvests = withViewScope(supabase.from("harvest_records").select(HARVEST_COLUMNS).eq("company_id", companyId), greenhouseId).gte("occurred_at", bounds.start).lte("occurred_at", bounds.end).order("occurred_at", { ascending: false });
   } else if (section === "records") {
     const tab = list.tab ?? "applications";
     const search = safeSearch(list.q);
     if (tab === "irrigation") {
       const sort = { date: "occurred_at", duration: "duration_min", liters: "estimated_liters" }[list.sort ?? "date"] ?? "occurred_at";
-      let query = withPeriod(withScope(supabase.from("irrigation_records").select(IRRIGATION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
+      let query = withPeriod(withViewScope(supabase.from("irrigation_records").select(IRRIGATION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
       if (search) query = query.or(`sector.ilike.%${search}%,notes.ilike.%${search}%`);
       queries.irrigation = withPage(query.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
       metaResource = "irrigation";
       metaKey = "irrigation";
     } else if (tab === "nutrition") {
       const sort = { date: "occurred_at", product: "product_name", method: "method" }[list.sort ?? "date"] ?? "occurred_at";
-      let query = withPeriod(withScope(supabase.from("nutrition_records").select(NUTRITION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
+      let query = withPeriod(withViewScope(supabase.from("nutrition_records").select(NUTRITION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
       if (search) query = query.or(`product_name.ilike.%${search}%,notes.ilike.%${search}%`);
       queries.nutrition = withPage(query.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
       metaResource = "nutrition";
       metaKey = "nutrition";
     } else {
       const sort = { date: "occurred_at", product: "product_name", category: "category" }[list.sort ?? "date"] ?? "occurred_at";
-      let query = withPeriod(withScope(supabase.from("application_records").select(APPLICATION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
+      let query = withPeriod(withViewScope(supabase.from("application_records").select(APPLICATION_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
       if (search) query = query.or(`product_name.ilike.%${search}%,composition.ilike.%${search}%,applied_area.ilike.%${search}%`);
       queries.applications = withPage(query.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
       metaResource = "applications";
@@ -394,7 +402,7 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
   } else if (section === "pests") {
     const search = safeSearch(list.q);
     const sort = { date: "detected_at", problem: "problem", severity: "severity" }[list.sort ?? "date"] ?? "detected_at";
-    let query = withPeriod(withScope(supabase.from("pest_alerts").select(PEST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "detected_at", period);
+    let query = withPeriod(withViewScope(supabase.from("pest_alerts").select(PEST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "detected_at", period);
     if (search) query = query.or(`problem.ilike.%${search}%,affected_zone.ilike.%${search}%`);
     if (list.status) query = query.eq("case_status", list.status);
     if (list.severity) query = query.eq("severity", list.severity);
@@ -405,12 +413,13 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
     const sort = { date: "occurred_at", boxes: "box_count", kg: "kilograms", price: "estimated_price" }[list.sort ?? "date"] ?? "occurred_at";
     const bounds = periodBounds(period);
     const query = withPeriod(
-      withScope(supabase.from("harvest_records").select(HARVEST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId),
+      withViewScope(supabase.from("harvest_records").select(HARVEST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId),
       "occurred_at",
       period
     );
     queries.harvests = withPage(query.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
-    queries.aggregates = supabase.rpc("get_view_operational_aggregates", {
+    queries.aggregates = supabase.rpc(cycleId ? "get_cycle_operational_aggregates" : "get_view_operational_aggregates", {
+      ...(cycleId ? { target_cycle_id: cycleId === "__pending__" ? null : cycleId, target_unassigned: cycleId === "__pending__" } : {}),
       target_company_id: companyId,
       target_greenhouse_id: greenhouseId === "__all__" ? null : greenhouseId,
       target_start_date: bounds?.start ?? null,
@@ -421,17 +430,18 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
   } else if (section === "inventory" || section === "costs") {
     const search = safeSearch(list.q);
     const sort = { date: "occurred_at", category: "category", amount: "amount" }[list.sort ?? "date"] ?? "occurred_at";
-    let listQuery = withPeriod(withScope(supabase.from("cost_records").select(COST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
+    let listQuery = withPeriod(withViewScope(supabase.from("cost_records").select(COST_COLUMNS, { count: "exact" }).eq("company_id", companyId), greenhouseId), "occurred_at", period);
     if (search) listQuery = listQuery.ilike("notes", `%${search}%`);
     if (list.status) listQuery = listQuery.eq("category", list.status);
     queries.costList = withPage(listQuery.order(sort, { ascending: list.dir === "asc" }).order("id", { ascending: list.dir === "asc" }), page);
-    queries.costReport = loadAllCostRows(supabase, companyId, greenhouseId, period);
+    queries.costReport = loadAllCostRows(supabase, companyId, greenhouseId, period, cycleId);
     queries.costSectors = withScope(
       supabase.from("greenhouse_sectors").select(COST_SECTOR_COLUMNS).eq("company_id", companyId),
       greenhouseId
     ).order("order_index", { ascending: true }).order("name", { ascending: true });
     const bounds = periodBounds(period);
-    queries.aggregates = supabase.rpc("get_view_operational_aggregates", {
+    queries.aggregates = supabase.rpc(cycleId ? "get_cycle_operational_aggregates" : "get_view_operational_aggregates", {
+      ...(cycleId ? { target_cycle_id: cycleId === "__pending__" ? null : cycleId, target_unassigned: cycleId === "__pending__" } : {}),
       target_company_id: companyId,
       target_greenhouse_id: greenhouseId === "__all__" ? null : greenhouseId,
       target_start_date: bounds?.start ?? null,

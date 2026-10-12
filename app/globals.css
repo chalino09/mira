@@ -13,6 +13,7 @@
 html {
   min-height: 100%;
   background: #fafaf7;
+  scrollbar-gutter: stable;
 }
 
 body {
