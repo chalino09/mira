@@ -7,6 +7,8 @@ import { Modal } from "@/components/ui/Modal";
 import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
+import { PaymentMethodField } from "@/components/forms/PaymentMethodField";
+import { paymentMethodFromValue, type PaymentMethod } from "@/lib/payment-methods";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
@@ -92,6 +94,7 @@ type SaleDraft = {
   freightPerBox: string;
   packagingPerBox: string;
   paymentStatus: "Pendiente" | "Pagada";
+  paymentMethod: PaymentMethod | "";
   paidAt: string;
   notes: string;
 };
@@ -721,6 +724,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       freightPerBox: selectedHarvest.sale?.freightPerBox ? String(selectedHarvest.sale.freightPerBox) : "",
       packagingPerBox: selectedHarvest.sale?.packagingPerBox ? String(selectedHarvest.sale.packagingPerBox) : "",
       paymentStatus: selectedHarvest.sale?.paymentStatus ?? "Pendiente",
+      paymentMethod: selectedHarvest.sale?.paymentMethod ?? "",
       paidAt: selectedHarvest.sale?.paidAt ?? "",
       notes: selectedHarvest.sale?.notes ?? ""
     });
@@ -1367,9 +1371,10 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     const commissionPerBox = requiredNumber(form.get("commissionPerBox"));
     const freightPerBox = requiredNumber(form.get("freightPerBox"));
     const packagingPerBox = requiredNumber(form.get("packagingPerBox"));
-    if (!existingSale && commissionPerBox === 0 && freightPerBox === 0 && packagingPerBox === 0) return;
+    const paymentMethod = paymentMethodFromValue(form.get("paymentMethod"));
+    if (!existingSale && !paymentMethod && commissionPerBox === 0 && freightPerBox === 0 && packagingPerBox === 0) return;
 
-    const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale", {
+    const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payment", {
       target_harvest_record_id: harvestId,
       target_sale_id: existingSale?.id ?? null,
       target_buyer_name: record.destination.trim(),
@@ -1377,6 +1382,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       target_commission_per_box: commissionPerBox,
       target_freight_per_box: freightPerBox,
       target_packaging_per_box: packagingPerBox,
+      target_payment_method: paymentMethod ?? null,
       target_payment_status: existingSale?.paymentStatus === "Pagada" ? "paid" : "pending",
       target_paid_at: existingSale?.paidAt ?? null,
       target_notes: existingSale?.notes || null,
@@ -1531,7 +1537,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       return;
     }
     save(async () => {
-      const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale", {
+      const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payment", {
         target_harvest_record_id: selectedHarvest.id,
         target_sale_id: selectedHarvest.sale?.id ?? null,
         target_buyer_name: saleDraft.buyerName.trim(),
@@ -1539,6 +1545,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_commission_per_box: parseNumericInput(saleDraft.commissionPerBox) ?? 0,
         target_freight_per_box: parseNumericInput(saleDraft.freightPerBox) ?? 0,
         target_packaging_per_box: parseNumericInput(saleDraft.packagingPerBox) ?? 0,
+        target_payment_method: saleDraft.paymentMethod || null,
         target_payment_status: saleDraft.paymentStatus === "Pagada" ? "paid" : "pending",
         target_paid_at: saleDraft.paymentStatus === "Pagada" ? saleDraft.paidAt || saleDraft.date : null,
         target_notes: saleDraft.notes.trim() || null,
@@ -1864,6 +1871,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
           <HarvestCaptureFields priceReferences={priceReferences} saleDeductions={harvestSaleBreakdown} showPrices={currentUser.role !== "manager"} />
           <Field className="sm:col-span-2" label="Comprador"><TextInput name="destination" placeholder="Nombre del comprador" required /></Field>
+          <PaymentMethodField key="new-harvest-payment" />
           <HarvestSaleBreakdownFields onChange={setHarvestSaleBreakdown} open={harvestBreakdownOpen} onToggle={() => setHarvestBreakdownOpen((current) => !current)} value={harvestSaleBreakdown} />
           <Field className="sm:col-span-2" label="Observaciones"><TextArea autoGrow name="notes" /></Field>
         </FormShell>
@@ -1888,6 +1896,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             showPrices
           />
           <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
+          <PaymentMethodField defaultValue={selectedHarvest.sale?.paymentMethod} key={selectedHarvest.id} />
           <HarvestSaleBreakdownFields
             onChange={setHarvestSaleBreakdown}
             open={harvestBreakdownOpen}
@@ -1965,6 +1974,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
               </div>
             ) : null}
           </section>
+          <PaymentMethodField onChange={(paymentMethod) => setSaleDraft((current) => current ? { ...current, paymentMethod } : current)} value={saleDraft.paymentMethod} />
           <Field label="Estado de pago">
             <SelectInput onChange={(event) => setSaleDraft((current) => current ? { ...current, paymentStatus: event.target.value as SaleDraft["paymentStatus"] } : current)} value={saleDraft.paymentStatus}>
               <option>Pendiente</option><option>Pagada</option>

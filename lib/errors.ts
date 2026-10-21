@@ -96,6 +96,7 @@ const knownMessages: Record<string, string> = {
   harvest_change_note_required: "Escribe el motivo de la corrección.",
   harvest_values_invalid: "Revisa que las cajas y precios no sean negativos.",
   sale_buyer_required: "Escribe el nombre del comprador.",
+  sale_payment_method_invalid: "Elige una forma de pago válida.",
   sale_date_required: "Indica la fecha de la venta.",
   sale_lines_required: "Agrega las cajas vendidas por calidad.",
   sale_boxes_required: "Registra al menos una caja vendida.",

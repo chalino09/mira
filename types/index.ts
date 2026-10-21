@@ -312,6 +312,7 @@ export type HarvestSaleDetails = {
   freightPerBox: number;
   packagingPerBox: number;
   paymentStatus: "Pendiente" | "Pagada";
+  paymentMethod?: import("@/lib/payment-methods").PaymentMethod;
   paidAt?: string;
   notes: string;
   lines: HarvestSaleLine[];

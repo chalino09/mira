@@ -59,6 +59,7 @@ import { addDays, startOfIsoWeek } from "@/lib/date";
 import { appRoute, greenhouseCyclesRoute, greenhouseRoute, harvestLotRoute, organizationRouteSlug, parseAppRoute, pestCaseRoute, publicEntityId, type EntityRoute, type InventoryCostsView, type ListQueryState } from "@/lib/routes";
 import { appErrorMessage } from "@/lib/errors";
 import { costCategories } from "@/lib/cost-categories";
+import { PaymentMethodSummary } from "@/components/forms/PaymentMethodField";
 import { formatPricePerBox } from "@/lib/harvest";
 import { requireWorkSchema } from "@/lib/work-schema";
 import {
@@ -735,6 +736,7 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted" id="sale-breakdown-title">Desglose de venta</p>
               <p className="mt-2 text-sm text-app-text">{harvest.sale.buyerName} · {formatDate(harvest.sale.date)}</p>
+              <div className="mt-2"><PaymentMethodSummary value={harvest.sale.paymentMethod} /></div>
             </div>
             <StatusBadge tone={harvest.sale.paymentStatus === "Pagada" ? "green" : "neutral"}>{harvest.sale.paymentStatus}</StatusBadge>
           </div>
