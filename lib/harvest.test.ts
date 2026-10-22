@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { harvestPriceOutlierMessage, harvestValuesFromForm, reconcileHarvestBoxes } from "./harvest.ts";
+import { harvestBoxWeightError, harvestPriceOutlierMessage, harvestValuesFromForm, reconcileHarvestBoxes } from "./harvest.ts";
+
+test("does not replace zero or an empty box weight with 20 kg", () => {
+  for (const weight of ["0", ""]) {
+    const form = new FormData();
+    form.set("boxCount", "10");
+    form.set("firstQualityBoxes", "10");
+    form.set("boxWeightKg", weight);
+    const values = harvestValuesFromForm(form);
+    assert.equal(values.boxWeightKg, 0);
+    assert.equal(values.kilograms, 0);
+    assert.ok(harvestBoxWeightError(values.boxWeightKg));
+  }
+});
+
+test("rejects invalid box weights and preserves valid positive weights", () => {
+  for (const weight of ["0", "-1", "", "abc", null, undefined]) assert.ok(harvestBoxWeightError(weight));
+  for (const weight of ["0.25", "20", "1,000"]) assert.equal(harvestBoxWeightError(weight), "");
+  const form = new FormData();
+  form.set("boxCount", "10");
+  form.set("firstQualityBoxes", "10");
+  form.set("boxWeightKg", "12.5");
+  assert.equal(harvestValuesFromForm(form).kilograms, 125);
+});
 
 function reconciliation(boxCount: number, first: number, second: number, third: number, merma: number) {
   return reconcileHarvestBoxes({

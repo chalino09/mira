@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { PageTitle } from "@/components/ui/PageTitle";
+import { Pagination } from "@/components/ui/Pagination";
 import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { DatePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedCurrencyInput, FormattedNumberInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
@@ -15,6 +16,7 @@ import { useGreenhouseStore } from "@/lib/store";
 import { appErrorMessage } from "@/lib/errors";
 import { calculatedCostAmount } from "@/lib/cost-entry";
 import { NURSERY_VARIETY_PRESETS } from "@/lib/nursery-varieties";
+import { loadAllPages, paginationWindow } from "@/lib/pagination";
 import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
 
 type Nursery = { id: string; name: string };
@@ -179,6 +181,8 @@ export function NurserySection() {
   const [selectedPaymentCustomerId, setSelectedPaymentCustomerId] = useState<string | null>(null);
   const [paymentScope, setPaymentScope] = useState<"pending" | "paid">("pending");
   const [paymentRows, setPaymentRows] = useState<PaymentDraft[]>([]);
+  const [salesPage, setSalesPage] = useState(1);
+  const [ledgerPage, setLedgerPage] = useState(1);
 
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -198,8 +202,8 @@ export function NurserySection() {
     const [customerResponse, catalogResponse, salesResponse, ledgerResponse] = await Promise.all([
       supabase.from("nursery_customers").select("id,display_name,phone,notes").eq("company_id", organization.id).eq("is_active", true).order("display_name"),
       supabase.from("nursery_catalog_items").select("id,item_kind,name,variety,unit,default_unit_price").eq("nursery_id", currentNursery.id).eq("item_kind", "seedling").eq("is_active", true).order("name"),
-      supabase.from("nursery_sale_balances").select("id,folio,customer_id,occurred_at,due_date,payment_terms,total_amount,paid_amount,balance_amount,payment_status,notes").eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).order("folio", { ascending: false }).limit(100),
-      supabase.from("nursery_cash_ledger").select("source_id,occurred_at,movement_type,payment_method,signed_amount,description").eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).limit(100)
+      loadAllPages<Sale>((from, to) => supabase.from("nursery_sale_balances").select("id,folio,customer_id,occurred_at,due_date,payment_terms,total_amount,paid_amount,balance_amount,payment_status,notes", { count: "exact" }).eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).order("folio", { ascending: false }).range(from, to)),
+      loadAllPages<LedgerEntry>((from, to) => supabase.from("nursery_cash_ledger").select("source_id,occurred_at,movement_type,payment_method,signed_amount,description", { count: "exact" }).eq("nursery_id", currentNursery.id).order("occurred_at", { ascending: false }).order("movement_type").order("source_id").range(from, to))
     ]);
     const error = customerResponse.error || catalogResponse.error || salesResponse.error || ledgerResponse.error;
     if (error) setNotice({ tone: "red", message: appErrorMessage(error, "No se pudo actualizar la información de Vivero.") });
@@ -220,6 +224,14 @@ export function NurserySection() {
     && (statusFilter === "all" ? sale.payment_status !== "cancelled" : sale.payment_status === statusFilter)
   );
   const filteredLedger = ledger.filter((entry) => isInsideDateRange(entry.occurred_at));
+  const salesWindow = paginationWindow(filteredSales.length, salesPage, 20);
+  const ledgerWindow = paginationWindow(filteredLedger.length, ledgerPage, 12);
+  const visibleSales = filteredSales.slice(salesWindow.offset, salesWindow.end);
+  const visibleLedger = filteredLedger.slice(ledgerWindow.offset, ledgerWindow.end);
+  useEffect(() => {
+    setSalesPage(1);
+    setLedgerPage(1);
+  }, [dateFrom, dateTo, customerFilter, statusFilter]);
   const activeSales = filteredSales.filter((sale) => sale.payment_status !== "cancelled");
   const received = filteredLedger.filter((entry) => entry.movement_type === "receipt").reduce((sum, entry) => sum + Number(entry.signed_amount), 0);
   const expenses = filteredLedger.filter((entry) => entry.movement_type === "expense").reduce((sum, entry) => sum + Math.abs(Number(entry.signed_amount)), 0);
@@ -669,12 +681,14 @@ export function NurserySection() {
       </div>
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-        <section aria-labelledby="sales-title" className="min-w-0"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Saldos vigentes y ventas recientes.</p></div></div>
-          {filteredSales.length ? <div>{filteredSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end"><div className="me-1 text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div><Button icon={<Eye aria-hidden="true" className="h-4 w-4" />} onClick={() => void openSaleDetails(sale)} variant="ghost">Ver detalle</Button></div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
+        <section aria-labelledby="sales-title" className="min-w-0"><div className="flex items-end justify-between gap-4 border-b border-app-border pb-3"><div><h2 className="text-lg font-medium text-app-text" id="sales-title">Ventas y créditos</h2><p className="mt-1 text-xs text-app-muted">Todas las ventas y sus saldos vigentes.</p></div></div>
+          {filteredSales.length ? <div>{visibleSales.map((sale) => { const status = statusCopy[sale.payment_status]; return <article className="grid gap-3 border-b border-app-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={sale.id}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-app-text">Venta #{sale.folio}</p><span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", status.className)}>{status.label}</span></div><p className="mt-1 truncate text-xs text-app-muted">{customerNames.get(sale.customer_id ?? "") ?? "Venta de mostrador"} · {dateLabel(sale.occurred_at)}</p></div><div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end"><div className="me-1 text-right"><p className="font-medium tabular-nums text-app-text">{formatCurrency(sale.total_amount)}</p>{Number(sale.balance_amount) > 0 && sale.payment_status !== "cancelled" ? <p className="text-xs tabular-nums text-app-muted">Saldo {formatCurrency(sale.balance_amount)}</p> : null}</div><Button icon={<Eye aria-hidden="true" className="h-4 w-4" />} onClick={() => void openSaleDetails(sale)} variant="ghost">Ver detalle</Button></div></article>; })}</div> : <EmptyState icon={ReceiptText} title={hasFilters ? "No hay ventas que coincidan con los filtros." : "Aún no hay ventas. Registra la primera para comenzar el control."} />}
+          <Pagination label="ventas" page={salesWindow.page} pageSize={20} total={filteredSales.length} onPageChange={setSalesPage} />
         </section>
 
-        <aside aria-labelledby="ledger-title" className="min-w-0"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Entradas y salidas recientes.</p></div>
-          {filteredLedger.length ? <div>{filteredLedger.slice(0, 12).map((entry) => <div className="flex items-start gap-3 border-b border-app-border py-4" key={`${entry.movement_type}-${entry.source_id}`}><span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", Number(entry.signed_amount) >= 0 ? "bg-app-soft text-app-green" : "bg-red-50 text-red-700")}>{Number(entry.signed_amount) >= 0 ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm text-app-text">{entry.description}</p><p className="mt-1 text-xs text-app-muted">{dateLabel(entry.occurred_at)} · {paymentMethodLabel(entry.payment_method)}</p></div><p className={cn("shrink-0 text-sm font-medium tabular-nums", Number(entry.signed_amount) >= 0 ? "text-app-green" : "text-app-text")}>{Number(entry.signed_amount) >= 0 ? "+" : "−"}{formatCurrency(Math.abs(Number(entry.signed_amount)))}</p></div>)}</div> : <EmptyState icon={WalletCards} title={hasFilters ? "No hay movimientos en el rango seleccionado." : "Sin movimientos. Los cobros y gastos aparecerán aquí."} />}
+        <aside aria-labelledby="ledger-title" className="min-w-0"><div className="border-b border-app-border pb-3"><h2 className="text-lg font-medium text-app-text" id="ledger-title">Movimientos de dinero</h2><p className="mt-1 text-xs text-app-muted">Todas las entradas y salidas del periodo.</p></div>
+          {filteredLedger.length ? <div>{visibleLedger.map((entry) => <div className="flex items-start gap-3 border-b border-app-border py-4" key={`${entry.movement_type}-${entry.source_id}`}><span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", Number(entry.signed_amount) >= 0 ? "bg-app-soft text-app-green" : "bg-red-50 text-red-700")}>{Number(entry.signed_amount) >= 0 ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm text-app-text">{entry.description}</p><p className="mt-1 text-xs text-app-muted">{dateLabel(entry.occurred_at)} · {paymentMethodLabel(entry.payment_method)}</p></div><p className={cn("shrink-0 text-sm font-medium tabular-nums", Number(entry.signed_amount) >= 0 ? "text-app-green" : "text-app-text")}>{Number(entry.signed_amount) >= 0 ? "+" : "−"}{formatCurrency(Math.abs(Number(entry.signed_amount)))}</p></div>)}</div> : <EmptyState icon={WalletCards} title={hasFilters ? "No hay movimientos en el rango seleccionado." : "Sin movimientos. Los cobros y gastos aparecerán aquí."} />}
+          <Pagination label="movimientos" page={ledgerWindow.page} pageSize={12} total={filteredLedger.length} onPageChange={setLedgerPage} />
         </aside>
       </div>
       </> : null}
@@ -844,7 +858,7 @@ export function NurserySection() {
       <Modal onClose={() => { setDialog(null); setSelectedCatalogItem(null); }} open={dialog === "catalog"} panelClassName="sm:max-w-xl" title={selectedCatalogItem ? "Editar plántula" : "Agregar plántula"}>
         <form className="grid gap-4" onSubmit={saveCatalogItem}>
           <Field label="Cultivo o plántula"><TextInput autoFocus defaultValue={selectedCatalogItem?.name ?? ""} name="name" placeholder="Ej. Tomate" required /></Field>
-          <Field label="Variedad (opcional)"><TextInput defaultValue={selectedCatalogItem?.variety ?? ""} name="variety" placeholder="Ej. Saladette" /></Field>
+          <Field label="Variedad (opcional)"><TextInput defaultValue={selectedCatalogItem?.variety ?? ""} list="nursery-variety-suggestions" name="variety" placeholder="Ej. Saladette" /><datalist id="nursery-variety-suggestions"><option value="Super optimo" /></datalist></Field>
           <Field label="Presentación"><SelectInput defaultValue={selectedCatalogItem?.unit ?? "pieza"} name="unit"><option value="pieza">Pieza</option><option value="charola">Charola</option><option value="millar">Millar</option></SelectInput></Field>
           <Field label="Precio habitual (opcional)"><TextInput defaultValue={selectedCatalogItem?.default_unit_price ?? ""} inputMode="decimal" min="0" name="price" placeholder="0.00" step="0.0001" type="number" /></Field>
           <p className="text-xs leading-5 text-app-muted">Este precio sirve como referencia y podrá cambiarse en cada venta.</p>

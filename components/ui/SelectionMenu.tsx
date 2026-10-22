@@ -13,6 +13,7 @@ export type SelectionMenuOption = {
 
 export function SelectionMenu({
   align = "left",
+  ariaDescribedBy,
   ariaLabel,
   autoFocus,
   buttonClassName,
@@ -26,6 +27,7 @@ export function SelectionMenu({
   value
 }: {
   align?: "left" | "right";
+  ariaDescribedBy?: string;
   ariaLabel: string;
   autoFocus?: boolean;
   buttonClassName?: string;
@@ -87,6 +89,7 @@ export function SelectionMenu({
   return (
     <div className={cn("relative min-w-0", className)} ref={containerRef}>
       <button
+        aria-describedby={ariaDescribedBy}
         aria-controls={open ? menuId : undefined}
         aria-expanded={open}
         aria-haspopup="menu"

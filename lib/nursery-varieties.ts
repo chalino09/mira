@@ -45,6 +45,7 @@ export const NURSERY_VARIETY_PRESETS: NurseryVarietyPreset[] = [
   { name: "Strogton puntas 2 por cavidad", unit: "pieza" },
   { name: "Stronto", unit: "charolas" },
   { name: "Stronton doble punta", unit: "pieza" },
+  { name: "Super optimo", unit: "pieza" },
   { name: "V27 doble tallo", unit: "pieza" },
   { name: "Villa", unit: "pieza" },
   { name: "Villa", unit: "charola" },

@@ -102,6 +102,7 @@ export const FormattedQuantityInput = forwardRef<HTMLInputElement, FormattedInpu
 });
 
 export function SelectInput({
+  "aria-describedby": ariaDescribedBy,
   "aria-label": ariaLabel,
   autoFocus,
   children,
@@ -133,6 +134,7 @@ export function SelectInput({
     <>
       <input disabled={disabled} name={name} type="hidden" value={selectedValue} />
       <SelectionMenu
+        ariaDescribedBy={ariaDescribedBy}
         ariaLabel={String(ariaLabel ?? props.title ?? selectedLabel)}
         autoFocus={autoFocus}
         buttonClassName={cn(fieldClass, "min-w-0 justify-between", className)}

@@ -110,7 +110,7 @@ function formNumber(form: FormData, key: string) {
 }
 
 export function harvestValuesFromForm(form: FormData): HarvestCaptureValues {
-  const boxWeightKg = formNumber(form, "boxWeightKg") || 20;
+  const boxWeightKg = parseNumericInput(String(form.get("boxWeightKg") ?? "")) ?? 0;
   const firstQualityBoxes = formNumber(form, "firstQualityBoxes");
   const secondQualityBoxes = formNumber(form, "secondQualityBoxes");
   const thirdQualityBoxes = formNumber(form, "thirdQualityBoxes");
@@ -165,6 +165,11 @@ export function harvestValuesFromForm(form: FormData): HarvestCaptureValues {
     estimatedPrice,
     estimatedRevenue
   };
+}
+
+export function harvestBoxWeightError(value: string | number | null | undefined) {
+  const weight = parseNumericInput(value);
+  return weight !== null && weight > 0 ? "" : "Captura un peso mayor a cero en Kg/caja.";
 }
 
 export function harvestSummary(values: HarvestCaptureValues) {

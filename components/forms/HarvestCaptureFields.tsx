@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FormattedNumberInput } from "@/components/forms/FormControls";
-import { harvestPriceOutlierMessage, harvestSummary, reconcileHarvestBoxes, type HarvestPriceReferences } from "@/lib/harvest";
+import { harvestBoxWeightError, harvestPriceOutlierMessage, harvestSummary, reconcileHarvestBoxes, type HarvestPriceReferences } from "@/lib/harvest";
 import { calculateHarvestSale } from "@/lib/harvest-sale";
 import { cn, parseNumericInput } from "@/lib/utils";
 
@@ -46,7 +46,9 @@ function formatSaleAmount(value: number) {
 
 export function HarvestCaptureFields({ compact = false, showPrices = true, initialValues, priceReferences, saleDeductions }: HarvestCaptureFieldsProps) {
   const reconciliationId = useId();
+  const weightErrorId = useId();
   const boxCountRef = useRef<HTMLInputElement>(null);
+  const boxWeightRef = useRef<HTMLInputElement>(null);
   const [boxCount, setBoxCount] = useState(initialValues?.boxCount?.toString() ?? "");
   const [boxWeightKg, setBoxWeightKg] = useState(initialValues?.boxWeightKg?.toString() ?? "20");
   const [firstQualityBoxes, setFirstQualityBoxes] = useState(initialValues?.firstQualityBoxes?.toString() ?? "");
@@ -60,9 +62,10 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
   const [thirdQualityPrice, setThirdQualityPrice] = useState(initialValues?.thirdQualityPrice?.toString() ?? "");
   const [canicaPrice, setCanicaPrice] = useState(initialValues?.canicaPrice?.toString() ?? "");
   const [papelPrice, setPapelPrice] = useState(initialValues?.papelPrice?.toString() ?? "");
+  const weightError = harvestBoxWeightError(boxWeightKg);
 
   const summary = useMemo(() => {
-    const weight = numberValue(boxWeightKg) || 20;
+    const weight = numberValue(boxWeightKg);
     const firstBoxes = numberValue(firstQualityBoxes);
     const secondBoxes = numberValue(secondQualityBoxes);
     const thirdBoxes = numberValue(thirdQualityBoxes);
@@ -167,6 +170,10 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
     );
   }, [reconciliation, reconciliationInvalid]);
 
+  useEffect(() => {
+    boxWeightRef.current?.setCustomValidity(weightError);
+  }, [weightError]);
+
   const qualityFields = [
     {
       key: "first",
@@ -241,13 +248,17 @@ export function HarvestCaptureFields({ compact = false, showPrices = true, initi
         <label className="grid gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Kg/caja</span>
           <FormattedNumberInput
+            aria-describedby={weightError ? weightErrorId : undefined}
+            aria-invalid={weightError ? "true" : undefined}
             className="h-12 text-base"
-            min={0}
+            min={0.01}
             name="boxWeightKg"
             onChange={(event) => setBoxWeightKg(event.target.value)}
+            ref={boxWeightRef}
             required
             value={boxWeightKg}
           />
+          {weightError ? <span className="text-xs leading-5 text-[#8A2E2E]" id={weightErrorId}>{weightError}</span> : null}
         </label>
       </div>
 

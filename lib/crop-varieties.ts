@@ -1,5 +1,5 @@
 const CROP_VARIETIES_BY_SLUG: Record<string, string[]> = {
-  jitomate: ["Saladette", "Roma", "Villa", "Strongton", "Cherry", "Bola", "Grape", "Heirloom"],
+  jitomate: ["Saladette", "Roma", "Villa", "Strongton", "Super optimo", "Cherry", "Bola", "Grape", "Heirloom"],
   arandano: ["Ventura"],
   manzana: ["Golden"]
 };

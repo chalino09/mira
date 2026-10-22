@@ -14,7 +14,7 @@ import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
 import { applicationCategories, applicationCategoryFromDb, applicationCategoryToDb } from "@/lib/application-categories";
 import { appErrorMessage } from "@/lib/errors";
-import { calculatedCostAmount } from "@/lib/cost-entry";
+import { calculatedCostAmount, costGreenhouseError } from "@/lib/cost-entry";
 import { costCategories, costCategoryToDb } from "@/lib/cost-categories";
 import { suggestedCostCategory } from "@/lib/cost-category-suggestions";
 import { INITIAL_CROP_ID, cropStageFromDdt, cropStageToDbValue, greenhouseDisplayName } from "@/lib/crop-ddt";
@@ -23,7 +23,7 @@ import { CycleCaptureField } from "@/components/cycles/CycleCaptureField";
 import { useGreenhouseStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createPrivateCompanyFileUrl, uploadPrivateCompanyFile } from "@/lib/storage";
-import { harvestValuesFromForm, type HarvestPriceReferences } from "@/lib/harvest";
+import { harvestBoxWeightError, harvestValuesFromForm, type HarvestPriceReferences } from "@/lib/harvest";
 import { calculateHarvestSale } from "@/lib/harvest-sale";
 import { normalizedProductName } from "@/lib/product-search";
 import { cn, formatCurrency, parseNumericInput } from "@/lib/utils";
@@ -453,6 +453,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const [costGreenhouseId, setCostGreenhouseId] = useState("");
   const [captureGreenhouseId, setCaptureGreenhouseId] = useState("");
   const [captureCycleId, setCaptureCycleId] = useState("");
+  const [costAreaError, setCostAreaError] = useState("");
   const [costSectorOptions, setCostSectorOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null);
   const [saleBreakdownOpen, setSaleBreakdownOpen] = useState(false);
@@ -482,6 +483,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       return;
     }
     if (modal === "cost") {
+      setCostAreaError("");
       setCostRows([emptyCost()]);
       setCostGreenhouseId(selectedGreenhouseId === "__all__"
         ? currentUser.role === "manager" ? greenhouses[0]?.id ?? "" : ""
@@ -1405,6 +1407,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     }
     const form = new FormData(event.currentTarget);
     const record = readHarvestForm(form);
+    const weightError = harvestBoxWeightError(record.boxWeightKg);
+    if (weightError) { setError(weightError); return; }
     saveManualRecord(potentialHarvestDuplicate(record), async () => {
       const work = await createUnplannedTechnicalWork({
         greenhouseId: record.greenhouseId,
@@ -1454,6 +1458,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
     const form = new FormData(event.currentTarget);
     const record = readHarvestForm(form);
+    const weightError = harvestBoxWeightError(record.boxWeightKg);
+    if (weightError) { setError(weightError); return; }
     save(async () => {
       const { error: updateError } = await getSupabaseBrowserClient()!.rpc("update_harvest_record", {
         target_harvest_record_id: selectedHarvest.id,
@@ -1485,6 +1491,12 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const greenhouseId = String(form.get("greenhouseId") ?? "");
+    const areaError = costGreenhouseError(greenhouseId, greenhouses);
+    setCostAreaError(areaError);
+    if (areaError) {
+      document.getElementById("cost-greenhouse")?.focus();
+      return;
+    }
     save(async () => {
       const records = costRows.map((cost) => ({
         greenhouseId,
@@ -1502,7 +1514,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         .from("cost_records")
         .insert(records.map((record) => ({
           company_id: organization.id,
-          greenhouse_id: record.greenhouseId || null,
+          greenhouse_id: record.greenhouseId,
           crop_cycle_id: captureCycleId || null,
           greenhouse_sector_id: record.sectorId,
           category: costCategoryToDb[record.category],
@@ -1995,9 +2007,13 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         <FormShell disabled={isSaving} error={error} onSubmit={handleCost}>
           <Field label="Área productiva">
             <SelectInput
+              aria-describedby={costAreaError ? "cost-greenhouse-error" : undefined}
               aria-label="Área productiva"
+              className={costAreaError ? "border-[#A33A3A]" : undefined}
+              id="cost-greenhouse"
               name="greenhouseId"
               onChange={(event) => {
+                setCostAreaError("");
                 setCostGreenhouseId(event.target.value);
                 setCaptureCycleId("");
                 setCostRows((current) => current.map((item) => ({ ...item, sectorId: "" })));
@@ -2007,6 +2023,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             >
               {greenhouseOptions}
             </SelectInput>
+            {costAreaError ? <span className="text-xs leading-5 text-[#8A2E2E]" id="cost-greenhouse-error" role="alert">{costAreaError}</span> : null}
           </Field>
           <CycleCaptureField greenhouseId={costGreenhouseId} value={captureCycleId} onChange={setCaptureCycleId} />
           <Field label="Fecha"><DatePickerInput name="date" required defaultValue={todayInputValue()} /></Field>
