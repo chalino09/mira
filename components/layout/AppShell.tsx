@@ -736,7 +736,7 @@ function EntityRouteView({ route }: { route: EntityRoute }) {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted" id="sale-breakdown-title">Desglose de venta</p>
               <p className="mt-2 text-sm text-app-text">{harvest.sale.buyerName} · {formatDate(harvest.sale.date)}</p>
-              <div className="mt-2"><PaymentMethodSummary value={harvest.sale.paymentMethod} /></div>
+              <div className="mt-2"><PaymentMethodSummary value={harvest.sale.paymentMethod} payments={harvest.sale.payments} /></div>
             </div>
             <StatusBadge tone={harvest.sale.paymentStatus === "Pagada" ? "green" : "neutral"}>{harvest.sale.paymentStatus}</StatusBadge>
           </div>

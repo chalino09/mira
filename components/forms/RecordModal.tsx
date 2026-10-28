@@ -8,7 +8,7 @@ import { SelectionMenu } from "@/components/ui/SelectionMenu";
 import { DatePickerInput, TimePickerInput } from "@/components/forms/DateTimeInputs";
 import { Field, FormattedNumberInput, FormattedQuantityInput, SelectInput, TextArea, TextInput } from "@/components/forms/FormControls";
 import { PaymentMethodField } from "@/components/forms/PaymentMethodField";
-import { paymentMethodFromValue, type PaymentMethod } from "@/lib/payment-methods";
+import { harvestPaymentError, harvestPaymentInput } from "@/lib/payment-methods";
 import { HarvestCaptureFields } from "@/components/forms/HarvestCaptureFields";
 import { PreciseLocationField } from "@/components/forms/PreciseLocationField";
 import { ProductCatalogCombobox, type ProductCatalogOption } from "@/components/forms/ProductCatalogCombobox";
@@ -94,7 +94,6 @@ type SaleDraft = {
   freightPerBox: string;
   packagingPerBox: string;
   paymentStatus: "Pendiente" | "Pagada";
-  paymentMethod: PaymentMethod | "";
   paidAt: string;
   notes: string;
 };
@@ -726,7 +725,6 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       freightPerBox: selectedHarvest.sale?.freightPerBox ? String(selectedHarvest.sale.freightPerBox) : "",
       packagingPerBox: selectedHarvest.sale?.packagingPerBox ? String(selectedHarvest.sale.packagingPerBox) : "",
       paymentStatus: selectedHarvest.sale?.paymentStatus ?? "Pendiente",
-      paymentMethod: selectedHarvest.sale?.paymentMethod ?? "",
       paidAt: selectedHarvest.sale?.paidAt ?? "",
       notes: selectedHarvest.sale?.notes ?? ""
     });
@@ -1359,6 +1357,22 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     };
   };
 
+  const validateHarvestPayment = (form: FormData, record: ReturnType<typeof readHarvestForm>) => {
+    const calculation = calculateHarvestSale({
+      lines: [
+        { quality: "Primera", boxCount: record.firstQualityBoxes, grossPricePerBox: record.firstQualityPrice },
+        { quality: "Segunda", boxCount: record.secondQualityBoxes, grossPricePerBox: record.secondQualityPrice },
+        { quality: "Tercera", boxCount: record.thirdQualityBoxes, grossPricePerBox: record.thirdQualityPrice },
+        { quality: "Canica", boxCount: record.canicaBoxes, grossPricePerBox: record.canicaPrice },
+        { quality: "Papel", boxCount: record.papelBoxes, grossPricePerBox: record.papelPrice }
+      ],
+      commissionPerBox: requiredNumber(form.get("commissionPerBox")),
+      freightPerBox: requiredNumber(form.get("freightPerBox")),
+      packagingPerBox: requiredNumber(form.get("packagingPerBox"))
+    });
+    return harvestPaymentError(harvestPaymentInput(form), calculation.netAmount);
+  };
+
   const saveHarvestBreakdown = async ({
     existingSale,
     form,
@@ -1373,10 +1387,10 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     const commissionPerBox = requiredNumber(form.get("commissionPerBox"));
     const freightPerBox = requiredNumber(form.get("freightPerBox"));
     const packagingPerBox = requiredNumber(form.get("packagingPerBox"));
-    const paymentMethod = paymentMethodFromValue(form.get("paymentMethod"));
-    if (!existingSale && !paymentMethod && commissionPerBox === 0 && freightPerBox === 0 && packagingPerBox === 0) return;
+    const payment = harvestPaymentInput(form);
+    if (!existingSale && !payment.method && !payment.split && commissionPerBox === 0 && freightPerBox === 0 && packagingPerBox === 0) return;
 
-    const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payment", {
+    const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payments", {
       target_harvest_record_id: harvestId,
       target_sale_id: existingSale?.id ?? null,
       target_buyer_name: record.destination.trim(),
@@ -1384,7 +1398,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       target_commission_per_box: commissionPerBox,
       target_freight_per_box: freightPerBox,
       target_packaging_per_box: packagingPerBox,
-      target_payment_method: paymentMethod ?? null,
+      target_payment_method: payment.method ?? null,
+      target_payments: payment.payments,
       target_payment_status: existingSale?.paymentStatus === "Pagada" ? "paid" : "pending",
       target_paid_at: existingSale?.paidAt ?? null,
       target_notes: existingSale?.notes || null,
@@ -1407,6 +1422,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
     }
     const form = new FormData(event.currentTarget);
     const record = readHarvestForm(form);
+    const paymentError = validateHarvestPayment(form, record);
+    if (paymentError) { setError(paymentError); return; }
     const weightError = harvestBoxWeightError(record.boxWeightKg);
     if (weightError) { setError(weightError); return; }
     saveManualRecord(potentialHarvestDuplicate(record), async () => {
@@ -1458,6 +1475,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
 
     const form = new FormData(event.currentTarget);
     const record = readHarvestForm(form);
+    const paymentError = validateHarvestPayment(form, record);
+    if (paymentError) { setError(paymentError); return; }
     const weightError = harvestBoxWeightError(record.boxWeightKg);
     if (weightError) { setError(weightError); return; }
     save(async () => {
@@ -1540,6 +1559,9 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
   const handleSale = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedHarvest || !saleDraft || !saleCalculation) return;
+    const payment = harvestPaymentInput(new FormData(event.currentTarget));
+    const paymentError = harvestPaymentError(payment, saleCalculation.netAmount);
+    if (paymentError) { setError(paymentError); return; }
     if (saleCalculation.soldBoxes <= 0) {
       setError("Registra al menos una caja vendida.");
       return;
@@ -1549,7 +1571,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
       return;
     }
     save(async () => {
-      const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payment", {
+      const { error: saleError } = await getSupabaseBrowserClient()!.rpc("upsert_harvest_sale_with_payments", {
         target_harvest_record_id: selectedHarvest.id,
         target_sale_id: selectedHarvest.sale?.id ?? null,
         target_buyer_name: saleDraft.buyerName.trim(),
@@ -1557,7 +1579,8 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
         target_commission_per_box: parseNumericInput(saleDraft.commissionPerBox) ?? 0,
         target_freight_per_box: parseNumericInput(saleDraft.freightPerBox) ?? 0,
         target_packaging_per_box: parseNumericInput(saleDraft.packagingPerBox) ?? 0,
-        target_payment_method: saleDraft.paymentMethod || null,
+        target_payment_method: payment.method ?? null,
+        target_payments: payment.payments,
         target_payment_status: saleDraft.paymentStatus === "Pagada" ? "paid" : "pending",
         target_paid_at: saleDraft.paymentStatus === "Pagada" ? saleDraft.paidAt || saleDraft.date : null,
         target_notes: saleDraft.notes.trim() || null,
@@ -1908,7 +1931,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
             showPrices
           />
           <Field className="sm:col-span-2" label="Comprador"><TextInput defaultValue={selectedHarvest.sale?.buyerName || selectedHarvest.destination} name="destination" placeholder="Nombre del comprador" required /></Field>
-          <PaymentMethodField defaultValue={selectedHarvest.sale?.paymentMethod} key={selectedHarvest.id} />
+          <PaymentMethodField defaultValue={selectedHarvest.sale?.paymentMethod} defaultPayments={selectedHarvest.sale?.payments} key={selectedHarvest.id} />
           <HarvestSaleBreakdownFields
             onChange={setHarvestSaleBreakdown}
             open={harvestBreakdownOpen}
@@ -1986,7 +2009,7 @@ export function RecordModal({ onSaved }: { onSaved?: () => void }) {
               </div>
             ) : null}
           </section>
-          <PaymentMethodField onChange={(paymentMethod) => setSaleDraft((current) => current ? { ...current, paymentMethod } : current)} value={saleDraft.paymentMethod} />
+          <PaymentMethodField defaultValue={selectedHarvest.sale?.paymentMethod} defaultPayments={selectedHarvest.sale?.payments} key={selectedHarvest.id} />
           <Field label="Estado de pago">
             <SelectInput onChange={(event) => setSaleDraft((current) => current ? { ...current, paymentStatus: event.target.value as SaleDraft["paymentStatus"] } : current)} value={saleDraft.paymentStatus}>
               <option>Pendiente</option><option>Pagada</option>

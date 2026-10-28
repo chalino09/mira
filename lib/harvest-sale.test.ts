@@ -76,3 +76,13 @@ test("aplica los descuentos por caja a las ventas de Canica y Papel", () => {
   assert.equal(result.netAmount, 158);
   assert.equal(result.isValid, true);
 });
+
+test("la venta neta coincide con el redondeo por calidad de la base para dividir pagos", () => {
+  const result = calculateHarvestSale({
+    lines: [
+      { quality: "Primera", boxCount: 1, grossPricePerBox: 1 },
+      { quality: "Segunda", boxCount: 1, grossPricePerBox: 1 }
+    ], commissionPerBox: 0.3333, freightPerBox: 0, packagingPerBox: 0
+  });
+  assert.equal(result.netAmount, 1.34);
+});

@@ -1,4 +1,4 @@
-import { paymentMethodFromValue } from "@/lib/payment-methods";
+import { harvestPaymentsFromValue, paymentMethodFromValue } from "@/lib/payment-methods";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays, startOfIsoWeek } from "@/lib/date";
 import { publicEntityId, type EntityRoute, type ListQueryState } from "@/lib/routes";
@@ -28,7 +28,7 @@ const APPLICATION_COLUMNS = "id, source_task_id, greenhouse_id, occurred_at, cat
 const PEST_COLUMNS = "id, public_id, greenhouse_id, problem, severity, affected_zone, detected_at, action_taken, follow_up, case_status, photo_storage_path, photo_url";
 const PEST_UPDATE_COLUMNS = "id, pest_alert_id, greenhouse_id, update_status, severity, action_type, notes, next_review_date, photo_storage_path, created_at";
 const HARVEST_COLUMNS = "id, public_id, source_task_id, greenhouse_id, occurred_at, kilograms, box_count, box_weight_kg, first_quality_kg, second_quality_kg, third_quality_kg, canica_kg, papel_kg, merma_kg, discard_kg, first_quality_boxes, second_quality_boxes, third_quality_boxes, canica_boxes, papel_boxes, merma_boxes, first_quality_price, second_quality_price, third_quality_price, canica_price, papel_price, estimated_price, destination, notes";
-const HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, packaging_amount, net_amount, payment_status, payment_method, paid_at, notes";
+const HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, packaging_amount, net_amount, payment_status, payment_method, payment_split, paid_at, notes";
 const HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box, packaging_per_box";
 const LEGACY_HARVEST_SALE_COLUMNS = "id, harvest_record_id, buyer_name, occurred_at, gross_amount, commission_amount, freight_amount, net_amount, payment_status, paid_at, notes";
 const LEGACY_HARVEST_SALE_LINE_COLUMNS = "sale_id, quality_label, box_count, gross_unit_price, commission_per_box, freight_per_box";
@@ -239,6 +239,7 @@ function mapRows(rows: Record<string, any[]>, currentUserName: string): Workspac
       packagingPerBox: Number(firstStandardLine?.packaging_per_box ?? 0),
       paymentStatus: sale.payment_status === "paid" ? "Pagada" : "Pendiente",
       paymentMethod: paymentMethodFromValue(sale.payment_method),
+      payments: harvestPaymentsFromValue(sale.payment_split),
       paidAt: sale.paid_at ?? undefined,
       notes: sale.notes ?? "",
       lines: lines.flatMap((line) => {
@@ -475,6 +476,11 @@ export async function loadWorkspaceViewData(request: ViewDataRequest): Promise<W
       .select(HARVEST_SALE_COLUMNS)
       .eq("company_id", companyId)
       .in("harvest_record_id", harvestIds);
+    if (salesResponse.error && ["42703", "PGRST204"].includes(salesResponse.error.code ?? "")) {
+      salesResponse = await supabase.from("harvest_sales")
+        .select(HARVEST_SALE_COLUMNS.replace(", payment_split", ""))
+        .eq("company_id", companyId).in("harvest_record_id", harvestIds);
+    }
     if (salesResponse.error && !["42P01", "PGRST205"].includes(salesResponse.error.code ?? "")) {
       salesResponse = await supabase
         .from("harvest_sales")

@@ -41,7 +41,8 @@ export function calculateHarvestSale({
   const commissionAmount = money(soldBoxes * commission);
   const freightAmount = money(soldBoxes * freight);
   const packagingAmount = money(soldBoxes * packaging);
-  const netAmount = money(grossAmount - commissionAmount - freightAmount - packagingAmount);
+  // Match the database, which rounds each quality line before summing the net.
+  const netAmount = money(normalizedLines.reduce((total, line) => total + line.netAmount, 0));
 
   return {
     lines: normalizedLines,
